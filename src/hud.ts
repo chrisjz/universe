@@ -61,21 +61,117 @@ export class Hud {
   private buttons = new Map<number, HTMLButtonElement>();
   private tourBtn!: HTMLButtonElement;
 
-  constructor(targets: Target[], onTarget: (i: number) => void, onTour: () => void) {
+  private searchEl = document.getElementById('search') as HTMLElement;
+  private searchInput = document.querySelector('#search input') as HTMLInputElement;
+  private searchList = document.querySelector('#search ul') as HTMLElement;
+  private searchResults: number[] = [];
+  private searchSel = 0;
+  private targets: Target[];
+  private onTarget: (i: number) => void;
+
+  constructor(
+    targets: Target[],
+    onTarget: (i: number) => void,
+    onTour: () => void,
+    onTime: (action: 'slower' | 'pause' | 'faster') => void,
+  ) {
+    this.targets = targets;
+    this.onTarget = onTarget;
+    // On-screen time controls: [ ] and P have no keys on touch devices.
+    document.querySelectorAll<HTMLButtonElement>('#scale .timectl button').forEach((b) => {
+      b.addEventListener('click', () => onTime(b.dataset.t as 'slower' | 'pause' | 'faster'));
+    });
+    // Layout: [search] [scrollable target buttons] [tour] — search and tour
+    // stay pinned; the target list scrolls between them.
     const bar = document.getElementById('targets')!;
+    const searchBtn = document.createElement('button');
+    searchBtn.textContent = '🔍';
+    searchBtn.title = 'search ( / )';
+    searchBtn.addEventListener('click', () => this.openSearch());
+    bar.appendChild(searchBtn);
+    const scroller = document.createElement('div');
+    scroller.className = 'scroller';
+    bar.appendChild(scroller);
+    let visibleIndex = 0;
     targets.forEach((t, i) => {
-      if (t.hidden) return;
+      if (t.hidden && !t.button) return;
       const b = document.createElement('button');
-      b.textContent = `${i + 1} ${t.name}`;
+      // Only the primary eight get number-key labels.
+      b.textContent = !t.hidden ? `${++visibleIndex} ${t.name}` : t.name;
       b.addEventListener('click', () => onTarget(i));
-      bar.appendChild(b);
+      scroller.appendChild(b);
       this.buttons.set(i, b);
     });
     this.tourBtn = document.createElement('button');
-    this.tourBtn.textContent = 'T GRAND TOUR';
+    this.tourBtn.textContent = 'T TOUR';
     this.tourBtn.className = 'tour';
     this.tourBtn.addEventListener('click', onTour);
     bar.appendChild(this.tourBtn);
+    this.wireSearch();
+  }
+
+  // ---- search: every target (all 195 named stars included) is reachable ----
+  isSearchOpen(): boolean {
+    return this.searchEl.style.display === 'flex';
+  }
+
+  openSearch(initial = ''): void {
+    this.searchEl.style.display = 'flex';
+    this.searchInput.value = initial;
+    this.renderResults(initial);
+    this.searchInput.focus();
+  }
+
+  closeSearch(): void {
+    this.searchEl.style.display = 'none';
+    this.searchInput.blur();
+  }
+
+  private renderResults(q: string): void {
+    const query = q.trim().toLowerCase();
+    const scored: [number, number][] = [];
+    this.targets.forEach((t, i) => {
+      const name = t.name.toLowerCase();
+      if (query === '') {
+        if (!t.hidden || t.button) scored.push([i, 1]);
+        return;
+      }
+      if (name.startsWith(query)) scored.push([i, 0]);
+      else if (name.includes(query) || t.slug.includes(query)) scored.push([i, 1]);
+    });
+    scored.sort((a, b) => a[1] - b[1]);
+    this.searchResults = scored.slice(0, 8).map(([i]) => i);
+    this.searchSel = 0;
+    this.searchList.innerHTML = '';
+    this.searchResults.forEach((ti, ri) => {
+      const li = document.createElement('li');
+      li.textContent = this.targets[ti].name;
+      li.classList.toggle('sel', ri === this.searchSel);
+      li.addEventListener('click', () => {
+        this.closeSearch();
+        this.onTarget(ti);
+      });
+      this.searchList.appendChild(li);
+    });
+  }
+
+  private wireSearch(): void {
+    this.searchInput.addEventListener('input', () => this.renderResults(this.searchInput.value));
+    this.searchInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') this.closeSearch();
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const n = this.searchResults.length;
+        if (n) this.searchSel = (this.searchSel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+        [...this.searchList.children].forEach((el, i) => el.classList.toggle('sel', i === this.searchSel));
+      }
+      if (e.key === 'Enter' && this.searchResults.length) {
+        const ti = this.searchResults[this.searchSel];
+        this.closeSearch();
+        this.onTarget(ti);
+      }
+    });
   }
 
   update(
@@ -98,7 +194,9 @@ export class Hud {
     const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
     const stars = starCount > 0 ? ` · ${Math.round(starCount / 1000)}k stars` : '';
     this.timeEl.textContent = (paused ? `${date} · paused` : `${date} · ${speedLabel}`) + stars;
+    const pauseBtn = document.querySelector<HTMLButtonElement>('#scale .timectl button[data-t="pause"]');
+    if (pauseBtn) pauseBtn.textContent = paused ? '▶' : '⏸';
     for (const [i, b] of this.buttons) b.classList.toggle('active', i === activeTarget);
-    this.tourBtn.textContent = touring ? 'T STOP TOUR' : 'T GRAND TOUR';
+    this.tourBtn.textContent = touring ? 'T STOP' : 'T TOUR';
   }
 }
