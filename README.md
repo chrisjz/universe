@@ -1,8 +1,8 @@
 # UNIVERSE
 
 **A true-scale, explorable atlas of the universe in your browser** — one continuous
-scroll from the observable universe (~10²⁷ m) down to a one-meter cube standing on
-Earth's surface. Pure WebGPU, zero runtime dependencies, ~11 KB gzipped.
+scroll from the observable universe (~10²⁷ m) down to a one-meter picnic blanket
+on the Chicago lakefront. Pure WebGPU, zero runtime dependencies, ~24 KB gzipped.
 
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -16,16 +16,20 @@ loads, no cuts. Scroll in and the engine hands focus down the chain automaticall
 (universe → galaxy → solar system → Earth → surface); scroll out and it hands it
 back. Or press **T** and let the grand tour fly you the whole way.
 
-|                                                                                   |                                                                                |
-| :-------------------------------------------------------------------------------: | :----------------------------------------------------------------------------: |
-| ![Observable universe](docs/screenshots/universe.png) **10²⁷ m** · the cosmic web |      ![Milky Way](docs/screenshots/galaxy.png) **10²² m** · the Milky Way      |
-|    ![Solar system](docs/screenshots/system.png) **10¹³ m** · the solar system     |           ![The Sun](docs/screenshots/sun.png) **10¹⁰ m** · the Sun            |
-|              ![Earth](docs/screenshots/earth.png) **10⁸ m** · Earth               | ![Surface](docs/screenshots/surface.png) **10¹ m** · one red cube, exactly 1 m |
+|                                                                                   |                                                                                 |
+| :-------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
+| ![Observable universe](docs/screenshots/universe.png) **10²⁷ m** · the cosmic web |      ![Milky Way](docs/screenshots/galaxy.png) **10²² m** · the Milky Way       |
+|    ![Solar system](docs/screenshots/system.png) **10¹³ m** · the solar system     |            ![The Sun](docs/screenshots/sun.png) **10¹⁰ m** · the Sun            |
+|              ![Earth](docs/screenshots/earth.png) **10⁸ m** · Earth               | ![The picnic](docs/screenshots/surface.png) **10¹ m** · the picnic, exactly 1 m |
 
-Structure outside the solar system is procedural placeholder (deterministic seed),
-but every dimension that can be real already is: actual planetary radii and
-semi-major axes, the real Moon distance, the real Sun–galactic-center distance,
-a Milky Way with the real ~2.6 kpc disk scale length. Time is real too: the
+Earth is the real Earth — NASA Blue Marble by day, Black Marble city lights on
+the night side — and the bottom of the zoom is an homage: a one-meter
+red-checkered **picnic blanket on the Chicago lakefront** (41.878°N, 87.630°W),
+where the Eames' _Powers of Ten_ opened in 1977. Structure outside the solar
+system is procedural placeholder (deterministic seed), but every dimension that
+can be real already is: actual planetary radii and semi-major axes, the real
+Moon distance, the real Sun–galactic-center distance, a Milky Way with the real
+~2.6 kpc disk scale length. Time is real too: the
 planets and the Moon sit at their true positions for the simulated date (a
 mean-longitude ephemeris — circular, coplanar approximation) and move as the
 clock runs, from real time up to ten years per second. The roadmap swaps the
@@ -121,7 +125,9 @@ src/
 - [ ] Full Gaia DR3 (1.8B sources) via hierarchical spatial LOD tiles
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
-- [ ] Earth terrain via map tiles at the bottom of the zoom
+- [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
+- [ ] Earth rotation: diurnal day/night cycle at the picnic (sunset at 1 hour/s)
+- [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [ ] Honest rendering seam: visually distinguish measured vs procedural
 
@@ -147,6 +153,10 @@ Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
 - [ATHYG](https://github.com/astronexus/ATHYG-Database) (Tycho-2 + Gaia DR3)
   powers the 854k-star deep sky — `node scripts/generate-star-tiles.mjs <athyg.csv>`
   regenerates the binary tiles in `public/stars/`.
+
+Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
+(day) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
+(night lights), public domain, in `public/earth/`.
 
 ## License
 

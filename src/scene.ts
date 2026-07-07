@@ -16,9 +16,10 @@ export interface MeshObj {
   bound: number; // bounding radius, for sub-pixel culling
   color: [number, number, number];
   emissive: number;
-  matId: number; // 0 plain, 1 earthlike, 2 star, 3 banded, 4 rocky, 5 ground grid
+  matId: number; // 0 plain, 1 earth, 2 star, 3 banded, 4 rocky, 5 park ground, 6 prop, 7 picnic blanket
   rim: number; // atmosphere rim strength
   gridScale: number; // local units -> meters (ground grid)
+  rot?: [V3, V3, V3]; // local axis basis (columns: X, Y, Z -> world), e.g. surface tangent frame
 }
 
 export interface PointGroup {
@@ -55,6 +56,7 @@ export interface Target {
   hidden?: boolean; // reachable via URL / flights only, no HUD button
   radius?: number; // physical bound radius in meters; presence makes it clickable
   sunlit?: boolean; // flights/jumps arrive facing the sunlit side (yaw computed live)
+  basis?: [V3, V3, V3]; // camera orbit basis (east, up, north) for tilted surface sites
 }
 
 // A body on a circular mean-longitude orbit in its frame's XZ plane. Every
@@ -129,10 +131,43 @@ export function buildUniverse(): Universe {
   const earthPos: V3 = [AU, 0, 0];
   const earthFrame = new Frame('earth', sunFrame, earthPos);
   const R_EARTH = 6.371e6;
-  // Surface site at Earth's +Y pole so local "up" is world +Y (placeholder
-  // simplification — a real site needs an oriented tangent frame). Raised
-  // 1.5 m so the ground plane never z-fights the coarse planet sphere.
-  const surface = new Frame('surface', earthFrame, [0, R_EARTH + 1.5, 0]);
+
+  // The landing site: the Chicago lakefront where the Eames' "Powers of Ten"
+  // (1977) opens on a picnic blanket. Earth is static this era (no diurnal
+  // rotation yet), so lat/long anchors the site to the Blue Marble texture:
+  // dir(lat, lon) is the exact inverse of the shader's equirectangular UV.
+  const DEG = Math.PI / 180;
+  const SITE_LAT = 41.8781 * DEG;
+  const SITE_LON = -87.6298 * DEG;
+  const up: V3 = [
+    Math.cos(SITE_LAT) * Math.cos(SITE_LON),
+    Math.sin(SITE_LAT),
+    -Math.cos(SITE_LAT) * Math.sin(SITE_LON),
+  ];
+  const east: V3 = ((): V3 => {
+    const e: V3 = [up[2], 0, -up[0]];
+    const l = Math.hypot(e[0], e[2]);
+    return [e[0] / l, 0, e[2] / l];
+  })();
+  const north: V3 = [
+    up[1] * east[2] - up[2] * east[1],
+    up[2] * east[0] - up[0] * east[2],
+    up[0] * east[1] - up[1] * east[0],
+  ];
+  const siteBasis: [V3, V3, V3] = [east, up, north];
+  // Frame origin 1.5 m above the sphere so the ground plane never z-fights
+  // the coarse planet mesh.
+  const surface = new Frame('surface', earthFrame, [
+    up[0] * (R_EARTH + 1.5),
+    up[1] * (R_EARTH + 1.5),
+    up[2] * (R_EARTH + 1.5),
+  ]);
+  // Position in the surface frame from site-local (east, up, north) meters.
+  const sitePos = (e: number, u: number, n: number): V3 => [
+    east[0] * e + up[0] * u + north[0] * n,
+    east[1] * e + up[1] * u + north[1] * n,
+    east[2] * e + up[2] * u + north[2] * n,
+  ];
 
   // ---- Sun & planets (real radii and orbits) ----
   const sphere = (
@@ -200,35 +235,37 @@ export function buildUniverse(): Universe {
   const planetSpriteGroup = groups.length;
   groups.push({ frame: sunFrame, pos: [0, 0, 0], data: new Float32Array(planetSprites.flat()) });
 
-  // ---- Surface site: ground plane, reference cubes, the 1 m cube ----
+  // ---- The picnic (Powers of Ten, 1977): a one-meter blanket in the park
+  // ---- by the lake, Lake Michigan glinting to the east ----
   meshes.push({
     frame: surface,
-    pos: [0, -0.02, 0],
+    pos: sitePos(0, -0.02, 0),
     mesh: 'disk',
     size: [60000, 1, 60000],
     bound: 60000,
-    color: [0.33, 0.36, 0.31],
+    color: [0.2, 0.31, 0.13], // park grass; the shader paints the lake east of ~40 m
     emissive: 0,
     matId: 5,
     rim: 0,
     gridScale: 60000,
+    rot: siteBasis,
   });
-  const box = (pos: V3, size: V3, color: [number, number, number], emissive = 0): MeshObj => ({
+  const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
-    pos,
+    pos: sitePos(e, u, n),
     mesh: 'box',
     size,
     bound: Math.max(...size) * 1.8,
     color,
-    emissive,
-    matId: 6,
+    emissive: 0,
+    matId,
     rim: 0,
     gridScale: 0,
+    rot: siteBasis,
   });
-  meshes.push(box([0, 0.5, 0], [0.5, 0.5, 0.5], [0.75, 0.12, 0.1], 0.25)); // THE one-meter cube
-  meshes.push(box([4.5, 0.75, 2], [0.75, 0.75, 0.75], [0.62, 0.63, 0.66]));
-  meshes.push(box([-3.5, 0.5, 4], [0.5, 0.5, 0.5], [0.62, 0.63, 0.66]));
-  meshes.push(box([1.5, 2, -7], [0.4, 2, 0.4], [0.55, 0.58, 0.64])); // 4 m obelisk
+  meshes.push(prop(0, 0.012, 0, [0.5, 0.012, 0.5], [0.9, 0.9, 0.9], 7)); // THE one-meter blanket
+  meshes.push(prop(0.22, 0.045, 0.28, [0.1, 0.015, 0.15], [0.35, 0.12, 0.08])); // the book
+  meshes.push(prop(-0.28, 0.11, -0.12, [0.17, 0.11, 0.12], [0.5, 0.34, 0.16])); // the basket
 
   // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
   // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
@@ -500,14 +537,15 @@ export function buildUniverse(): Universe {
       radius: 1.737e6,
     },
     {
-      name: 'SURFACE · 1 METER',
+      name: 'THE PICNIC · 1 METER',
       slug: 'surface',
       frame: surface,
-      pos: [0, 0.5, 0],
-      dist: 7,
-      pitch: 0.22,
+      pos: sitePos(0, 0.3, 0),
+      dist: 6,
+      pitch: 0.25,
       parent: 'earth',
       exit: 5.5e7,
+      basis: siteBasis,
     },
     // Hidden targets stay after the visible eight so keys 1-8 remain stable.
     ...planetTargets,

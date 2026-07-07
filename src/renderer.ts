@@ -10,7 +10,7 @@ export type F32 = Float32Array<ArrayBuffer>;
 
 export interface FrameData {
   globals: F32; // 28 floats
-  meshes: { kind: MeshKind; data: F32 }[]; // 28 floats each
+  meshes: { kind: MeshKind; data: F32; earth?: boolean }[]; // 28 floats each; earth -> textured bind group
   lines: F32[]; // 8 floats each
   groups: { index: number; data: F32 }[]; // 4 floats each
 }
@@ -50,6 +50,11 @@ export class Renderer {
 
   private depthTex: GPUTexture | null = null;
   private msaaTex: GPUTexture | null = null;
+
+  private texBGL!: GPUBindGroupLayout;
+  private sampler!: GPUSampler;
+  private defaultTexBG!: GPUBindGroup;
+  private earthTexBG!: GPUBindGroup;
 
   private meshStaging = new Float32Array((SLOT / 4) * MAX_DRAWS);
   private lineStaging = new Float32Array((SLOT / 4) * MAX_DRAWS);
@@ -92,7 +97,16 @@ export class Renderer {
         },
       ],
     });
+    const texBGL = d.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      ],
+    });
+    this.texBGL = texBGL;
     const layout = d.createPipelineLayout({ bindGroupLayouts: [globalsBGL, dynBGL] });
+    const meshLayout = d.createPipelineLayout({ bindGroupLayouts: [globalsBGL, dynBGL, texBGL] });
 
     this.globalsBG = d.createBindGroup({
       layout: globalsBGL,
@@ -119,9 +133,37 @@ export class Renderer {
       alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
     };
 
+    // Textures: a 1x1 fallback pair (used by every untextured material) and
+    // the Earth day/night pair, swapped in when the fetches land.
+    this.sampler = d.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear',
+      addressModeU: 'repeat',
+      addressModeV: 'clamp-to-edge',
+    });
+    const onePx = (rgba: [number, number, number, number]) => {
+      const t = d.createTexture({
+        size: [1, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      d.queue.writeTexture({ texture: t }, new Uint8Array(rgba), { bytesPerRow: 4 }, [1, 1]);
+      return t;
+    };
+    this.defaultTexBG = d.createBindGroup({
+      layout: texBGL,
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 1, resource: onePx([255, 255, 255, 255]).createView() },
+        { binding: 2, resource: onePx([0, 0, 0, 255]).createView() },
+      ],
+    });
+    this.earthTexBG = this.defaultTexBG;
+
     const meshMod = d.createShaderModule({ code: MESH_WGSL });
     this.meshPipe = d.createRenderPipeline({
-      layout,
+      layout: meshLayout,
       vertex: {
         module: meshMod,
         entryPoint: 'vs',
@@ -199,6 +241,53 @@ export class Renderer {
     this.device.queue.writeBuffer(this.pointGroups[index].buf, 0, instances);
   }
 
+  // Fetch the Earth day/night textures and swap them in when ready. Mip
+  // levels are generated CPU-side via createImageBitmap resizing.
+  async loadEarthTextures(dayUrl: string, nightUrl: string): Promise<void> {
+    const load = async (url: string): Promise<GPUTexture | null> => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        const full = await createImageBitmap(blob);
+        const mips = Math.floor(Math.log2(Math.max(full.width, full.height))) + 1;
+        const tex = this.device.createTexture({
+          size: [full.width, full.height],
+          format: 'rgba8unorm',
+          mipLevelCount: mips,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        for (let level = 0; level < mips; level++) {
+          const w = Math.max(1, full.width >> level);
+          const h = Math.max(1, full.height >> level);
+          const bmp =
+            level === 0
+              ? full
+              : await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+          this.device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, mipLevel: level }, [w, h]);
+          if (level > 0) bmp.close();
+        }
+        full.close();
+        return tex;
+      } catch {
+        return null;
+      }
+    };
+    const [day, night] = await Promise.all([load(dayUrl), load(nightUrl)]);
+    if (!day || !night) return; // keep the procedural fallback
+    this.earthTexBG = this.device.createBindGroup({
+      layout: this.texBGL,
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 1, resource: day.createView() },
+        { binding: 2, resource: night.createView() },
+      ],
+    });
+    this.earthReady = true;
+  }
+
+  earthReady = false;
+
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
@@ -260,6 +349,7 @@ export class Renderer {
     for (let i = 0; i < nMesh; i++) {
       const g = this.geoms.get(frame.meshes[i].kind)!;
       pass.setBindGroup(1, this.meshBG, [SLOT * i]);
+      pass.setBindGroup(2, frame.meshes[i].earth ? this.earthTexBG : this.defaultTexBG);
       pass.setVertexBuffer(0, g.vbuf);
       pass.setIndexBuffer(g.ibuf, 'uint32');
       pass.drawIndexed(g.indexCount);
