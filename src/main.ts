@@ -3,7 +3,20 @@
 // ever spent where it's invisible), the grand tour, and per-frame conversion
 // of double-precision world state into camera-relative float GPU data.
 
-import { V3, add, scale, len, norm, clamp, lerp3, smootherstep, mat4Perspective, mat4Mul, viewRotation } from './math';
+import {
+  V3,
+  add,
+  sub,
+  scale,
+  len,
+  norm,
+  clamp,
+  lerp3,
+  smootherstep,
+  mat4Perspective,
+  mat4Mul,
+  viewRotation,
+} from './math';
 import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
 import { buildUniverse, Target } from './scene';
@@ -59,14 +72,69 @@ async function start(): Promise<void> {
     dist: u.targets[0].dist,
   };
   let flight: Flight | null = null;
+  let retarget: { to: number; from: V3; t: number } | null = null;
   let touring = false;
   let tourIndex = 0;
   let tourDwell = 0;
   let activeTarget = 0;
   let focusName = u.targets[0].name;
 
+  const bySlug = new Map(u.targets.map((t, i) => [t.slug, i]));
+
+  const camDir = (): V3 => [
+    Math.cos(cam.pitch) * Math.sin(cam.yaw),
+    Math.sin(cam.pitch),
+    Math.cos(cam.pitch) * Math.cos(cam.yaw),
+  ];
+
+  // ---- seamless zoom: focus retargeting ----
+  // A retarget changes what scrolling converges on without moving the camera:
+  // the camera pose is preserved exactly while the focus glides to the new
+  // anchor, and dist/yaw/pitch are re-derived from the fixed camera position.
+  function retargetTo(i: number): void {
+    const t = u.targets[i];
+    const camPos = add(cam.focus, scale(camDir(), cam.dist));
+    const focusInNew = reexpress(cam.frame, cam.focus, t.frame);
+    const camInNew = reexpress(cam.frame, camPos, t.frame);
+    cam.frame = t.frame;
+    cam.focus = focusInNew;
+    const rel = sub(camInNew, focusInNew);
+    cam.dist = clamp(len(rel), MIN_DIST, MAX_DIST);
+    retarget = { to: i, from: focusInNew, t: 0 };
+    activeTarget = i;
+    focusName = t.name;
+  }
+
+  function updateRetarget(dt: number): void {
+    if (!retarget) return;
+    const t = u.targets[retarget.to];
+    const camPos = add(cam.focus, scale(camDir(), cam.dist));
+    retarget.t += dt / 0.7;
+    const k = smootherstep(retarget.t);
+    cam.focus = lerp3(retarget.from, t.pos, k);
+    const rel = sub(camPos, cam.focus);
+    const d = len(rel);
+    cam.dist = clamp(d, MIN_DIST, MAX_DIST);
+    cam.pitch = clamp(Math.asin(clamp(rel[1] / Math.max(d, 1e-9), -1, 1)), -1.53, 1.53);
+    cam.yaw = Math.atan2(rel[0], rel[2]);
+    if (retarget.t >= 1) retarget = null;
+  }
+
+  // Walk the zoom chain declared on the targets: scrolling in past a child's
+  // `enter` distance descends to it; scrolling out past `exit` ascends.
+  function updateAutoTarget(): void {
+    if (flight || touring || retarget) return;
+    const t = u.targets[activeTarget];
+    if (t.child !== undefined && t.enter !== undefined && cam.dist < t.enter) {
+      retargetTo(bySlug.get(t.child)!);
+    } else if (t.parent !== undefined && t.exit !== undefined && cam.dist > t.exit) {
+      retargetTo(bySlug.get(t.parent)!);
+    }
+  }
+
   function flyTo(i: number): void {
     const t = u.targets[i];
+    retarget = null;
     activeTarget = i;
     focusName = t.name;
     const sep = len(relPos(t.frame, t.pos, cam.frame, cam.focus));
@@ -91,6 +159,7 @@ async function start(): Promise<void> {
 
   function jumpTo(i: number): void {
     const t = u.targets[i];
+    retarget = null;
     cam.frame = t.frame;
     cam.focus = [...t.pos] as V3;
     cam.dist = t.dist;
@@ -152,16 +221,20 @@ async function start(): Promise<void> {
     if (e.key === 't' || e.key === 'T') toggleTour();
     if (e.key === 'Escape') {
       flight = null;
+      retarget = null;
       touring = false;
     }
   });
 
-  // ?goto=<slug> — every place in the universe is a URL.
-  const goto = new URLSearchParams(location.search).get('goto');
+  // ?goto=<slug>&dist=<meters> — every place in the universe is a URL.
+  const params = new URLSearchParams(location.search);
+  const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
     if (i >= 0) jumpTo(i);
   }
+  const distParam = parseFloat(params.get('dist') ?? '');
+  if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
 
   // ---- resize ----
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -233,6 +306,8 @@ async function start(): Promise<void> {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     updateFlight(dt);
+    updateRetarget(dt);
+    updateAutoTarget();
 
     // Keep the camera above the ground when parked at the surface site.
     const surfaceFrame = u.targets[u.targets.length - 1].frame;
