@@ -91,7 +91,12 @@ async function start(): Promise<void> {
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
-      const theta = 2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
+      // Negative sign: orbits run clockwise in scene coordinates so that the
+      // spin (which must share the orbit's sense for a prograde planet) both
+      // moves the sun westward through the day AND closes a 24 h solar day.
+      // With the sign positive the solar day was 24 h 7.9 m - a subtle bug
+      // that made local noon drift ~2 degrees/day around the year.
+      const theta = -2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
       const x = b.a * Math.cos(theta),
         z = b.a * Math.sin(theta);
       if (b.frameOffset) {
@@ -111,9 +116,10 @@ async function start(): Promise<void> {
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
-    // Chicago's picnic gets real local time.
+    // Chicago's picnic gets real local time. -78.63° is the longitude of
+    // Tilt⁻¹·(direction to the sun at J2000) under the clockwise orbits.
     const SIDEREAL_DAY_MS = 86164090.5;
-    u.orientEarth((79.54 * Math.PI) / 180 + ((simMs - J2000) / SIDEREAL_DAY_MS) * 2 * Math.PI);
+    u.orientEarth((-78.63 * Math.PI) / 180 + ((simMs - J2000) / SIDEREAL_DAY_MS) * 2 * Math.PI);
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
