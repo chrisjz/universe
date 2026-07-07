@@ -1,8 +1,9 @@
 # UNIVERSE
 
 **A true-scale, explorable atlas of the universe in your browser** — one continuous
-scroll from the observable universe (~10²⁷ m) down to a one-meter picnic blanket
-on the Chicago lakefront. Pure WebGPU, zero runtime dependencies, ~24 KB gzipped.
+scroll across **43 orders of magnitude**: from the observable universe (~10²⁷ m)
+down through a picnic blanket on the Chicago lakefront and into a proton
+(10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~25 KB gzipped.
 
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -11,16 +12,20 @@ on the Chicago lakefront. Pure WebGPU, zero runtime dependencies, ~24 KB gzipped
 
 ## The zoom
 
-Twenty-seven orders of magnitude, and every step of it is the same scene — no level
+Forty-three orders of magnitude, and every step of it is the same scene — no level
 loads, no cuts. Scroll in and the engine hands focus down the chain automatically
-(universe → galaxy → solar system → Earth → surface); scroll out and it hands it
-back. Or press **T** and let the grand tour fly you the whole way.
+(universe → galaxy → solar system → Earth → the picnic → the weave → a cotton
+fiber → a cellulose molecule → a carbon atom → its nucleus → a proton); scroll
+out and it hands it back. Or press **T** and let the grand tour fly you the way.
+The inward half is _Powers of Ten_'s second act: sizes are true, arrangements
+are illustrative — below the atom, nature stops posing for portraits.
 
 |                                                                                   |                                                                                 |
 | :-------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
 | ![Observable universe](docs/screenshots/universe.png) **10²⁷ m** · the cosmic web |      ![Milky Way](docs/screenshots/galaxy.png) **10²² m** · the Milky Way       |
 |    ![Solar system](docs/screenshots/system.png) **10¹³ m** · the solar system     |            ![The Sun](docs/screenshots/sun.png) **10¹⁰ m** · the Sun            |
 |              ![Earth](docs/screenshots/earth.png) **10⁸ m** · Earth               | ![The picnic](docs/screenshots/surface.png) **10¹ m** · the picnic, exactly 1 m |
+|      ![A carbon atom](docs/screenshots/atom.jpg) **10⁻¹⁰ m** · a carbon atom      |  ![Inside the proton](docs/screenshots/proton.jpg) **10⁻¹⁴ m** · three quarks   |
 
 Earth is the real Earth — NASA Blue Marble by day, Black Marble city lights on
 the night side — and the bottom of the zoom is an homage: a one-meter
@@ -126,6 +131,7 @@ src/
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
+- [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
 - [ ] Earth rotation: diurnal day/night cycle at the picnic (sunset at 1 hour/s)
 - [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
 - [ ] Cosmic time scrubbing (deep-time structure evolution)

@@ -16,7 +16,7 @@ export interface FrameData {
 }
 
 const SLOT = 256; // dynamic uniform offset alignment
-const MAX_DRAWS = 64;
+const MAX_DRAWS = 256; // the cellulose chain alone is ~90 spheres
 
 interface Geometry {
   vbuf: GPUBuffer;

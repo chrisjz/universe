@@ -30,8 +30,7 @@ const FOV = (60 * Math.PI) / 180;
 const CAP = 1e7; // true-scale within 10,000 km, log-compressed beyond
 const MAX_D = 1.5e27;
 const FAR = CAP * (1 + Math.log(MAX_D / CAP));
-const LOG_FAR_INV = 1 / Math.log2(1 + FAR);
-const MIN_DIST = 1.2,
+const MIN_DIST = 1.2e-16, // the film's floor: 10^-16 m, inside a proton
   MAX_DIST = 2.5e27;
 
 interface Flight {
@@ -479,7 +478,6 @@ async function start(): Promise<void> {
   }
 
   // ---- render loop ----
-  const proj = { aspect: 0, mat: new Float32Array(16) };
   const globals = new Float32Array(28);
   let last = performance.now();
   const t0 = last;
@@ -524,34 +522,36 @@ async function start(): Promise<void> {
       if (h < 0.4) camLocal = add(camLocal, scale(surfaceUp, 0.4 - h));
     }
 
+    // Near plane and the log-depth reference both track the focus distance,
+    // so the same pipeline resolves a proton at 1e-15 m and a galaxy at 1e21.
     const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
-    if (aspect !== proj.aspect) {
-      proj.aspect = aspect;
-      proj.mat = mat4Perspective(FOV, aspect, 0.05, FAR * 2);
-    }
-    const viewProj = mat4Mul(proj.mat, view);
+    const near = clamp(cam.dist * 0.05, 1e-17, 0.05);
+    const projMat = mat4Perspective(FOV, aspect, near, FAR * 2);
+    const viewProj = mat4Mul(projMat, view);
     const pxFactor = (2 * Math.tan(FOV / 2)) / Math.max(1, canvas.clientHeight * dpr);
+    const nearRef = clamp(cam.dist * 0.01, 2e-17, 0.05);
 
     globals.set(viewProj, 0);
     globals[16] = right[0];
     globals[17] = right[1];
     globals[18] = right[2];
-    globals[19] = 0;
+    globals[19] = nearRef;
     globals[20] = up[0];
     globals[21] = up[1];
     globals[22] = up[2];
     globals[23] = 0;
     globals[24] = CAP;
-    globals[25] = LOG_FAR_INV;
+    globals[25] = 1 / Math.log2(1 + FAR / nearRef);
     globals[26] = (now - t0) / 1000;
     globals[27] = pxFactor;
 
     const data: FrameData = { globals, meshes: [], lines: [], groups: [] };
 
     for (const m of u.meshes) {
+      if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
-      if (m.bound / Math.max(d, 1) < 2e-8) continue; // sub-pixel
+      if (m.bound / Math.max(d, 1e-18) < 2e-8) continue; // sub-pixel
       let s = 1;
       let p = rel;
       if (d > CAP) {
@@ -610,12 +610,13 @@ async function start(): Promise<void> {
     }
 
     u.groups.forEach((g, i) => {
+      if (g.hideBelow !== undefined && cam.dist < g.hideBelow) return;
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
       const gd = new Float32Array(4);
       gd[0] = rel[0];
       gd[1] = rel[1];
       gd[2] = rel[2];
-      gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1), 1) : 1;
+      gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
       data.groups.push({ index: groupIndex[i], data: gd });
     });
 

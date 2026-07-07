@@ -3,7 +3,7 @@
 // actual Sun-galactic-center distance. This is the content that later gets
 // replaced by Gaia / SDSS / NASA catalogs — the frame tree stays the same.
 
-import { V3, mulberry32, gaussian } from './math';
+import { V3, len, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
@@ -20,6 +20,9 @@ export interface MeshObj {
   rim: number; // atmosphere rim strength
   gridScale: number; // local units -> meters (ground grid)
   rot?: [V3, V3, V3]; // local axis basis (columns: X, Y, Z -> world), e.g. surface tangent frame
+  // The inward journey dives *through* solid objects; each scale layer hides
+  // once the camera's focus distance drops below this (the film's cross-fade).
+  hideBelow?: number;
 }
 
 export interface PointGroup {
@@ -30,6 +33,7 @@ export interface PointGroup {
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
   fadeExtent?: number;
+  hideBelow?: number; // skip entirely below this focus distance (see MeshObj)
 }
 export interface OrbitLine {
   frame: Frame;
@@ -200,7 +204,11 @@ export function buildUniverse(): Universe {
     orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
     const spriteFloatBase = planetSprites.length * 8;
     if (name === 'earth') {
-      meshes.push(sphere(earthFrame, [0, 0, 0], r, color, matId, 1.0));
+      const earthMesh = sphere(earthFrame, [0, 0, 0], r, color, matId, 1.0);
+      // Below the weave, even Earth steps aside: the micro stages float in
+      // black space (its surface 1.5 m away would otherwise wash them out).
+      earthMesh.hideBelow = 2e-3;
+      meshes.push(earthMesh);
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
       bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
       return;
@@ -249,6 +257,7 @@ export function buildUniverse(): Universe {
     rim: 0,
     gridScale: 60000,
     rot: siteBasis,
+    hideBelow: 2e-3, // the macro world fades once the dive passes the weave
   });
   const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
@@ -262,10 +271,242 @@ export function buildUniverse(): Universe {
     rim: 0,
     gridScale: 0,
     rot: siteBasis,
+    hideBelow: 2e-3,
   });
   meshes.push(prop(0, 0.012, 0, [0.5, 0.012, 0.5], [0.9, 0.9, 0.9], 7)); // THE one-meter blanket
   meshes.push(prop(0.22, 0.045, 0.28, [0.1, 0.015, 0.15], [0.35, 0.12, 0.08])); // the book
   meshes.push(prop(-0.28, 0.11, -0.12, [0.17, 0.11, 0.12], [0.5, 0.34, 0.16])); // the basket
+
+  // ---- The inward journey (Powers of Ten, second act): one continuous
+  // ---- straight dive through a single point on the blanket, 1 m -> 1e-16 m.
+  // Every stage is centered on the micro frame's origin — a spot on a red
+  // thread — so the descent is a pure zoom. All of it is illustrative, not
+  // measured: sizes are right, arrangements are stylized.
+  const micro = new Frame('micro', surface, sitePos(0.12, 0.0245, 0.08));
+  const microTargets: Target[] = [];
+  {
+    // Local (east, up, north) placement inside the micro frame, with an
+    // optionally tilted basis for fibril jitter.
+    const tilt = (a: number, b: number): [V3, V3, V3] => {
+      const [E, U, N] = siteBasis;
+      const ca = Math.cos(a),
+        sa = Math.sin(a);
+      const e1: V3 = [E[0] * ca + N[0] * sa, E[1] * ca + N[1] * sa, E[2] * ca + N[2] * sa];
+      const n1: V3 = [N[0] * ca - E[0] * sa, N[1] * ca - E[1] * sa, N[2] * ca - E[2] * sa];
+      const cb = Math.cos(b),
+        sb = Math.sin(b);
+      const u2: V3 = [U[0] * cb + n1[0] * sb, U[1] * cb + n1[1] * sb, U[2] * cb + n1[2] * sb];
+      const n2: V3 = [n1[0] * cb - U[0] * sb, n1[1] * cb - U[1] * sb, n1[2] * cb - U[2] * sb];
+      return [e1, u2, n2];
+    };
+    const microPos = (e: number, u: number, n: number): V3 => [
+      east[0] * e + up[0] * u + north[0] * n,
+      east[1] * e + up[1] * u + north[1] * n,
+      east[2] * e + up[2] * u + north[2] * n,
+    ];
+    const mprop = (
+      e: number,
+      u: number,
+      n: number,
+      size: V3,
+      color: [number, number, number],
+      hideBelow: number,
+      rot: [V3, V3, V3] = siteBasis,
+    ): MeshObj => ({
+      frame: micro,
+      pos: microPos(e, u, n),
+      mesh: 'box',
+      size,
+      bound: Math.max(...size) * 1.8,
+      color,
+      emissive: 0,
+      matId: 6,
+      rim: 0,
+      gridScale: 0,
+      rot,
+      hideBelow,
+    });
+    const msphere = (pos: V3, r: number, color: [number, number, number], hideBelow?: number): MeshObj => ({
+      frame: micro,
+      pos,
+      mesh: 'sphere',
+      size: [r, r, r],
+      bound: r,
+      color,
+      emissive: 0,
+      matId: 6,
+      rim: 0,
+      gridScale: 0,
+      hideBelow,
+    });
+
+    // 1e-2: the weave — warp and weft threads of the red cell.
+    for (let i = -3; i <= 3; i++) {
+      const shade = 0.62 + 0.14 * rand();
+      meshes.push(mprop(0, -0.0003, i * 0.00068, [0.0225, 0.00028, 0.00032], [shade, 0.09, 0.07], 2e-3));
+      meshes.push(
+        mprop(i * 0.00068 + 0.00034, 0.00015, 0, [0.00032, 0.00028, 0.0225], [shade + 0.08, 0.13, 0.1], 2e-3),
+      );
+    }
+
+    // 1e-4: the fiber — a loose bundle of cotton fibrils.
+    for (let i = 0; i < 12; i++) {
+      const th = i === 0 ? 8e-6 : 4e-6 + rand() * 6e-6;
+      const off: [number, number] = i === 0 ? [0, 0] : [gaussian(rand) * 2.5e-5, gaussian(rand) * 2.5e-5];
+      meshes.push(
+        mprop(
+          0,
+          off[0],
+          off[1],
+          [2e-4, th, th],
+          [0.88, 0.5 + rand() * 0.12, 0.45],
+          6e-8,
+          tilt((rand() - 0.5) * 0.3, (rand() - 0.5) * 0.2),
+        ),
+      );
+    }
+
+    // 1e-9: cellulose — a stylized chain of glucose rings (CPK colors). The
+    // atom nearest the origin is removed and becomes the anchor carbon.
+    {
+      const atoms: { p: V3; r: number; c: [number, number, number] }[] = [];
+      for (let k = -5; k < 5; k++) {
+        const cx = (k + 0.5) * 5.2e-10;
+        const tiltU = k % 2 === 0 ? 3e-11 : -3e-11;
+        for (let j = 0; j < 6; j++) {
+          const a = (j / 6) * Math.PI * 2 + (k % 2 === 0 ? 0 : 0.5);
+          const e = cx + Math.cos(a) * 1.45e-10;
+          const n = Math.sin(a) * 1.45e-10;
+          const isO = j === 0;
+          atoms.push({
+            p: microPos(e, tiltU * Math.sin(a), n),
+            r: isO ? 1.4e-10 : 1.6e-10,
+            c: isO ? [0.8, 0.25, 0.2] : [0.35, 0.37, 0.42],
+          });
+        }
+        atoms.push({ p: microPos(cx + 2.6e-10, 0, 1.6e-10), r: 1.35e-10, c: [0.8, 0.25, 0.2] }); // bridge O
+        atoms.push({ p: microPos(cx - 0.7e-10, 1.6e-10, -1.2e-10), r: 1.1e-10, c: [0.92, 0.92, 0.95] });
+        atoms.push({ p: microPos(cx + 0.9e-10, -1.6e-10, 0.9e-10), r: 1.1e-10, c: [0.92, 0.92, 0.95] });
+      }
+      // Shift the chain so the nearest carbon sits exactly on the dive axis.
+      let anchor = 0;
+      atoms.forEach((a, i) => {
+        if (len(a.p) < len(atoms[anchor].p)) anchor = i;
+      });
+      const shift = atoms[anchor].p;
+      // Neighbors vanish below the atom hand-off so the electron cloud stands
+      // alone — the film isolates each subject the same way.
+      atoms.forEach((a, i) => {
+        if (i === anchor) return;
+        meshes.push(msphere([a.p[0] - shift[0], a.p[1] - shift[1], a.p[2] - shift[2]], a.r, a.c, 2.5e-9));
+      });
+    }
+
+    // 1e-10: the carbon atom — a two-shell electron cloud of point sprites
+    // around a nucleus marker. Fades out above molecular scales.
+    {
+      const n1 = 600,
+        n2 = 2200;
+      const d = new Float32Array((n1 + n2 + 1) * 8);
+      let o = 0;
+      const puff = (rr: number, spread: number, inten: number) => {
+        const rad = rr + gaussian(rand) * spread;
+        const w = rand() * 2 - 1,
+          ph = rand() * Math.PI * 2;
+        const s = Math.sqrt(Math.max(1 - w * w, 0));
+        const p = microPos(rad * s * Math.cos(ph), rad * w, rad * s * Math.sin(ph));
+        d[o] = p[0];
+        d[o + 1] = p[1];
+        d[o + 2] = p[2];
+        d[o + 3] = 1.6e-12;
+        d[o + 4] = 0.5;
+        d[o + 5] = 0.72;
+        d[o + 6] = 1.0;
+        d[o + 7] = inten;
+        o += 8;
+      };
+      for (let i = 0; i < n1; i++) puff(2.6e-11, 6e-12, 0.34);
+      for (let i = 0; i < n2; i++) puff(6.4e-11, 1.4e-11, 0.16);
+      // nucleus marker: a bright point revealing where the next stage lives
+      d[o] = 0;
+      d[o + 1] = 0;
+      d[o + 2] = 0;
+      d[o + 3] = 4e-14;
+      d[o + 4] = 1.0;
+      d[o + 5] = 0.95;
+      d[o + 6] = 0.85;
+      d[o + 7] = 1.6;
+      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 8e-10, hideBelow: 5e-13 });
+    }
+
+    // 1e-14: the carbon nucleus — 6 protons + 6 neutrons; the one at the
+    // origin is the dive target and is rendered as quarks, not a shell.
+    for (let i = 1; i < 12; i++) {
+      const a = i * 2.39996,
+        w = -1 + (2 * i) / 11;
+      const s = Math.sqrt(Math.max(1 - w * w, 0)) * 1.8e-15;
+      const p = microPos(s * Math.cos(a), w * 1.8e-15, s * Math.sin(a));
+      meshes.push(msphere(p, 8.8e-16, i % 2 === 0 ? [0.85, 0.42, 0.38] : [0.58, 0.58, 0.62], 8e-15));
+    }
+
+    // 1e-15: inside the proton — three quarks and a gluon haze. The edge of
+    // the known.
+    {
+      const d = new Float32Array((3 + 70) * 8);
+      let o = 0;
+      const q = (e: number, n: number, c: [number, number, number]) => {
+        const p = microPos(e, 0, n);
+        d[o] = p[0];
+        d[o + 1] = p[1];
+        d[o + 2] = p[2];
+        d[o + 3] = 1.4e-16;
+        d[o + 4] = c[0];
+        d[o + 5] = c[1];
+        d[o + 6] = c[2];
+        d[o + 7] = 1.3;
+        o += 8;
+      };
+      q(4e-16, 0, [1.0, 0.62, 0.3]);
+      q(-2e-16, 3.5e-16, [1.0, 0.62, 0.3]);
+      q(-2e-16, -3.5e-16, [0.45, 0.62, 1.0]);
+      for (let i = 0; i < 70; i++) {
+        const p = microPos(gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16);
+        d[o] = p[0];
+        d[o + 1] = p[1];
+        d[o + 2] = p[2];
+        d[o + 3] = 8e-17;
+        d[o + 4] = 1.0;
+        d[o + 5] = 0.8;
+        d[o + 6] = 0.55;
+        d[o + 7] = 0.12;
+        o += 8;
+      }
+      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 2.5e-14 });
+    }
+
+    // The zoom chain, downward. All stages share the dive axis and the site
+    // basis; enter/exit thresholds carry the usual hysteresis.
+    const stage = (slug: string, name: string, dist: number, parent: string, exit: number): Target => ({
+      name,
+      slug,
+      frame: micro,
+      pos: [0, 0, 0],
+      dist,
+      pitch: 0.25,
+      basis: siteBasis,
+      parent,
+      exit,
+      hidden: true,
+    });
+    microTargets.push(
+      { ...stage('weave', 'THE WEAVE', 0.02, 'surface', 0.55), child: 'fiber', enter: 2.2e-3 },
+      { ...stage('fiber', 'THE FIBER', 4.5e-4, 'weave', 3.5e-3), child: 'molecule', enter: 5e-8 },
+      { ...stage('molecule', 'CELLULOSE', 4.5e-9, 'fiber', 8e-8), child: 'atom', enter: 3.5e-9 },
+      { ...stage('atom', 'CARBON', 4.5e-10, 'molecule', 6e-9), child: 'nucleus', enter: 4.5e-13 },
+      { ...stage('nucleus', 'THE NUCLEUS', 2.8e-14, 'atom', 7e-13), child: 'proton', enter: 9e-15 },
+      stage('proton', 'THE PROTON', 3.5e-15, 'nucleus', 1.4e-14),
+    );
+  }
 
   // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
   // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
@@ -545,9 +786,12 @@ export function buildUniverse(): Universe {
       pitch: 0.25,
       parent: 'earth',
       exit: 5.5e7,
+      child: 'weave',
+      enter: 0.35,
       basis: siteBasis,
     },
     // Hidden targets stay after the visible eight so keys 1-8 remain stable.
+    ...microTargets,
     ...planetTargets,
     ...starTargets,
   ];
