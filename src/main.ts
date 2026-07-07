@@ -38,6 +38,8 @@ interface Flight {
   logD1: number;
   logPeak: number;
   pitch0: number;
+  yaw0: number;
+  yawDelta: number; // shortest-arc turn toward the target's arrival yaw (0 if none)
   t: number;
   dur: number;
   switched: boolean;
@@ -91,7 +93,13 @@ async function start(): Promise<void> {
   // A retarget changes what scrolling converges on without moving the camera:
   // the camera pose is preserved exactly while the focus glides to the new
   // anchor, and dist/yaw/pitch are re-derived from the fixed camera position.
+  // Exit hand-offs are disarmed until the camera has actually been closer
+  // than the exit threshold; otherwise clicking a far-away object would
+  // retarget and instantly bounce focus back up the chain.
+  let exitArmed = false;
+
   function retargetTo(i: number): void {
+    if (i === activeTarget) return;
     const t = u.targets[i];
     const camPos = add(cam.focus, scale(camDir(), cam.dist));
     const focusInNew = reexpress(cam.frame, cam.focus, t.frame);
@@ -103,6 +111,7 @@ async function start(): Promise<void> {
     retarget = { to: i, from: focusInNew, t: 0 };
     activeTarget = i;
     focusName = t.name;
+    exitArmed = false;
   }
 
   function updateRetarget(dt: number): void {
@@ -127,14 +136,52 @@ async function start(): Promise<void> {
     const t = u.targets[activeTarget];
     if (t.child !== undefined && t.enter !== undefined && cam.dist < t.enter) {
       retargetTo(bySlug.get(t.child)!);
-    } else if (t.parent !== undefined && t.exit !== undefined && cam.dist > t.exit) {
-      retargetTo(bySlug.get(t.parent)!);
+    } else if (t.parent !== undefined && t.exit !== undefined) {
+      if (!exitArmed) {
+        if (cam.dist < t.exit * 0.7) exitArmed = true;
+      } else if (cam.dist > t.exit) {
+        retargetTo(bySlug.get(t.parent)!);
+      }
     }
+  }
+
+  // ---- click-to-focus: pick the target whose direction best matches the
+  // ---- ray through the clicked pixel (tolerance-padded angular hit test)
+  function pickAt(px: number, py: number): number {
+    const w = canvas.clientWidth,
+      h = canvas.clientHeight;
+    const tanF = Math.tan(FOV / 2);
+    const { right, up, fwd } = viewRotation(cam.yaw, cam.pitch);
+    const ray = norm(
+      add(add(scale(right, ((px / w) * 2 - 1) * tanF * (w / h)), scale(up, (1 - (py / h) * 2) * tanF)), fwd),
+    );
+    const camPos = add(cam.focus, scale(camDir(), cam.dist));
+    const tolAngle = (12 * 2 * tanF) / h; // ~12 px of slack
+    let best = -1;
+    let bestScore = 1;
+    u.targets.forEach((t, i) => {
+      if (t.radius === undefined || i === activeTarget) return;
+      const rel = relPos(t.frame, t.pos, cam.frame, camPos);
+      const d = len(rel);
+      if (d < t.radius * 1.5) return; // camera is inside/next to it
+      const cosA = (rel[0] * ray[0] + rel[1] * ray[1] + rel[2] * ray[2]) / d;
+      if (cosA <= 0) return;
+      const angle = Math.acos(Math.min(cosA, 1));
+      const lim = Math.max(Math.atan(t.radius / d) * 1.15, tolAngle);
+      if (angle > lim) return;
+      const score = angle / lim; // prefer the object you aimed at most precisely
+      if (score < bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    });
+    return best;
   }
 
   function flyTo(i: number): void {
     const t = u.targets[i];
     retarget = null;
+    exitArmed = false;
     activeTarget = i;
     focusName = t.name;
     const sep = len(relPos(t.frame, t.pos, cam.frame, cam.focus));
@@ -150,6 +197,9 @@ async function start(): Promise<void> {
       logPeak: Math.log(peak),
       to: t,
       pitch0: cam.pitch,
+      yaw0: cam.yaw,
+      yawDelta:
+        t.yaw === undefined ? 0 : ((((t.yaw - cam.yaw) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
       t: 0,
       dur: clamp(1.5 + decades * 0.28, 2, 9),
       switched: false,
@@ -160,10 +210,12 @@ async function start(): Promise<void> {
   function jumpTo(i: number): void {
     const t = u.targets[i];
     retarget = null;
+    exitArmed = false;
     cam.frame = t.frame;
     cam.focus = [...t.pos] as V3;
     cam.dist = t.dist;
     cam.pitch = t.pitch;
+    if (t.yaw !== undefined) cam.yaw = t.yaw;
     activeTarget = i;
     focusName = t.name;
   }
@@ -187,20 +239,47 @@ async function start(): Promise<void> {
   );
 
   // ---- input ----
+  // A press that barely moves is a click (focus what's under the cursor);
+  // anything longer or farther is an orbit drag. Double-click flies there.
   let dragging = false;
+  let pressed: { x: number; y: number; at: number } | null = null;
+  let dragDist = 0;
+
+  function clickFocus(px: number, py: number): void {
+    const i = pickAt(px, py);
+    if (i < 0) return;
+    flight = null;
+    touring = false;
+    retargetTo(i);
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
     dragging = true;
+    dragDist = 0;
+    pressed = { x: e.offsetX, y: e.offsetY, at: performance.now() };
     canvas.classList.add('dragging');
     canvas.setPointerCapture(e.pointerId);
   });
-  canvas.addEventListener('pointerup', () => {
+  canvas.addEventListener('pointerup', (e) => {
     dragging = false;
     canvas.classList.remove('dragging');
+    if (pressed && dragDist < 5 && performance.now() - pressed.at < 500) {
+      clickFocus(e.offsetX, e.offsetY);
+    }
+    pressed = null;
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
+    dragDist += Math.abs(e.movementX) + Math.abs(e.movementY);
+    if (dragDist < 5) return; // still within click slop — don't jitter the orbit
     cam.yaw -= e.movementX * 0.004;
     cam.pitch = clamp(cam.pitch + e.movementY * 0.004, -1.53, 1.53);
+  });
+  canvas.addEventListener('dblclick', (e) => {
+    const i = pickAt(e.offsetX, e.offsetY);
+    if (i < 0) return;
+    touring = false;
+    flyTo(i);
   });
   canvas.addEventListener(
     'wheel',
@@ -236,6 +315,11 @@ async function start(): Promise<void> {
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
+  // ?click=fx,fy — synthetic click at fractional screen coords, fired once
+  // after a few frames. Exists so headless tests can exercise picking.
+  let pendingClick: number[] | null = (params.get('click') ?? '').split(',').map(parseFloat);
+  if (pendingClick.length !== 2 || pendingClick.some((v) => !Number.isFinite(v))) pendingClick = null;
+  let frameCount = 0;
 
   // ---- resize ----
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -269,6 +353,7 @@ async function start(): Promise<void> {
     const t = clamp(f.t, 0, 1);
     const pT = smootherstep(t);
     cam.pitch = f.pitch0 + (f.to.pitch - f.pitch0) * pT;
+    cam.yaw = f.yaw0 + f.yawDelta * pT;
 
     if (t < 0.42) {
       // phase A: zoom out, focus fixed
@@ -310,6 +395,11 @@ async function start(): Promise<void> {
   function frame(now: number): void {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
+    frameCount++;
+    if (pendingClick && frameCount > 5) {
+      clickFocus(pendingClick[0] * canvas.clientWidth, pendingClick[1] * canvas.clientHeight);
+      pendingClick = null;
+    }
     updateFlight(dt);
     updateRetarget(dt);
     updateAutoTarget();

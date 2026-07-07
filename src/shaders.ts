@@ -94,7 +94,7 @@ struct FOut {
   @builtin(frag_depth) depth : f32,
 };
 
-@fragment fn fs(in : VOut, @builtin(front_facing) front : bool) -> FOut {
+@fragment fn fs(in : VOut) -> FOut {
   let matId = i32(O.sun.w + 0.5);
   let t = G.params.z;
   var base = O.color.rgb;
@@ -135,8 +135,11 @@ struct FOut {
     base = base * (1.0 - 0.22 * max(g1x, g1z) * f1 - 0.3 * max(g10x, g10z) * f10);
   }
 
+  // All meshes carry correct outward normals; do NOT flip on front_facing —
+  // our sphere/box winding is CW in framebuffer space, so the outside is
+  // rasterized as "back" and flipping would point every normal inward
+  // (which made planets render black on their sunlit side).
   var n = normalize(in.nrm);
-  if (!front) { n = -n; }
   let L = O.sun.xyz;
   let dif = max(dot(n, L), 0.0);
   var amb = 0.05;

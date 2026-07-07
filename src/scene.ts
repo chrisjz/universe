@@ -49,6 +49,8 @@ export interface Target {
   parent?: string;
   exit?: number;
   hidden?: boolean; // reachable via URL / flights only, no HUD button
+  radius?: number; // physical bound radius in meters; presence makes it clickable
+  yaw?: number; // arrival yaw for flights/jumps (e.g. face a planet's sunlit side)
 }
 
 export interface Universe {
@@ -63,6 +65,8 @@ export interface Universe {
 const AU = 1.496e11;
 const KPC = 3.086e19;
 const R_SUN = 6.957e8;
+
+const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 // B-V color index -> approximate RGB via blackbody temperature.
 function bvToRgb(bv: number): [number, number, number] {
@@ -134,6 +138,7 @@ export function buildUniverse(): Universe {
     ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3],
   ];
   const planetSprites: number[][] = [];
+  const planetTargets: Target[] = [];
   planets.forEach(([name, a, r, color, matId], i) => {
     orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
     if (name === 'earth') {
@@ -145,6 +150,20 @@ export function buildUniverse(): Universe {
     const pos: V3 = [a * Math.cos(ang), 0, a * Math.sin(ang)];
     meshes.push(sphere(sunFrame, pos, r, color, matId, matId === 3 ? 0.4 : 0));
     planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.28]);
+    planetTargets.push({
+      name: name.toUpperCase(),
+      slug: name,
+      frame: sunFrame,
+      pos,
+      dist: 28 * r,
+      pitch: 0.15,
+      // Arrive on the sunlit side: camera offset direction ≈ planet -> sun.
+      yaw: Math.atan2(-pos[0], -pos[2]),
+      parent: 'system',
+      exit: Math.max(3 * a, 1e12),
+      radius: r,
+      hidden: true,
+    });
   });
 
   // Moon: real semi-major axis & radius.
@@ -221,13 +240,15 @@ export function buildUniverse(): Universe {
       ['Betelgeuse', { slug: 'betelgeuse', radius: 764 * R_SUN }],
       ['Polaris', { slug: 'polaris', radius: 37.5 * R_SUN }],
     ]);
+    const usedSlugs = new Set<string>();
     BRIGHT_STARS.forEach(([x, y, z, mag, ci, lum, name], i) => {
       const o = i * 8;
       const c = bvToRgb(ci);
+      const estRadius = Math.min(Math.max(R_SUN * Math.sqrt(lum), 5e8), 2e11);
       d[o] = x;
       d[o + 1] = y;
       d[o + 2] = z;
-      d[o + 3] = Math.min(Math.max(R_SUN * Math.sqrt(lum), 5e8), 2e11);
+      d[o + 3] = estRadius;
       d[o + 4] = c[0];
       d[o + 5] = c[1];
       d[o + 6] = c[2];
@@ -246,15 +267,25 @@ export function buildUniverse(): Universe {
           rim: 0,
           gridScale: 0,
         });
+      }
+      // Every named star is a destination: clickable, and a ?goto= slug.
+      if (name) {
+        let slug = f?.slug ?? slugify(name);
+        if (usedSlugs.has(slug)) slug = `${slug}-${i}`;
+        usedSlugs.add(slug);
+        const radius = f?.radius ?? estRadius;
         starTargets.push({
           name: name.toUpperCase(),
-          slug: f.slug,
+          slug,
           frame: sunFrame,
           pos: [x, y, z],
-          dist: 40 * f.radius,
+          dist: 40 * radius,
           pitch: 0.1,
           parent: 'galaxy',
-          exit: 6e17,
+          // Far stars need a proportionally far exit, or clicking one from
+          // across the neighborhood would immediately hand focus back.
+          exit: Math.max(6e17, 3 * Math.hypot(x, y, z)),
+          radius,
           hidden: true,
         });
       }
@@ -433,6 +464,7 @@ export function buildUniverse(): Universe {
       pitch: 0.1,
       parent: 'system',
       exit: 5e10,
+      radius: 6.957e8,
     },
     {
       name: 'EARTH',
@@ -441,10 +473,12 @@ export function buildUniverse(): Universe {
       pos: [0, 0, 0],
       dist: 4.2e7,
       pitch: 0.15,
+      yaw: Math.atan2(-earthPos[0], -earthPos[2]),
       parent: 'system',
       exit: 9.9e11,
       child: 'surface',
       enter: 2.2e7,
+      radius: R_EARTH,
     },
     {
       name: 'THE MOON',
@@ -453,8 +487,10 @@ export function buildUniverse(): Universe {
       pos: moonPos,
       dist: 8e6,
       pitch: 0.1,
+      yaw: Math.atan2(-earthPos[0], -earthPos[2]),
       parent: 'earth',
       exit: 1.2e8,
+      radius: 1.737e6,
     },
     {
       name: 'SURFACE · 1 METER',
@@ -466,7 +502,9 @@ export function buildUniverse(): Universe {
       parent: 'earth',
       exit: 5.5e7,
     },
-    ...starTargets, // hidden: kept after the visible eight so keys 1-8 stay stable
+    // Hidden targets stay after the visible eight so keys 1-8 remain stable.
+    ...planetTargets,
+    ...starTargets,
   ];
 
   return { root, sunFrame, meshes, groups, orbits, targets };

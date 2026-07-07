@@ -38,20 +38,23 @@ npm run dev
 
 Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 
-| Input      | Action                                                                       |
-| ---------- | ---------------------------------------------------------------------------- |
-| **scroll** | seamless zoom — all the way down, all the way back up                        |
-| **drag**   | orbit the current focus                                                      |
-| **1–8**    | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface) |
-| **T**      | grand tour: an automated flight through every scale                          |
-| **Esc**    | cancel the current flight                                                    |
+| Input       | Action                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| **scroll**  | seamless zoom — all the way down, all the way back up                                                          |
+| **click**   | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there |
+| **2×click** | fly to what's under the cursor                                                                                 |
+| **drag**    | orbit the current focus                                                                                        |
+| **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                   |
+| **T**       | grand tour: an automated flight through every scale                                                            |
+| **Esc**     | cancel the current flight                                                                                      |
 
 Or skip the install: the latest build is live at
 **<https://chrisjz.github.io/universe/>**.
 
 Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/universe/?goto=galaxy)
-jumps straight to the Milky Way, and `&dist=6e20` sets the camera distance in
-meters — deep links into a 10²⁷-meter scene.
+jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/universe/?goto=jupiter)
+to any planet, and `&dist=6e20` sets the camera distance in meters — deep
+links into a 10²⁷-meter scene.
 
 The sky is real: the 300 brightest stars come from the HYG catalog with their
 true 3D positions, colors derived from their measured B–V indices, and
@@ -107,10 +110,10 @@ src/
 - [x] Scale engine: 10²⁷ m → 1 m in one seamless scene
 - [x] Scroll-zoom auto-retargeting (zoom _toward what's next_, hands-free)
 - [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
+- [x] Click-to-focus: planets, moons, and every named star are clickable destinations
 - [ ] Full Gaia DR3 star catalog, streamed as hierarchical LOD point tiles
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
 - [ ] Earth terrain via map tiles at the bottom of the zoom
-- [ ] Click-to-focus on arbitrary objects (planets, stars, galaxies)
 - [ ] Time: orbital motion, cosmic time scrubbing
 - [ ] Honest rendering seam: visually distinguish measured vs procedural
 
