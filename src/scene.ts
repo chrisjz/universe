@@ -3,7 +3,7 @@
 // actual Sun-galactic-center distance. This is the content that later gets
 // replaced by Gaia / SDSS / NASA catalogs — the frame tree stays the same.
 
-import { V3, len, mulberry32, gaussian } from './math';
+import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
@@ -90,6 +90,7 @@ export interface Universe {
   targets: Target[];
   bodies: OrbitalBody[];
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
+  orientEarth: (theta: number) => void; // diurnal rotation, θ around the planet's axis
 }
 
 const AU = 1.496e11;
@@ -142,27 +143,34 @@ export function buildUniverse(): Universe {
   const R_EARTH = 6.371e6;
 
   // The landing site: the Chicago lakefront where the Eames' "Powers of Ten"
-  // (1977) opens on a picnic blanket. Earth is static this era (no diurnal
-  // rotation yet), so lat/long anchors the site to the Blue Marble texture:
-  // dir(lat, lon) is the exact inverse of the shader's equirectangular UV.
+  // (1977) opens on a picnic blanket. dir(lat, lon) is the exact inverse of
+  // the shader's equirectangular UV in EARTH-FIXED coordinates; the diurnal
+  // rotation orientEarth(θ) spins that whole earth-fixed system — mesh
+  // texture, site frame, site basis, and every anchored object — in lockstep.
   const DEG = Math.PI / 180;
   const SITE_LAT = 41.8781 * DEG;
   const SITE_LON = -87.6298 * DEG;
-  const up: V3 = [
+  // Earth-fixed (θ = 0) basis; the live basis below is rotated in place.
+  const up0: V3 = [
     Math.cos(SITE_LAT) * Math.cos(SITE_LON),
     Math.sin(SITE_LAT),
     -Math.cos(SITE_LAT) * Math.sin(SITE_LON),
   ];
-  const east: V3 = ((): V3 => {
-    const e: V3 = [up[2], 0, -up[0]];
+  const east0: V3 = ((): V3 => {
+    const e: V3 = [up0[2], 0, -up0[0]];
     const l = Math.hypot(e[0], e[2]);
     return [e[0] / l, 0, e[2] / l];
   })();
-  const north: V3 = [
-    up[1] * east[2] - up[2] * east[1],
-    up[2] * east[0] - up[0] * east[2],
-    up[0] * east[1] - up[1] * east[0],
+  const north0: V3 = [
+    up0[1] * east0[2] - up0[2] * east0[1],
+    up0[2] * east0[0] - up0[0] * east0[2],
+    up0[0] * east0[1] - up0[1] * east0[0],
   ];
+  // Live (world-oriented) basis — mutated in place by orientEarth, so every
+  // reference (targets, mesh rot fields, the camera's orbit basis) follows.
+  const east: V3 = [...east0];
+  const up: V3 = [...up0];
+  const north: V3 = [...north0];
   const siteBasis: [V3, V3, V3] = [east, up, north];
   // Frame origin 1.5 m above the sphere so the ground plane never z-fights
   // the coarse planet mesh.
@@ -177,6 +185,53 @@ export function buildUniverse(): Universe {
     east[1] * e + up[1] * u + north[1] * n,
     east[2] * e + up[2] * u + north[2] * n,
   ];
+  // Everything placed at the site registers its (east, up, north) coords so
+  // orientEarth can recompute its world-frame vector as the planet turns.
+  const anchored: { vec: V3; eun: V3 }[] = [];
+  anchored.push({ vec: surface.offset, eun: [0, R_EARTH + 1.5, 0] });
+  const anchor = (eun: V3): V3 => {
+    const vec = sitePos(eun[0], eun[1], eun[2]);
+    anchored.push({ vec, eun });
+    return vec;
+  };
+  // Tilted variants of the site basis (fibril jitter) re-derived on rotation.
+  const tiltedBases: { basis: [V3, V3, V3]; a: number; b: number }[] = [];
+  let orientTilts = (): void => {};
+  // Earth's mesh orientation (identity at θ = 0), mutated by orientEarth.
+  const earthRot: [V3, V3, V3] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+
+  // Diurnal rotation: spin the earth-fixed system by θ around the planet's
+  // axis (+Y — no axial tilt yet). One call re-orients the globe texture, the
+  // site frame offset, the live site basis, every anchored object, and the
+  // fibril bases, so the camera and the picnic ride the turning planet.
+  const orientEarth = (theta: number): void => {
+    const c = Math.cos(theta),
+      s = Math.sin(theta);
+    const rot = (v0: V3, out: V3): void => {
+      const x = v0[0] * c + v0[2] * s;
+      const z = -v0[0] * s + v0[2] * c;
+      out[0] = x;
+      out[1] = v0[1];
+      out[2] = z;
+    };
+    rot(east0, east);
+    rot(up0, up);
+    rot(north0, north);
+    earthRot[0][0] = c;
+    earthRot[0][2] = -s;
+    earthRot[2][0] = s;
+    earthRot[2][2] = c;
+    orientTilts();
+    for (const a of anchored) {
+      a.vec[0] = east[0] * a.eun[0] + up[0] * a.eun[1] + north[0] * a.eun[2];
+      a.vec[1] = east[1] * a.eun[0] + up[1] * a.eun[1] + north[1] * a.eun[2];
+      a.vec[2] = east[2] * a.eun[0] + up[2] * a.eun[1] + north[2] * a.eun[2];
+    }
+  };
 
   // ---- Sun & planets (real radii and orbits) ----
   const sphere = (
@@ -213,6 +268,8 @@ export function buildUniverse(): Universe {
       // Below the weave, even Earth steps aside: the micro stages float in
       // black space (its surface 1.5 m away would otherwise wash them out).
       earthMesh.hideBelow = 2e-3;
+      // Diurnal rotation spins this basis (and with it the Blue Marble UVs).
+      earthMesh.rot = earthRot;
       meshes.push(earthMesh);
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
       bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
@@ -252,7 +309,7 @@ export function buildUniverse(): Universe {
   // ---- by the lake, Lake Michigan glinting to the east ----
   meshes.push({
     frame: surface,
-    pos: sitePos(0, -0.02, 0),
+    pos: anchor([0, -0.02, 0]),
     mesh: 'disk',
     size: [60000, 1, 60000],
     bound: 60000,
@@ -266,7 +323,7 @@ export function buildUniverse(): Universe {
   });
   const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
-    pos: sitePos(e, u, n),
+    pos: anchor([e, u, n]),
     mesh: 'box',
     size,
     bound: Math.max(...size) * 1.8,
@@ -287,12 +344,12 @@ export function buildUniverse(): Universe {
   // Every stage is centered on the micro frame's origin — a spot on a red
   // thread — so the descent is a pure zoom. All of it is illustrative, not
   // measured: sizes are right, arrangements are stylized.
-  const micro = new Frame('micro', surface, sitePos(0.12, 0.0245, 0.08));
+  const micro = new Frame('micro', surface, anchor([0.12, 0.0245, 0.08]));
   const microTargets: Target[] = [];
   {
-    // Local (east, up, north) placement inside the micro frame, with an
-    // optionally tilted basis for fibril jitter.
-    const tilt = (a: number, b: number): [V3, V3, V3] => {
+    // Optionally tilted site bases (fibril jitter); registered so rotation
+    // re-derives them from the live basis.
+    const computeTilt = (a: number, b: number, out: [V3, V3, V3]): void => {
       const [E, U, N] = siteBasis;
       const ca = Math.cos(a),
         sa = Math.sin(a);
@@ -300,14 +357,31 @@ export function buildUniverse(): Universe {
       const n1: V3 = [N[0] * ca - E[0] * sa, N[1] * ca - E[1] * sa, N[2] * ca - E[2] * sa];
       const cb = Math.cos(b),
         sb = Math.sin(b);
-      const u2: V3 = [U[0] * cb + n1[0] * sb, U[1] * cb + n1[1] * sb, U[2] * cb + n1[2] * sb];
-      const n2: V3 = [n1[0] * cb - U[0] * sb, n1[1] * cb - U[1] * sb, n1[2] * cb - U[2] * sb];
-      return [e1, u2, n2];
+      for (let k = 0; k < 3; k++) {
+        out[0][k] = e1[k];
+        out[1][k] = U[k] * cb + n1[k] * sb;
+        out[2][k] = n1[k] * cb - U[k] * sb;
+      }
     };
-    const microPos = (e: number, u: number, n: number): V3 => [
-      east[0] * e + up[0] * u + north[0] * n,
-      east[1] * e + up[1] * u + north[1] * n,
-      east[2] * e + up[2] * u + north[2] * n,
+    const tilt = (a: number, b: number): [V3, V3, V3] => {
+      const basis: [V3, V3, V3] = [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ];
+      computeTilt(a, b, basis);
+      tiltedBases.push({ basis, a, b });
+      return basis;
+    };
+    orientTilts = () => {
+      for (const t of tiltedBases) computeTilt(t.a, t.b, t.basis);
+    };
+    // Point-group content (electron cloud, gluon haze) is rotationally
+    // symmetric, so its buffers stay baked in the build-time (θ=0) basis.
+    const staticPos = (e: number, u: number, n: number): V3 => [
+      east0[0] * e + up0[0] * u + north0[0] * n,
+      east0[1] * e + up0[1] * u + north0[1] * n,
+      east0[2] * e + up0[2] * u + north0[2] * n,
     ];
     const mprop = (
       e: number,
@@ -319,7 +393,7 @@ export function buildUniverse(): Universe {
       rot: [V3, V3, V3] = siteBasis,
     ): MeshObj => ({
       frame: micro,
-      pos: microPos(e, u, n),
+      pos: anchor([e, u, n]),
       mesh: 'box',
       size,
       bound: Math.max(...size) * 1.8,
@@ -331,9 +405,9 @@ export function buildUniverse(): Universe {
       rot,
       hideBelow,
     });
-    const msphere = (pos: V3, r: number, color: [number, number, number], hideBelow?: number): MeshObj => ({
+    const msphere = (eun: V3, r: number, color: [number, number, number], hideBelow?: number): MeshObj => ({
       frame: micro,
-      pos,
+      pos: anchor(eun),
       mesh: 'sphere',
       size: [r, r, r],
       bound: r,
@@ -374,7 +448,7 @@ export function buildUniverse(): Universe {
     // 1e-9: cellulose — a stylized chain of glucose rings (CPK colors). The
     // atom nearest the origin is removed and becomes the anchor carbon.
     {
-      const atoms: { p: V3; r: number; c: [number, number, number] }[] = [];
+      const atoms: { eun: V3; r: number; c: [number, number, number] }[] = [];
       for (let k = -5; k < 5; k++) {
         const cx = (k + 0.5) * 5.2e-10;
         const tiltU = k % 2 === 0 ? 3e-11 : -3e-11;
@@ -384,26 +458,26 @@ export function buildUniverse(): Universe {
           const n = Math.sin(a) * 1.45e-10;
           const isO = j === 0;
           atoms.push({
-            p: microPos(e, tiltU * Math.sin(a), n),
+            eun: [e, tiltU * Math.sin(a), n],
             r: isO ? 1.4e-10 : 1.6e-10,
             c: isO ? [0.8, 0.25, 0.2] : [0.35, 0.37, 0.42],
           });
         }
-        atoms.push({ p: microPos(cx + 2.6e-10, 0, 1.6e-10), r: 1.35e-10, c: [0.8, 0.25, 0.2] }); // bridge O
-        atoms.push({ p: microPos(cx - 0.7e-10, 1.6e-10, -1.2e-10), r: 1.1e-10, c: [0.92, 0.92, 0.95] });
-        atoms.push({ p: microPos(cx + 0.9e-10, -1.6e-10, 0.9e-10), r: 1.1e-10, c: [0.92, 0.92, 0.95] });
+        atoms.push({ eun: [cx + 2.6e-10, 0, 1.6e-10], r: 1.35e-10, c: [0.8, 0.25, 0.2] }); // bridge O
+        atoms.push({ eun: [cx - 0.7e-10, 1.6e-10, -1.2e-10], r: 1.1e-10, c: [0.92, 0.92, 0.95] });
+        atoms.push({ eun: [cx + 0.9e-10, -1.6e-10, 0.9e-10], r: 1.1e-10, c: [0.92, 0.92, 0.95] });
       }
       // Shift the chain so the nearest carbon sits exactly on the dive axis.
-      let anchor = 0;
+      let anchorIdx = 0;
       atoms.forEach((a, i) => {
-        if (len(a.p) < len(atoms[anchor].p)) anchor = i;
+        if (Math.hypot(...a.eun) < Math.hypot(...atoms[anchorIdx].eun)) anchorIdx = i;
       });
-      const shift = atoms[anchor].p;
+      const shift = atoms[anchorIdx].eun;
       // Neighbors vanish below the atom hand-off so the electron cloud stands
       // alone — the film isolates each subject the same way.
       atoms.forEach((a, i) => {
-        if (i === anchor) return;
-        meshes.push(msphere([a.p[0] - shift[0], a.p[1] - shift[1], a.p[2] - shift[2]], a.r, a.c, 2.5e-9));
+        if (i === anchorIdx) return;
+        meshes.push(msphere([a.eun[0] - shift[0], a.eun[1] - shift[1], a.eun[2] - shift[2]], a.r, a.c, 2.5e-9));
       });
     }
 
@@ -419,7 +493,7 @@ export function buildUniverse(): Universe {
         const w = rand() * 2 - 1,
           ph = rand() * Math.PI * 2;
         const s = Math.sqrt(Math.max(1 - w * w, 0));
-        const p = microPos(rad * s * Math.cos(ph), rad * w, rad * s * Math.sin(ph));
+        const p = staticPos(rad * s * Math.cos(ph), rad * w, rad * s * Math.sin(ph));
         d[o] = p[0];
         d[o + 1] = p[1];
         d[o + 2] = p[2];
@@ -450,8 +524,14 @@ export function buildUniverse(): Universe {
       const a = i * 2.39996,
         w = -1 + (2 * i) / 11;
       const s = Math.sqrt(Math.max(1 - w * w, 0)) * 1.8e-15;
-      const p = microPos(s * Math.cos(a), w * 1.8e-15, s * Math.sin(a));
-      meshes.push(msphere(p, 8.8e-16, i % 2 === 0 ? [0.85, 0.42, 0.38] : [0.58, 0.58, 0.62], 8e-15));
+      meshes.push(
+        msphere(
+          [s * Math.cos(a), w * 1.8e-15, s * Math.sin(a)],
+          8.8e-16,
+          i % 2 === 0 ? [0.85, 0.42, 0.38] : [0.58, 0.58, 0.62],
+          8e-15,
+        ),
+      );
     }
 
     // 1e-15: inside the proton — three quarks and a gluon haze. The edge of
@@ -460,7 +540,7 @@ export function buildUniverse(): Universe {
       const d = new Float32Array((3 + 70) * 8);
       let o = 0;
       const q = (e: number, n: number, c: [number, number, number]) => {
-        const p = microPos(e, 0, n);
+        const p = staticPos(e, 0, n);
         d[o] = p[0];
         d[o + 1] = p[1];
         d[o + 2] = p[2];
@@ -475,7 +555,7 @@ export function buildUniverse(): Universe {
       q(-2e-16, 3.5e-16, [1.0, 0.62, 0.3]);
       q(-2e-16, -3.5e-16, [0.45, 0.62, 1.0]);
       for (let i = 0; i < 70; i++) {
-        const p = microPos(gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16);
+        const p = staticPos(gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16, gaussian(rand) * 3.5e-16);
         d[o] = p[0];
         d[o + 1] = p[1];
         d[o + 2] = p[2];
@@ -790,7 +870,7 @@ export function buildUniverse(): Universe {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
       frame: surface,
-      pos: sitePos(0, 0.3, 0),
+      pos: anchor([0, 0.3, 0]),
       dist: 6,
       pitch: 0.25,
       parent: 'earth',
@@ -805,5 +885,5 @@ export function buildUniverse(): Universe {
     ...starTargets,
   ];
 
-  return { root, sunFrame, meshes, groups, orbits, targets, bodies, planetSpriteGroup };
+  return { root, sunFrame, meshes, groups, orbits, targets, bodies, planetSpriteGroup, orientEarth };
 }

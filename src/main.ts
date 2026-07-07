@@ -108,6 +108,11 @@ async function start(): Promise<void> {
       }
     }
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+    // Diurnal rotation: sidereal rate, with the phase calibrated so the
+    // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
+    // Chicago's picnic gets real local time.
+    const SIDEREAL_DAY_MS = 86164090.5;
+    u.orientEarth((79.54 * Math.PI) / 180 + ((simMs - J2000) / SIDEREAL_DAY_MS) * 2 * Math.PI);
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
