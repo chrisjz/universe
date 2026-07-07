@@ -5,17 +5,20 @@
 
 import {
   V3,
+  Basis,
   add,
   sub,
   scale,
   len,
   norm,
+  dot,
   clamp,
   lerp3,
   smootherstep,
   mat4Perspective,
   mat4Mul,
   viewRotation,
+  orbitDir,
 } from './math';
 import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
@@ -109,6 +112,12 @@ async function start(): Promise<void> {
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
+  // ---- NASA Blue/Black Marble Earth textures (procedural fallback until loaded) ----
+  void renderer.loadEarthTextures(
+    `${import.meta.env.BASE_URL}earth/day.jpg`,
+    `${import.meta.env.BASE_URL}earth/night.jpg`,
+  );
+
   // ---- stream the ATHYG star tiles (brightest chunks first) ----
   let starCount = 0;
   void streamStars(`${import.meta.env.BASE_URL}stars/`, (instances) => {
@@ -135,11 +144,23 @@ async function start(): Promise<void> {
 
   const bySlug = new Map(u.targets.map((t, i) => [t.slug, i]));
 
-  const camDir = (): V3 => [
-    Math.cos(cam.pitch) * Math.sin(cam.yaw),
-    Math.sin(cam.pitch),
-    Math.cos(cam.pitch) * Math.cos(cam.yaw),
-  ];
+  // Camera yaw/pitch live in the active target's orbit basis (tilted surface
+  // sites orbit around their local zenith); no basis means world axes.
+  const activeBasis = (): Basis | undefined => u.targets[activeTarget].basis;
+  const camDir = (): V3 => orbitDir(cam.yaw, cam.pitch, activeBasis());
+
+  // Re-express a world-space focus->camera direction as yaw/pitch in `basis`,
+  // preserving the exact camera pose across a basis switch.
+  function setYawPitchFromDir(dir: V3, basis?: Basis): void {
+    const d: V3 = basis ? [dot(dir, basis[0]), dot(dir, basis[1]), dot(dir, basis[2])] : dir;
+    const l = Math.max(len(d), 1e-12);
+    cam.pitch = clamp(Math.asin(clamp(d[1] / l, -1, 1)), -1.53, 1.53);
+    cam.yaw = Math.atan2(d[0], d[2]);
+  }
+
+  // The rendered horizon roll follows the active basis with smoothing, so
+  // entering/leaving a tilted site rolls the view instead of snapping it.
+  let viewUp: V3 = [0, 1, 0];
 
   // Arrival yaw for sunlit-side targets, computed live (bodies move now).
   function arrivalYaw(t: Target): number | undefined {
@@ -169,6 +190,7 @@ async function start(): Promise<void> {
     cam.dist = clamp(len(rel), MIN_DIST, MAX_DIST);
     retarget = { to: i, from: focusInNew, t: 0 };
     activeTarget = i;
+    setYawPitchFromDir(rel, t.basis); // same world pose, new basis semantics
     focusName = t.name;
     exitArmed = false;
   }
@@ -181,10 +203,8 @@ async function start(): Promise<void> {
     const k = smootherstep(retarget.t);
     cam.focus = lerp3(retarget.from, t.pos, k);
     const rel = sub(camPos, cam.focus);
-    const d = len(rel);
-    cam.dist = clamp(d, MIN_DIST, MAX_DIST);
-    cam.pitch = clamp(Math.asin(clamp(rel[1] / Math.max(d, 1e-9), -1, 1)), -1.53, 1.53);
-    cam.yaw = Math.atan2(rel[0], rel[2]);
+    cam.dist = clamp(len(rel), MIN_DIST, MAX_DIST);
+    setYawPitchFromDir(rel, t.basis);
     if (retarget.t >= 1) retarget = null;
   }
 
@@ -210,7 +230,7 @@ async function start(): Promise<void> {
     const w = canvas.clientWidth,
       h = canvas.clientHeight;
     const tanF = Math.tan(FOV / 2);
-    const { right, up, fwd } = viewRotation(cam.yaw, cam.pitch);
+    const { right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
     const ray = norm(
       add(add(scale(right, ((px / w) * 2 - 1) * tanF * (w / h)), scale(up, (1 - (py / h) * 2) * tanF)), fwd),
     );
@@ -239,9 +259,11 @@ async function start(): Promise<void> {
 
   function flyTo(i: number): void {
     const t = u.targets[i];
+    const worldDir = camDir(); // capture before the basis may switch
     retarget = null;
     exitArmed = false;
     activeTarget = i;
+    setYawPitchFromDir(worldDir, t.basis);
     focusName = t.name;
     const sep = len(relPos(t.frame, t.pos, cam.frame, cam.focus));
     const d0 = cam.dist,
@@ -279,6 +301,7 @@ async function start(): Promise<void> {
     const ay = arrivalYaw(t);
     if (ay !== undefined) cam.yaw = ay;
     activeTarget = i;
+    viewUp = t.basis ? ([...t.basis[1]] as V3) : [0, 1, 0]; // no roll animation on a hard jump
     focusName = t.name;
   }
 
@@ -463,7 +486,9 @@ async function start(): Promise<void> {
 
   // Ground collision only applies at the surface site; resolve its frame by
   // slug (never by array position — hidden targets are appended at the end).
-  const surfaceFrame = u.targets.find((t) => t.slug === 'surface')!.frame;
+  const surfaceTarget = u.targets.find((t) => t.slug === 'surface')!;
+  const surfaceFrame = surfaceTarget.frame;
+  const surfaceUp = surfaceTarget.basis![1];
 
   function frame(now: number): void {
     const dt = Math.min((now - last) / 1000, 0.1);
@@ -487,14 +512,17 @@ async function start(): Promise<void> {
       cam.focus = [t.pos[0], t.pos[1], t.pos[2]];
     }
 
-    const { view, right, up } = viewRotation(cam.yaw, cam.pitch);
-    const dir: V3 = [
-      Math.cos(cam.pitch) * Math.sin(cam.yaw),
-      Math.sin(cam.pitch),
-      Math.cos(cam.pitch) * Math.cos(cam.yaw),
-    ];
-    const camLocal = add(cam.focus, scale(dir, cam.dist));
-    if (cam.frame === surfaceFrame && !flight) camLocal[1] = Math.max(camLocal[1], 0.4);
+    // Smooth the horizon roll toward the active basis (48° tilt at the
+    // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
+    const targetUp = activeBasis()?.[1] ?? ([0, 1, 0] as V3);
+    viewUp = norm(lerp3(viewUp, targetUp, Math.min(1, dt * 3)));
+    const { view, right, up } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const dir = camDir();
+    let camLocal = add(cam.focus, scale(dir, cam.dist));
+    if (cam.frame === surfaceFrame && !flight) {
+      const h = dot(camLocal, surfaceUp); // ground collision along the local zenith
+      if (h < 0.4) camLocal = add(camLocal, scale(surfaceUp, 0.4 - h));
+    }
 
     const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
     if (aspect !== proj.aspect) {
@@ -532,10 +560,19 @@ async function start(): Promise<void> {
         p = scale(rel, s);
       }
       const o = new Float32Array(28);
-      // column-major model = translate(p) * scale(size * s)
-      o[0] = m.size[0] * s;
-      o[5] = m.size[1] * s;
-      o[10] = m.size[2] * s;
+      // column-major model = translate(p) * rotate * scale(size * s)
+      if (m.rot) {
+        for (let c = 0; c < 3; c++) {
+          const sc = m.size[c] * s;
+          o[c * 4] = m.rot[c][0] * sc;
+          o[c * 4 + 1] = m.rot[c][1] * sc;
+          o[c * 4 + 2] = m.rot[c][2] * sc;
+        }
+      } else {
+        o[0] = m.size[0] * s;
+        o[5] = m.size[1] * s;
+        o[10] = m.size[2] * s;
+      }
       o[15] = 1;
       o[12] = p[0];
       o[13] = p[1];
@@ -551,7 +588,8 @@ async function start(): Promise<void> {
       o[23] = m.matId;
       o[24] = m.rim;
       o[25] = m.gridScale;
-      data.meshes.push({ kind: m.mesh, data: o });
+      o[26] = renderer.earthReady ? 1 : 0; // textured flag (matId 1 only)
+      data.meshes.push({ kind: m.mesh, data: o, earth: m.matId === 1 });
     }
 
     for (const orbit of u.orbits) {

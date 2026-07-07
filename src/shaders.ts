@@ -66,9 +66,13 @@ struct Obj {
   model : mat4x4f,
   color : vec4f, // rgb + emissive
   sun   : vec4f, // xyz: dir to sun (world axes), w: material id
-  misc  : vec4f, // x: rim strength, y: local->meters scale (grid), z,w unused
+  misc  : vec4f, // x: rim strength, y: local->meters scale (grid), z: textured flag, w unused
 };
 @group(1) @binding(0) var<uniform> O : Obj;
+
+@group(2) @binding(0) var samp : sampler;
+@group(2) @binding(1) var dayTex : texture_2d<f32>;
+@group(2) @binding(2) var nightTex : texture_2d<f32>;
 
 struct VOut {
   @builtin(position) pos : vec4f,
@@ -109,43 +113,63 @@ struct FOut {
     return out;
   }
 
-  if (matId == 1) { // earthlike: fbm continents, ice caps
-    let h = fbm(lp * 2.6);
-    let landMask = smoothstep(0.5, 0.55, h);
-    let landCol = mix(vec3f(0.16, 0.3, 0.12), vec3f(0.52, 0.45, 0.28), fbm(lp * 7.1));
-    let oceanCol = mix(vec3f(0.015, 0.08, 0.2), vec3f(0.03, 0.16, 0.34), fbm(lp * 4.3));
-    base = mix(oceanCol, landCol, landMask);
-    let ice = smoothstep(0.86, 0.96, abs(lp.y) + 0.06 * h);
-    base = mix(base, vec3f(0.88, 0.91, 0.95), ice);
+  // Normals/lighting first: the Earth night-lights blend needs the sun angle.
+  // (No front_facing flip — see the winding note below.)
+  var n = normalize(in.nrm);
+  let L = O.sun.xyz;
+  let ndl = dot(n, L);
+  var emissive = vec3f(0.0);
+
+  if (matId == 1) { // Earth
+    // Equirectangular UV from the unit-sphere local position. Sampled per
+    // fragment (not interpolated), so there is no UV seam to unwrap.
+    let uv = vec2f(0.5 + atan2(-lp.z, lp.x) / 6.2831853, 0.5 - asin(clamp(lp.y, -1.0, 1.0)) / 3.1415927);
+    if (O.misc.z > 0.5) { // NASA Blue Marble day + Black Marble city lights
+      base = textureSample(dayTex, samp, uv).rgb;
+      emissive = textureSample(nightTex, samp, uv).rgb * smoothstep(0.03, -0.12, ndl) * vec3f(1.0, 0.85, 0.6);
+    } else { // procedural fallback until (or unless) the textures load
+      let h = fbm(lp * 2.6);
+      let landMask = smoothstep(0.5, 0.55, h);
+      let landCol = mix(vec3f(0.16, 0.3, 0.12), vec3f(0.52, 0.45, 0.28), fbm(lp * 7.1));
+      let oceanCol = mix(vec3f(0.015, 0.08, 0.2), vec3f(0.03, 0.16, 0.34), fbm(lp * 4.3));
+      base = mix(oceanCol, landCol, landMask);
+      let ice = smoothstep(0.86, 0.96, abs(lp.y) + 0.06 * h);
+      base = mix(base, vec3f(0.88, 0.91, 0.95), ice);
+    }
   } else if (matId == 3) { // banded gas giant
     let band = fbm(vec3f(lp.y * 6.0, lp.y * 6.0 + 3.7, 0.5) + lp * 0.6);
     base = mix(base, base * vec3f(0.72, 0.68, 0.66), band);
   } else if (matId == 4) { // rocky
     base = base * (0.7 + 0.6 * fbm(lp * 9.0));
-  } else if (matId == 5) { // ground plane with a 1 m / 10 m reference grid
-    let lpm = lp.xz * O.misc.y;
+  } else if (matId == 5) { // park ground: grass, a faint 1 m / 10 m grid, and the lake to the east
+    let lpm = lp.xz * O.misc.y; // meters; local +X = east, +Z = north
     let d = length(in.wp);
-    let f1 = exp(-d / 60.0);
-    let f10 = exp(-d / 500.0);
+    let lake = smoothstep(38.0, 50.0, lpm.x);
+    let f1 = exp(-d / 60.0) * (1.0 - lake);
+    let f10 = exp(-d / 500.0) * (1.0 - lake);
     let g1x = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.x) - 0.5) - 0.45);
     let g1z = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.y) - 0.5) - 0.45);
     let g10x = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.x / 10.0) - 0.5) - 0.492);
     let g10z = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.y / 10.0) - 0.5) - 0.492);
     base = base * (0.85 + 0.3 * fbm(vec3f(lpm.x * 0.2, 0.0, lpm.y * 0.2)));
     base = base * (1.0 - 0.22 * max(g1x, g1z) * f1 - 0.3 * max(g10x, g10z) * f10);
+    let water = vec3f(0.05, 0.17, 0.26) * (0.85 + 0.3 * fbm(vec3f(lpm.x * 0.08, t * 0.5, lpm.y * 0.08)));
+    base = mix(base, water, lake);
+  } else if (matId == 7) { // the picnic blanket: 8x8 red/white checker
+    let cell = (i32(floor((lp.x + 1.0) * 4.0)) + i32(floor((lp.z + 1.0) * 4.0))) & 1;
+    base = mix(vec3f(0.72, 0.09, 0.07), vec3f(0.93, 0.9, 0.84), f32(cell));
+    base = base * (0.9 + 0.2 * fbm(lp * 24.0)); // a little fabric weave
   }
 
   // All meshes carry correct outward normals; do NOT flip on front_facing —
   // our sphere/box winding is CW in framebuffer space, so the outside is
   // rasterized as "back" and flipping would point every normal inward
   // (which made planets render black on their sunlit side).
-  var n = normalize(in.nrm);
-  let L = O.sun.xyz;
-  let dif = max(dot(n, L), 0.0);
+  let dif = max(ndl, 0.0);
   var amb = 0.05;
   var ambCol = vec3f(1.0);
-  if (matId == 5 || matId == 6) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); } // sky fill keeps the surface readable
-  var col = base * (amb * ambCol + 1.05 * dif);
+  if (matId >= 5) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); } // sky fill keeps the surface scene readable
+  var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 
   if (O.misc.x > 0.0) { // atmosphere rim

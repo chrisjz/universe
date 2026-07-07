@@ -13,6 +13,7 @@ export const norm = (a: V3): V3 => {
   const l = len(a);
   return l > 0 ? scale(a, 1 / l) : [0, 1, 0];
 };
+export const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 export const cross = (a: V3, b: V3): V3 => [
   a[1] * b[2] - a[2] * b[1],
   a[2] * b[0] - a[0] * b[2],
@@ -54,21 +55,40 @@ export function mat4Mul(a: Float32Array, b: Float32Array): Float32Array<ArrayBuf
   return o;
 }
 
+// Direction from focus toward camera for a yaw/pitch pair, optionally
+// expressed in an orbit basis (east, up, north) — used for tilted surface
+// sites where "up" is the local zenith rather than world +Y.
+export type Basis = [V3, V3, V3];
+
+export function orbitDir(yaw: number, pitch: number, basis?: Basis): V3 {
+  const cp = Math.cos(pitch),
+    sp = Math.sin(pitch);
+  const d: V3 = [cp * Math.sin(yaw), sp, cp * Math.cos(yaw)];
+  if (!basis) return d;
+  return [
+    basis[0][0] * d[0] + basis[1][0] * d[1] + basis[2][0] * d[2],
+    basis[0][1] * d[0] + basis[1][1] * d[1] + basis[2][1] * d[2],
+    basis[0][2] * d[0] + basis[1][2] * d[1] + basis[2][2] * d[2],
+  ];
+}
+
 // Rotation-only view matrix: the camera sits at the render-space origin
 // (camera-relative rendering), so the view transform has no translation.
 // Returns { view, right, up } — right/up feed billboard orientation.
+// `upHint` sets the horizon roll (smoothed across basis transitions).
 export function viewRotation(
   yaw: number,
   pitch: number,
+  basis?: Basis,
+  upHint?: V3,
 ): { view: Float32Array<ArrayBuffer>; right: V3; up: V3; fwd: V3 } {
-  // Camera is offset from its focus along dir; it looks back along -dir.
-  const cp = Math.cos(pitch),
-    sp = Math.sin(pitch);
-  const cy = Math.cos(yaw),
-    sy = Math.sin(yaw);
-  const dir: V3 = [cp * sy, sp, cp * cy]; // focus -> camera
+  const dir = orbitDir(yaw, pitch, basis); // focus -> camera
   const f = norm(scale(dir, -1)); // camera forward
-  const r = norm(cross(f, [0, 1, 0]));
+  const upRef = upHint ?? basis?.[1] ?? [0, 1, 0];
+  let r = cross(f, upRef);
+  const rl = len(r);
+  // Degenerate when looking straight along the up reference; fall back.
+  r = rl > 1e-6 ? scale(r, 1 / rl) : norm(cross(f, basis?.[0] ?? [1, 0, 0]));
   const u = cross(r, f);
   const m = new Float32Array(16);
   m[0] = r[0];
