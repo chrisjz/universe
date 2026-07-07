@@ -37,7 +37,10 @@ Moon distance, the real Sun–galactic-center distance, a Milky Way with the rea
 ~2.6 kpc disk scale length. Time is real too: the
 planets and the Moon sit at their true positions for the simulated date (a
 mean-longitude ephemeris — circular, coplanar approximation) and move as the
-clock runs, from real time up to ten years per second. The roadmap swaps the
+clock runs, from real time up to ten years per second — and the Earth turns
+at the sidereal rate, phase-locked so the sub-solar longitude matches UTC:
+the picnic sees sunrise when Chicago does, and at one hour per second you can
+watch the sun set from the blanket. The roadmap swaps the
 placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies, Earth terrain
 tiles — without touching the engine.
 
@@ -136,7 +139,8 @@ src/
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
-- [ ] Earth rotation: diurnal day/night cycle at the picnic (sunset at 1 hour/s)
+- [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time
+- [ ] Axial tilt (23.4°) and seasons
 - [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [ ] Honest rendering seam: visually distinguish measured vs procedural
