@@ -39,6 +39,14 @@ export interface Target {
   pos: V3;
   dist: number;
   pitch: number;
+  // Seamless-zoom chain: scrolling in past `enter` retargets focus to
+  // `child`; scrolling out past `exit` retargets to `parent`. Thresholds
+  // carry hysteresis (exit ≳ 2 × enter + separation) so a retarget can
+  // never immediately bounce back.
+  child?: string;
+  enter?: number;
+  parent?: string;
+  exit?: number;
 }
 
 export interface Universe {
@@ -284,15 +292,95 @@ export function buildUniverse(): Universe {
     groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts) });
   }
 
+  // The main zoom chain is universe → galaxy → system → earth → surface;
+  // sun / moon / web are leaves you visit explicitly and scroll back out of.
   const targets: Target[] = [
-    { name: 'OBSERVABLE UNIVERSE', slug: 'universe', frame: root, pos: [0, 0, 0], dist: 7e26, pitch: 0.35 },
-    { name: 'COSMIC WEB', slug: 'web', frame: root, pos: webNodePos, dist: 1.2e26, pitch: 0.2 },
-    { name: 'MILKY WAY', slug: 'galaxy', frame: galaxy, pos: [0, 0, 0], dist: 3.4e21, pitch: 0.55 },
-    { name: 'SOLAR SYSTEM', slug: 'system', frame: sunFrame, pos: [0, 0, 0], dist: 1.15e13, pitch: 0.9 },
-    { name: 'THE SUN', slug: 'sun', frame: sunFrame, pos: [0, 0, 0], dist: 4.5e9, pitch: 0.1 },
-    { name: 'EARTH', slug: 'earth', frame: earthFrame, pos: [0, 0, 0], dist: 4.2e7, pitch: 0.15 },
-    { name: 'THE MOON', slug: 'moon', frame: earthFrame, pos: moonPos, dist: 8e6, pitch: 0.1 },
-    { name: 'SURFACE · 1 METER', slug: 'surface', frame: surface, pos: [0, 0.5, 0], dist: 7, pitch: 0.22 },
+    {
+      name: 'OBSERVABLE UNIVERSE',
+      slug: 'universe',
+      frame: root,
+      pos: [0, 0, 0],
+      dist: 7e26,
+      pitch: 0.35,
+      child: 'galaxy',
+      enter: 3e23,
+    },
+    {
+      name: 'COSMIC WEB',
+      slug: 'web',
+      frame: root,
+      pos: webNodePos,
+      dist: 1.2e26,
+      pitch: 0.2,
+      parent: 'universe',
+      exit: 3.5e26,
+    },
+    {
+      name: 'MILKY WAY',
+      slug: 'galaxy',
+      frame: galaxy,
+      pos: [0, 0, 0],
+      dist: 3.4e21,
+      pitch: 0.55,
+      parent: 'universe',
+      exit: 8e23,
+      child: 'system',
+      enter: 7.5e20,
+    },
+    {
+      name: 'SOLAR SYSTEM',
+      slug: 'system',
+      frame: sunFrame,
+      pos: [0, 0, 0],
+      dist: 1.15e13,
+      pitch: 0.9,
+      parent: 'galaxy',
+      exit: 1.65e21,
+      child: 'earth',
+      enter: 4.5e11,
+    },
+    {
+      name: 'THE SUN',
+      slug: 'sun',
+      frame: sunFrame,
+      pos: [0, 0, 0],
+      dist: 4.5e9,
+      pitch: 0.1,
+      parent: 'system',
+      exit: 5e10,
+    },
+    {
+      name: 'EARTH',
+      slug: 'earth',
+      frame: earthFrame,
+      pos: [0, 0, 0],
+      dist: 4.2e7,
+      pitch: 0.15,
+      parent: 'system',
+      exit: 9.9e11,
+      child: 'surface',
+      enter: 2.2e7,
+    },
+    {
+      name: 'THE MOON',
+      slug: 'moon',
+      frame: earthFrame,
+      pos: moonPos,
+      dist: 8e6,
+      pitch: 0.1,
+      parent: 'earth',
+      exit: 1.2e8,
+    },
+    {
+      name: 'SURFACE · 1 METER',
+      slug: 'surface',
+      frame: surface,
+      pos: [0, 0.5, 0],
+      dist: 7,
+      pitch: 0.22,
+      parent: 'earth',
+      exit: 5.5e7,
+    },
   ];
 
   return { root, sunFrame, meshes, groups, orbits, targets };
