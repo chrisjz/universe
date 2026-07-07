@@ -8,15 +8,17 @@
 import puppeteer from 'puppeteer-core';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-const [url, outDir, secondsArg] = process.argv.slice(2);
+const [url, outDir, secondsArg, widthArg, heightArg] = process.argv.slice(2);
+const W = parseInt(widthArg ?? '960', 10);
+const H = parseInt(heightArg ?? '600', 10);
 const seconds = parseFloat(secondsArg ?? '95');
 mkdirSync(outDir, { recursive: true });
 
 const browser = await puppeteer.launch({
   executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: true,
-  args: ['--enable-unsafe-webgpu', '--window-size=960,600', '--hide-scrollbars'],
-  defaultViewport: { width: 960, height: 600 },
+  args: ['--enable-unsafe-webgpu', `--window-size=${W},${H}`, '--hide-scrollbars'],
+  defaultViewport: { width: W, height: H },
 });
 
 const page = await browser.newPage();
@@ -32,7 +34,7 @@ client.on('Page.screencastFrame', (ev) => {
   i++;
   client.send('Page.screencastFrameAck', { sessionId: ev.sessionId }).catch(() => {});
 });
-await client.send('Page.startScreencast', { format: 'png', maxWidth: 960, maxHeight: 600, everyNthFrame: 2 });
+await client.send('Page.startScreencast', { format: 'png', maxWidth: W, maxHeight: H, everyNthFrame: 1 });
 
 await new Promise((r) => setTimeout(r, seconds * 1000));
 await client.send('Page.stopScreencast');
