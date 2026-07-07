@@ -57,10 +57,14 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **2×click** | fly to what's under the cursor                                                                                 |
 | **drag**    | orbit the current focus                                                                                        |
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                   |
+| **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                  |
 | **[ ]**     | slow down / speed up time (real time → 10 years per second)                                                    |
 | **P**       | pause the simulation clock                                                                                     |
-| **T**       | grand tour: an automated flight through every scale                                                            |
+| **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                    |
 | **Esc**     | cancel the current flight                                                                                      |
+
+On touch screens: drag orbits, **pinch zooms**, tap focuses, **double-tap
+flies**, and the search / time / tour controls are on-screen buttons.
 
 Or skip the install: the latest build is live at
 **<https://chrisjz.github.io/universe/>**.

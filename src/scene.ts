@@ -34,6 +34,7 @@ export interface PointGroup {
   // procedural galaxy provides the from-a-distance glow instead).
   fadeExtent?: number;
   hideBelow?: number; // skip entirely below this focus distance (see MeshObj)
+  nearFade?: boolean; // fade sprites near the camera (see the Grp.misc shader note)
 }
 export interface OrbitLine {
   frame: Frame;
@@ -58,9 +59,13 @@ export interface Target {
   parent?: string;
   exit?: number;
   hidden?: boolean; // reachable via URL / flights only, no HUD button
+  button?: boolean; // hidden, but still gets a HUD button (the inward-journey stages)
   radius?: number; // physical bound radius in meters; presence makes it clickable
   sunlit?: boolean; // flights/jumps arrive facing the sunlit side (yaw computed live)
   basis?: [V3, V3, V3]; // camera orbit basis (east, up, north) for tilted surface sites
+  // Catalog stars get a color so the renderer can substitute a real star mesh
+  // for their sprite up close (sprites jitter at 1e16 m f32 magnitudes).
+  starColor?: [number, number, number];
 }
 
 // A body on a circular mean-longitude orbit in its frame's XZ plane. Every
@@ -497,6 +502,7 @@ export function buildUniverse(): Universe {
       parent,
       exit,
       hidden: true,
+      button: true, // the inward journey earns a place on the HUD bar
     });
     microTargets.push(
       { ...stage('weave', 'THE WEAVE', 0.02, 'surface', 0.55), child: 'fiber', enter: 2.2e-3 },
@@ -572,10 +578,13 @@ export function buildUniverse(): Universe {
           exit: Math.max(6e17, 3 * Math.hypot(x, y, z)),
           radius,
           hidden: true,
+          // The famous five have real hand-built meshes; everyone else gets a
+          // dynamic one from this color when focused.
+          starColor: f ? undefined : c,
         });
       }
     });
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18 });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true });
   }
   meshes.push(...starMeshes);
 

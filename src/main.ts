@@ -121,7 +121,7 @@ async function start(): Promise<void> {
   let starCount = 0;
   void streamStars(`${import.meta.env.BASE_URL}stars/`, (instances) => {
     groupIndex.push(renderer.addPointGroup(instances));
-    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18 });
+    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18, nearFade: true });
     starCount += instances.length / 8;
   });
 
@@ -304,12 +304,29 @@ async function start(): Promise<void> {
     focusName = t.name;
   }
 
+  // The grand tour now runs the full 43 orders: cosmic web to the quarks.
+  const TOUR_SLUGS = [
+    'universe',
+    'web',
+    'galaxy',
+    'system',
+    'sun',
+    'earth',
+    'moon',
+    'surface',
+    'weave',
+    'fiber',
+    'molecule',
+    'atom',
+    'nucleus',
+    'proton',
+  ];
   function toggleTour(): void {
     touring = !touring;
     if (touring) {
       tourIndex = 0;
       tourDwell = 0;
-      flyTo(0);
+      flyTo(bySlug.get(TOUR_SLUGS[0])!);
     }
   }
 
@@ -320,14 +337,23 @@ async function start(): Promise<void> {
       flyTo(i);
     },
     toggleTour,
+    (action) => {
+      if (action === 'slower') speedIndex = Math.max(0, speedIndex - 1);
+      if (action === 'faster') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
+      if (action === 'pause') paused = !paused;
+    },
   );
 
   // ---- input ----
   // A press that barely moves is a click (focus what's under the cursor);
-  // anything longer or farther is an orbit drag. Double-click flies there.
+  // anything longer or farther is an orbit drag. Double-click (or double-tap)
+  // flies there. Two touch pointers pinch-zoom.
   let dragging = false;
   let pressed: { x: number; y: number; at: number } | null = null;
   let dragDist = 0;
+  const pointers = new Map<number, { x: number; y: number }>();
+  let pinch: { startSep: number; startDist: number } | null = null;
+  let lastTap = { x: 0, y: 0, at: -1e9 };
 
   function clickFocus(px: number, py: number): void {
     const i = pickAt(px, py);
@@ -337,22 +363,66 @@ async function start(): Promise<void> {
     retargetTo(i);
   }
 
+  const pinchSep = (): number => {
+    const [a, b] = [...pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
   canvas.addEventListener('pointerdown', (e) => {
+    pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    canvas.setPointerCapture(e.pointerId);
+    if (pointers.size === 2) {
+      // second finger down: stop orbiting, start pinching
+      pinch = { startSep: Math.max(pinchSep(), 1), startDist: cam.dist };
+      dragging = false;
+      pressed = null;
+      flight = null;
+      touring = false;
+      return;
+    }
     dragging = true;
     dragDist = 0;
     pressed = { x: e.offsetX, y: e.offsetY, at: performance.now() };
     canvas.classList.add('dragging');
-    canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointerup', (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
     dragging = false;
     canvas.classList.remove('dragging');
     if (pressed && dragDist < 5 && performance.now() - pressed.at < 500) {
-      clickFocus(e.offsetX, e.offsetY);
+      const now = performance.now();
+      const isDoubleTap =
+        e.pointerType === 'touch' &&
+        now - lastTap.at < 350 &&
+        Math.hypot(e.offsetX - lastTap.x, e.offsetY - lastTap.y) < 40;
+      if (isDoubleTap) {
+        const i = pickAt(e.offsetX, e.offsetY);
+        if (i >= 0) {
+          touring = false;
+          flyTo(i);
+        }
+      } else {
+        clickFocus(e.offsetX, e.offsetY);
+      }
+      lastTap = { x: e.offsetX, y: e.offsetY, at: now };
     }
     pressed = null;
   });
+  canvas.addEventListener('pointercancel', (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    dragging = false;
+    pressed = null;
+    canvas.classList.remove('dragging');
+  });
   canvas.addEventListener('pointermove', (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    if (pinch && pointers.size === 2) {
+      const sep = Math.max(pinchSep(), 1);
+      cam.dist = clamp((pinch.startDist * pinch.startSep) / sep, MIN_DIST, MAX_DIST);
+      return;
+    }
     if (!dragging) return;
     dragDist += Math.abs(e.movementX) + Math.abs(e.movementY);
     if (dragDist < 5) return; // still within click slop — don't jitter the orbit
@@ -377,6 +447,12 @@ async function start(): Promise<void> {
   );
   const visibleCount = u.targets.filter((t) => !t.hidden).length;
   window.addEventListener('keydown', (e) => {
+    if (hud.isSearchOpen()) return; // the search input owns the keyboard
+    if (e.key === '/') {
+      e.preventDefault();
+      hud.openSearch();
+      return;
+    }
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= visibleCount) {
       touring = false;
@@ -393,8 +469,10 @@ async function start(): Promise<void> {
     }
   });
 
-  // ?goto=<slug>&dist=<meters> — every place in the universe is a URL.
+  // ?goto=<slug>&dist=<meters>&search=<query> — every place is a URL.
   const params = new URLSearchParams(location.search);
+  const searchParam = params.get('search');
+  if (searchParam !== null) hud.openSearch(searchParam);
   const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
@@ -434,11 +512,11 @@ async function start(): Promise<void> {
         if (tourDwell > 1.6) {
           tourDwell = 0;
           tourIndex++;
-          if (tourIndex >= u.targets.length || u.targets[tourIndex].hidden) {
+          if (tourIndex >= TOUR_SLUGS.length) {
             touring = false;
             return;
           }
-          flyTo(tourIndex);
+          flyTo(bySlug.get(TOUR_SLUGS[tourIndex])!);
         }
       }
       return;
@@ -547,7 +625,28 @@ async function start(): Promise<void> {
 
     const data: FrameData = { globals, meshes: [], lines: [], groups: [] };
 
-    for (const m of u.meshes) {
+    // A focused catalog star gets a real (double-precision, jitter-free) star
+    // mesh; its sprite near-fades out at the same range.
+    const act = u.targets[activeTarget];
+    const dynamicMeshes: typeof u.meshes =
+      act.starColor && act.radius
+        ? [
+            {
+              frame: act.frame,
+              pos: act.pos,
+              mesh: 'sphere',
+              size: [act.radius, act.radius, act.radius],
+              bound: act.radius,
+              color: act.starColor,
+              emissive: 0,
+              matId: 2,
+              rim: 0,
+              gridScale: 0,
+            },
+          ]
+        : [];
+
+    for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
@@ -612,11 +711,12 @@ async function start(): Promise<void> {
     u.groups.forEach((g, i) => {
       if (g.hideBelow !== undefined && cam.dist < g.hideBelow) return;
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
-      const gd = new Float32Array(4);
+      const gd = new Float32Array(8);
       gd[0] = rel[0];
       gd[1] = rel[1];
       gd[2] = rel[2];
       gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
+      gd[4] = g.nearFade ? 1.2e12 : 0;
       data.groups.push({ index: groupIndex[i], data: gd });
     });
 

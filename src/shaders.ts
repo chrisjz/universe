@@ -191,7 +191,12 @@ struct FOut {
 export const POINTS_WGSL =
   COMMON +
   /* wgsl */ `
-struct Grp { origin : vec4f }; // xyz: group origin rel camera, w: intensity fade
+struct Grp {
+  origin : vec4f, // xyz: group origin rel camera, w: intensity fade
+  misc : vec4f, // x: near-fade distance — sprites closer than this fade out
+                // (f32 cancellation jitters near sprites at 1e16 m coords;
+                // a double-precision star mesh takes over up close)
+};
 @group(1) @binding(0) var<uniform> P : Grp;
 
 struct VOut {
@@ -228,7 +233,9 @@ struct VOut {
   o.pos = clip;
   o.uv = vec2f(ux, uy);
   o.col = pcol;
-  o.inten = pint * P.origin.w;
+  var inten = pint * P.origin.w;
+  if (P.misc.x > 0.0) { inten = inten * smoothstep(P.misc.x * 0.35, P.misc.x, d0); }
+  o.inten = inten;
   return o;
 }
 

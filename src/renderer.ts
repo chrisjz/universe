@@ -116,7 +116,7 @@ export class Renderer {
       d.createBindGroup({ layout: dynBGL, entries: [{ binding: 0, resource: { buffer: buf, size } }] });
     this.meshBG = mkDyn(this.meshUBO, 112);
     this.lineBG = mkDyn(this.lineUBO, 32);
-    this.groupBG = mkDyn(this.groupUBO, 16);
+    this.groupBG = mkDyn(this.groupUBO, 32);
 
     const depthStencil: GPUDepthStencilState = {
       format: 'depth32float',
