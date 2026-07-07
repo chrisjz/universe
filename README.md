@@ -25,7 +25,10 @@ back. Or press **T** and let the grand tour fly you the whole way.
 Structure outside the solar system is procedural placeholder (deterministic seed),
 but every dimension that can be real already is: actual planetary radii and
 semi-major axes, the real Moon distance, the real Sun–galactic-center distance,
-a Milky Way with the real ~2.6 kpc disk scale length. The roadmap swaps the
+a Milky Way with the real ~2.6 kpc disk scale length. Time is real too: the
+planets and the Moon sit at their true positions for the simulated date (a
+mean-longitude ephemeris — circular, coplanar approximation) and move as the
+clock runs, from real time up to ten years per second. The roadmap swaps the
 placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies, Earth terrain
 tiles — without touching the engine.
 
@@ -45,6 +48,8 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **2×click** | fly to what's under the cursor                                                                                 |
 | **drag**    | orbit the current focus                                                                                        |
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                   |
+| **[ ]**     | slow down / speed up time (real time → 10 years per second)                                                    |
+| **P**       | pause the simulation clock                                                                                     |
 | **T**       | grand tour: an automated flight through every scale                                                            |
 | **Esc**     | cancel the current flight                                                                                      |
 
@@ -113,8 +118,9 @@ src/
 - [x] Click-to-focus: planets, moons, and every named star are clickable destinations
 - [ ] Full Gaia DR3 star catalog, streamed as hierarchical LOD point tiles
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
+- [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [ ] Earth terrain via map tiles at the bottom of the zoom
-- [ ] Time: orbital motion, cosmic time scrubbing
+- [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [ ] Honest rendering seam: visually distinguish measured vs procedural
 
 ## Development

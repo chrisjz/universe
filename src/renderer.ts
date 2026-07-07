@@ -194,6 +194,11 @@ export class Renderer {
     return this.pointGroups.length - 1;
   }
 
+  // Re-upload a point group whose instances move (e.g. planet locator sprites).
+  updatePointGroup(index: number, instances: F32): void {
+    this.device.queue.writeBuffer(this.pointGroups[index].buf, 0, instances);
+  }
+
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
