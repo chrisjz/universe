@@ -491,6 +491,12 @@ async function start(): Promise<void> {
     seam = true;
     hud.setSeam(true);
   }
+  // ?tour=1 — start the grand tour after a beat (lets textures/stars land).
+  if (params.get('tour') !== null) {
+    setTimeout(() => {
+      if (!touring) toggleTour();
+    }, 1200);
+  }
   const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);

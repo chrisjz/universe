@@ -8,7 +8,10 @@ down through a picnic blanket on the Chicago lakefront and into a proton
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-![Earth from orbit, with the plane of the Milky Way behind it](docs/screenshots/earth.png)
+![The grand tour: one continuous zoom from the cosmic web through the Chicago picnic into a proton](docs/tour.gif)
+
+_The grand tour, 43 orders of magnitude in one continuous flight — press **T** in
+the [live atlas](https://chrisjz.github.io/universe/?tour=1) to fly it yourself._
 
 ## The zoom
 
@@ -75,8 +78,9 @@ Or skip the install: the latest build is live at
 
 Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/universe/?goto=galaxy)
 jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/universe/?goto=jupiter)
-to any planet, and `&dist=6e20` sets the camera distance in meters — deep
-links into a 10²⁷-meter scene.
+to any planet, `&dist=6e20` sets the camera distance in meters, and
+[`?tour=1`](https://chrisjz.github.io/universe/?tour=1) starts the grand tour on
+load — deep links into a 10²⁷-meter scene.
 
 The sky is real: **854,000 stars** stream in progressively from binary tiles
 built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
