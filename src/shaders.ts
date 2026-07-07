@@ -18,14 +18,20 @@ struct Globals {
 };
 @group(0) @binding(0) var<uniform> G : Globals;
 
+// Logarithmic depth with a dynamic reference scale (camRight.w tracks the
+// camera's focus distance): the naive log2(1+d) collapses to zero below
+// ~1e-7 m because 1+d rounds to 1 in f32 — fatal for the subatomic zoom.
 fn logDepth(d : f32) -> f32 {
-  return log2(1.0 + max(d, 0.0)) * G.params.y;
+  return log2(1.0 + max(d, 0.0) / G.camRight.w) * G.params.y;
 }
 
 // length() overflows f32 for astronomical vectors (|v| > ~1.8e19 squares past
-// f32 max), so measure in a rescaled space and scale back.
+// f32 max) and underflows for subatomic ones, so normalize by the largest
+// component first.
 fn bigLength(v : vec3f) -> f32 {
-  return length(v * 1e-12) * 1e12;
+  let m = max(max(abs(v.x), abs(v.y)), abs(v.z));
+  if (m < 1e-30) { return 0.0; }
+  return length(v / m) * m;
 }
 `;
 
@@ -203,7 +209,7 @@ struct VOut {
   @location(3) pint : f32,
 ) -> VOut {
   let raw = P.origin.xyz + ppos;
-  let d0 = max(bigLength(raw), 1e-3);
+  let d0 = max(bigLength(raw), 1e-18);
   let cap = G.params.x;
   var dc = d0;
   var pc = raw;

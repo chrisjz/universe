@@ -12,6 +12,11 @@ export function formatWidth(m: number): { main: string; exp: string } {
     main: `${v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${u}`,
     exp,
   });
+  if (m < 1e-12) return f(m / 1e-15, 'fm');
+  if (m < 1e-9) return f(m / 1e-12, 'pm');
+  if (m < 1e-6) return f(m / 1e-9, 'nm');
+  if (m < 1e-3) return f(m / 1e-6, 'µm');
+  if (m < 0.01) return f(m / 1e-3, 'mm');
   if (m < 1e3) return f(m, 'm');
   if (m < 1e8) return f(m / 1e3, 'km');
   if (m < 0.08 * AU) return f(m / 1e6, 'thousand km');
@@ -23,6 +28,12 @@ export function formatWidth(m: number): { main: string; exp: string } {
 }
 
 const CONTEXTS: [number, string][] = [
+  [2.5e-15, 'the edge of the known'],
+  [5e-13, 'subatomic'],
+  [2e-9, 'atomic'],
+  [5e-7, 'molecular'],
+  [2e-3, 'microscopic'],
+  [0.5, 'the weave'],
   [30, 'human scale'],
   [3e4, 'landscape'],
   [3e7, 'planetary'],
