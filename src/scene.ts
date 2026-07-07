@@ -1,0 +1,299 @@
+// Placeholder universe. Structure is procedural (deterministic seed) but all
+// solar-system dimensions are real: actual semi-major axes, actual radii,
+// actual Sun-galactic-center distance. This is the content that later gets
+// replaced by Gaia / SDSS / NASA catalogs — the frame tree stays the same.
+
+import { V3, mulberry32, gaussian } from './math';
+import { Frame } from './frames';
+import { MeshKind } from './renderer';
+
+export interface MeshObj {
+  frame: Frame;
+  pos: V3;
+  mesh: MeshKind;
+  size: V3; // per-axis scale in meters (sphere: radius in all)
+  bound: number; // bounding radius, for sub-pixel culling
+  color: [number, number, number];
+  emissive: number;
+  matId: number; // 0 plain, 1 earthlike, 2 star, 3 banded, 4 rocky, 5 ground grid
+  rim: number; // atmosphere rim strength
+  gridScale: number; // local units -> meters (ground grid)
+}
+
+export interface PointGroup {
+  frame: Frame;
+  pos: V3;
+  data: Float32Array<ArrayBuffer>;
+}
+export interface OrbitLine {
+  frame: Frame;
+  center: V3;
+  radius: number;
+  color: [number, number, number];
+  alpha: number;
+}
+export interface Target {
+  name: string;
+  slug: string;
+  frame: Frame;
+  pos: V3;
+  dist: number;
+  pitch: number;
+}
+
+export interface Universe {
+  root: Frame;
+  sunFrame: Frame;
+  meshes: MeshObj[];
+  groups: PointGroup[];
+  orbits: OrbitLine[];
+  targets: Target[];
+}
+
+const AU = 1.496e11;
+const KPC = 3.086e19;
+
+export function buildUniverse(): Universe {
+  const rand = mulberry32(20260707);
+  const meshes: MeshObj[] = [];
+  const groups: PointGroup[] = [];
+  const orbits: OrbitLine[] = [];
+
+  // ---- Frame tree ----
+  const root = new Frame('universe', null, [0, 0, 0]);
+  const galaxy = new Frame('milky-way', root, [0, 0, 0]);
+  const sunFrame = new Frame('sun', galaxy, [8.3 * KPC, 0, 9e17]); // real galactocentric distance
+
+  const earthAngle = 0.9;
+  const earthPos: V3 = [AU * Math.cos(earthAngle), 0, AU * Math.sin(earthAngle)];
+  const earthFrame = new Frame('earth', sunFrame, earthPos);
+  const R_EARTH = 6.371e6;
+  // Surface site at Earth's +Y pole so local "up" is world +Y (placeholder
+  // simplification — a real site needs an oriented tangent frame). Raised
+  // 1.5 m so the ground plane never z-fights the coarse planet sphere.
+  const surface = new Frame('surface', earthFrame, [0, R_EARTH + 1.5, 0]);
+
+  // ---- Sun & planets (real radii and orbits) ----
+  const sphere = (
+    frame: Frame,
+    pos: V3,
+    r: number,
+    color: [number, number, number],
+    matId: number,
+    rim = 0,
+    emissive = 0,
+  ): MeshObj => ({ frame, pos, mesh: 'sphere', size: [r, r, r], bound: r, color, emissive, matId, rim, gridScale: 0 });
+
+  meshes.push(sphere(sunFrame, [0, 0, 0], 6.957e8, [1.0, 0.72, 0.35], 2));
+
+  const planets: [string, number, number, [number, number, number], number][] = [
+    ['mercury', 0.387 * AU, 2.44e6, [0.62, 0.58, 0.54], 4],
+    ['venus', 0.723 * AU, 6.05e6, [0.86, 0.76, 0.55], 3],
+    ['earth', AU, R_EARTH, [0.2, 0.4, 0.7], 1],
+    ['mars', 1.524 * AU, 3.39e6, [0.76, 0.42, 0.25], 4],
+    ['jupiter', 5.203 * AU, 6.99e7, [0.78, 0.63, 0.44], 3],
+    ['saturn', 9.537 * AU, 5.82e7, [0.86, 0.76, 0.55], 3],
+    ['uranus', 19.19 * AU, 2.54e7, [0.62, 0.85, 0.89], 3],
+    ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3],
+  ];
+  const planetSprites: number[][] = [];
+  planets.forEach(([name, a, r, color, matId], i) => {
+    orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
+    if (name === 'earth') {
+      meshes.push(sphere(earthFrame, [0, 0, 0], r, color, matId, 1.0));
+      planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
+      return;
+    }
+    const ang = 0.7 + i * 2.39996; // golden-angle spread, aesthetic epoch
+    const pos: V3 = [a * Math.cos(ang), 0, a * Math.sin(ang)];
+    meshes.push(sphere(sunFrame, pos, r, color, matId, matId === 3 ? 0.4 : 0));
+    planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.28]);
+  });
+
+  // Moon: real semi-major axis & radius.
+  const moonPos: V3 = [3.844e8 * Math.cos(2.2), 0, 3.844e8 * Math.sin(2.2)];
+  meshes.push(sphere(earthFrame, moonPos, 1.737e6, [0.72, 0.7, 0.68], 4));
+  orbits.push({ frame: earthFrame, center: [0, 0, 0], radius: 3.844e8, color: [0.7, 0.72, 0.8], alpha: 0.16 });
+
+  // Sun glare + planet locator sprites (so the system reads at 1e13 m).
+  planetSprites.push([0, 0, 0, 2.2e9, 1.0, 0.85, 0.6, 2.2]);
+  groups.push({ frame: sunFrame, pos: [0, 0, 0], data: new Float32Array(planetSprites.flat()) });
+
+  // ---- Surface site: ground plane, reference cubes, the 1 m cube ----
+  meshes.push({
+    frame: surface,
+    pos: [0, -0.02, 0],
+    mesh: 'disk',
+    size: [60000, 1, 60000],
+    bound: 60000,
+    color: [0.33, 0.36, 0.31],
+    emissive: 0,
+    matId: 5,
+    rim: 0,
+    gridScale: 60000,
+  });
+  const box = (pos: V3, size: V3, color: [number, number, number], emissive = 0): MeshObj => ({
+    frame: surface,
+    pos,
+    mesh: 'box',
+    size,
+    bound: Math.max(...size) * 1.8,
+    color,
+    emissive,
+    matId: 6,
+    rim: 0,
+    gridScale: 0,
+  });
+  meshes.push(box([0, 0.5, 0], [0.5, 0.5, 0.5], [0.75, 0.12, 0.1], 0.25)); // THE one-meter cube
+  meshes.push(box([4.5, 0.75, 2], [0.75, 0.75, 0.75], [0.62, 0.63, 0.66]));
+  meshes.push(box([-3.5, 0.5, 4], [0.5, 0.5, 0.5], [0.62, 0.63, 0.66]));
+  meshes.push(box([1.5, 2, -7], [0.4, 2, 0.4], [0.55, 0.58, 0.64])); // 4 m obelisk
+
+  // ---- Local stars (within ~100 pc of the Sun) ----
+  {
+    const n = 4500;
+    const d = new Float32Array(n * 8);
+    for (let i = 0; i < n; i++) {
+      const o = i * 8;
+      d[o] = gaussian(rand) * 8e17;
+      d[o + 1] = gaussian(rand) * 8e17;
+      d[o + 2] = gaussian(rand) * 8e17;
+      d[o + 3] = 2e9 * (0.5 + rand());
+      const t = rand();
+      const c: [number, number, number] =
+        t < 0.12 ? [0.65, 0.75, 1.0] : t < 0.5 ? [0.95, 0.95, 1.0] : t < 0.82 ? [1.0, 0.88, 0.68] : [1.0, 0.6, 0.45];
+      d[o + 4] = c[0];
+      d[o + 5] = c[1];
+      d[o + 6] = c[2];
+      d[o + 7] = 0.25 + rand() * 0.6;
+    }
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d });
+  }
+
+  // ---- The galaxy: exponential disk + 2-arm log spiral + bulge + halo ----
+  {
+    const nDisk = 70000,
+      nBulge = 16000,
+      nHalo = 3000;
+    const d = new Float32Array((nDisk + nBulge + nHalo) * 8);
+    const Rd = 8e19,
+      Rmax = 4.8e20; // real Milky Way: ~2.6 kpc scale length, ~50 kly radius
+    const pitch = Math.tan((13 * Math.PI) / 180);
+    let o = 0;
+    const put = (x: number, y: number, z: number, size: number, c: [number, number, number], inten: number) => {
+      d[o] = x;
+      d[o + 1] = y;
+      d[o + 2] = z;
+      d[o + 3] = size;
+      d[o + 4] = c[0];
+      d[o + 5] = c[1];
+      d[o + 6] = c[2];
+      d[o + 7] = inten;
+      o += 8;
+    };
+    for (let i = 0; i < nDisk; i++) {
+      let r = -Math.log(1 - rand()) * Rd;
+      if (r > Rmax) r = rand() * Rmax;
+      let th = rand() * Math.PI * 2;
+      // Pull toward the nearest of two logarithmic spiral arms.
+      const armTh = Math.log(Math.max(r, 1e18) / 2.4e19) / pitch;
+      const rel = ((((th - armTh) % Math.PI) + Math.PI * 1.5) % Math.PI) - Math.PI / 2;
+      th -= rel * 0.6 * Math.min(1, r / 3e19);
+      const zScale = 3e18 * (0.5 + r / Rmax);
+      const t = Math.min(1, r / (Rmax * 0.85));
+      let c: [number, number, number] = [
+        1.0 - 0.38 * t + (rand() - 0.5) * 0.1,
+        0.86 - 0.12 * t + (rand() - 0.5) * 0.1,
+        0.65 + 0.35 * t + (rand() - 0.5) * 0.1,
+      ];
+      if (rand() < 0.05 && r > 3e19) c = [1.0, 0.5, 0.62]; // HII regions in the arms
+      put(r * Math.cos(th), gaussian(rand) * zScale, r * Math.sin(th), 3e17 * (0.4 + rand()), c, 0.05 + rand() * 0.12);
+    }
+    for (let i = 0; i < nBulge; i++) {
+      put(
+        gaussian(rand) * 4.6e19,
+        gaussian(rand) * 2.8e19,
+        gaussian(rand) * 4.6e19,
+        3e17 * (0.4 + rand()),
+        [1.0, 0.83, 0.58],
+        0.06 + rand() * 0.12,
+      );
+    }
+    for (let i = 0; i < nHalo; i++) {
+      const rr = Math.pow(rand(), 0.5) * 8e20;
+      const u = rand() * 2 - 1,
+        ph = rand() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      put(rr * s * Math.cos(ph), rr * u, rr * s * Math.sin(ph), 3e17, [1.0, 0.92, 0.78], 0.02 + rand() * 0.03);
+    }
+    groups.push({ frame: galaxy, pos: [0, 0, 0], data: d });
+  }
+
+  // ---- Cosmic web: nodes + filaments, each point one "galaxy" ----
+  let webNodePos: V3 = [0, 0, 0];
+  {
+    const NODES = 64;
+    const nodes: V3[] = [[0, 0, 0]]; // node 0 = our Local Group, so we sit inside the web
+    for (let i = 1; i < NODES; i++) {
+      const rr = Math.pow(rand(), 0.7) * 2.2e26;
+      const u = rand() * 2 - 1,
+        ph = rand() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      nodes.push([rr * s * Math.cos(ph), rr * u, rr * s * Math.sin(ph)]);
+    }
+    webNodePos = nodes[7];
+    const pts: number[] = [];
+    const putGal = (x: number, y: number, z: number) => {
+      const warm = rand() < 0.3;
+      pts.push(
+        x,
+        y,
+        z,
+        5e21 * (0.5 + rand()),
+        warm ? 1.0 : 0.62,
+        warm ? 0.85 : 0.55,
+        warm ? 0.7 : 1.0,
+        0.05 + rand() * 0.09,
+      );
+    };
+    for (let i = 0; i < NODES; i++) {
+      // connect to 2 nearest nodes
+      const dists = nodes
+        .map((p, j) => [Math.hypot(p[0] - nodes[i][0], p[1] - nodes[i][1], p[2] - nodes[i][2]), j])
+        .sort((a, b) => a[0] - b[0]);
+      for (let k = 1; k <= 2; k++) {
+        const j = dists[k][1];
+        if (j < i) continue; // dedupe
+        for (let m = 0; m < 220; m++) {
+          const t = rand();
+          putGal(
+            nodes[i][0] + (nodes[j][0] - nodes[i][0]) * t + gaussian(rand) * 5e24,
+            nodes[i][1] + (nodes[j][1] - nodes[i][1]) * t + gaussian(rand) * 5e24,
+            nodes[i][2] + (nodes[j][2] - nodes[i][2]) * t + gaussian(rand) * 5e24,
+          );
+        }
+      }
+      for (let m = 0; m < 130; m++) {
+        putGal(
+          nodes[i][0] + gaussian(rand) * 9e24,
+          nodes[i][1] + gaussian(rand) * 9e24,
+          nodes[i][2] + gaussian(rand) * 9e24,
+        );
+      }
+    }
+    groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts) });
+  }
+
+  const targets: Target[] = [
+    { name: 'OBSERVABLE UNIVERSE', slug: 'universe', frame: root, pos: [0, 0, 0], dist: 7e26, pitch: 0.35 },
+    { name: 'COSMIC WEB', slug: 'web', frame: root, pos: webNodePos, dist: 1.2e26, pitch: 0.2 },
+    { name: 'MILKY WAY', slug: 'galaxy', frame: galaxy, pos: [0, 0, 0], dist: 3.4e21, pitch: 0.55 },
+    { name: 'SOLAR SYSTEM', slug: 'system', frame: sunFrame, pos: [0, 0, 0], dist: 1.15e13, pitch: 0.9 },
+    { name: 'THE SUN', slug: 'sun', frame: sunFrame, pos: [0, 0, 0], dist: 4.5e9, pitch: 0.1 },
+    { name: 'EARTH', slug: 'earth', frame: earthFrame, pos: [0, 0, 0], dist: 4.2e7, pitch: 0.15 },
+    { name: 'THE MOON', slug: 'moon', frame: earthFrame, pos: moonPos, dist: 8e6, pitch: 0.1 },
+    { name: 'SURFACE · 1 METER', slug: 'surface', frame: surface, pos: [0, 0.5, 0], dist: 7, pitch: 0.22 },
+  ];
+
+  return { root, sunFrame, meshes, groups, orbits, targets };
+}

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UNIVERSE — true-scale atlas</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      #gpu {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+      }
+      #gpu.dragging {
+        cursor: grabbing;
+      }
+      .hud {
+        position: fixed;
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+        color: #cfd8e6;
+        user-select: none;
+        pointer-events: none;
+      }
+      #title {
+        top: 18px;
+        left: 22px;
+      }
+      #title h1 {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.5em;
+        color: #e8eef8;
+      }
+      #title p {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        color: #6d7a8f;
+        margin-top: 5px;
+      }
+      #scale {
+        bottom: 74px;
+        left: 22px;
+      }
+      #scale .width {
+        font-size: 22px;
+        color: #ffffff;
+        font-weight: 500;
+      }
+      #scale .exp {
+        font-size: 11px;
+        color: #8494ab;
+        margin-top: 3px;
+        letter-spacing: 0.08em;
+      }
+      #scale .ctx {
+        font-size: 10px;
+        color: #5f96d8;
+        margin-top: 6px;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+      }
+      #focus {
+        top: 18px;
+        right: 22px;
+        text-align: right;
+      }
+      #focus .name {
+        font-size: 13px;
+        color: #e8eef8;
+        letter-spacing: 0.15em;
+      }
+      #focus .hint {
+        font-size: 10px;
+        color: #6d7a8f;
+        margin-top: 5px;
+        letter-spacing: 0.1em;
+      }
+      #targets {
+        bottom: 20px;
+        left: 22px;
+        right: 22px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        pointer-events: auto;
+      }
+      #targets button {
+        font-family: inherit;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        padding: 7px 12px;
+        background: rgba(20, 28, 42, 0.72);
+        color: #aebdd2;
+        border: 1px solid rgba(110, 140, 190, 0.25);
+        border-radius: 4px;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+      }
+      #targets button:hover {
+        background: rgba(38, 52, 76, 0.85);
+        color: #fff;
+      }
+      #targets button.active {
+        border-color: #5f96d8;
+        color: #cfe4ff;
+      }
+      #targets button.tour {
+        margin-left: auto;
+        border-color: rgba(200, 160, 90, 0.45);
+        color: #e8c890;
+      }
+      #fatal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: #05070c;
+        color: #cfd8e6;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+        text-align: center;
+        line-height: 1.8;
+        padding: 40px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gpu"></canvas>
+    <div class="hud" id="title">
+      <h1>UNIVERSE</h1>
+      <p>TRUE-SCALE ATLAS · PROTOTYPE 001</p>
+    </div>
+    <div class="hud" id="scale">
+      <div class="width">—</div>
+      <div class="exp">—</div>
+      <div class="ctx">—</div>
+    </div>
+    <div class="hud" id="focus">
+      <div class="name">—</div>
+      <div class="hint">drag orbit · scroll zoom · 1–8 jump · T tour</div>
+    </div>
+    <div class="hud" id="targets"></div>
+    <div id="fatal"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
