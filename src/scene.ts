@@ -50,7 +50,20 @@ export interface Target {
   exit?: number;
   hidden?: boolean; // reachable via URL / flights only, no HUD button
   radius?: number; // physical bound radius in meters; presence makes it clickable
-  yaw?: number; // arrival yaw for flights/jumps (e.g. face a planet's sunlit side)
+  sunlit?: boolean; // flights/jumps arrive facing the sunlit side (yaw computed live)
+}
+
+// A body on a circular mean-longitude orbit in its frame's XZ plane. Every
+// V3 in `positions` is written in place each tick (mesh/target arrays share
+// references); `frameOffset` moves a whole child frame (Earth carries the
+// Moon, the surface site, and any camera standing on it automatically).
+export interface OrbitalBody {
+  a: number; // orbit radius, meters
+  periodDays: number;
+  L0: number; // mean longitude at J2000, degrees
+  positions: V3[];
+  frameOffset?: V3;
+  spriteFloatBase?: number; // float offset of its locator sprite in the planet sprite group
 }
 
 export interface Universe {
@@ -60,6 +73,8 @@ export interface Universe {
   groups: PointGroup[];
   orbits: OrbitLine[];
   targets: Target[];
+  bodies: OrbitalBody[];
+  planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
 }
 
 const AU = 1.496e11;
@@ -105,8 +120,9 @@ export function buildUniverse(): Universe {
   const galaxy = new Frame('milky-way', root, [0, 0, 0]);
   const sunFrame = new Frame('sun', galaxy, [8.3 * KPC, 0, 9e17]); // real galactocentric distance
 
-  const earthAngle = 0.9;
-  const earthPos: V3 = [AU * Math.cos(earthAngle), 0, AU * Math.sin(earthAngle)];
+  // Placeholder epoch position; updateBodies() overwrites it (in place) from
+  // the mean-longitude ephemeris before the first frame renders.
+  const earthPos: V3 = [AU, 0, 0];
   const earthFrame = new Frame('earth', sunFrame, earthPos);
   const R_EARTH = 6.371e6;
   // Surface site at Earth's +Y pole so local "up" is world +Y (placeholder
@@ -127,38 +143,41 @@ export function buildUniverse(): Universe {
 
   meshes.push(sphere(sunFrame, [0, 0, 0], 6.957e8, [1.0, 0.72, 0.35], 2));
 
-  const planets: [string, number, number, [number, number, number], number][] = [
-    ['mercury', 0.387 * AU, 2.44e6, [0.62, 0.58, 0.54], 4],
-    ['venus', 0.723 * AU, 6.05e6, [0.86, 0.76, 0.55], 3],
-    ['earth', AU, R_EARTH, [0.2, 0.4, 0.7], 1],
-    ['mars', 1.524 * AU, 3.39e6, [0.76, 0.42, 0.25], 4],
-    ['jupiter', 5.203 * AU, 6.99e7, [0.78, 0.63, 0.44], 3],
-    ['saturn', 9.537 * AU, 5.82e7, [0.86, 0.76, 0.55], 3],
-    ['uranus', 19.19 * AU, 2.54e7, [0.62, 0.85, 0.89], 3],
-    ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3],
+  // name, a, radius, color, matId, mean longitude at J2000 (deg), period (days)
+  const planets: [string, number, number, [number, number, number], number, number, number][] = [
+    ['mercury', 0.387 * AU, 2.44e6, [0.62, 0.58, 0.54], 4, 252.25, 87.969],
+    ['venus', 0.723 * AU, 6.05e6, [0.86, 0.76, 0.55], 3, 181.98, 224.701],
+    ['earth', AU, R_EARTH, [0.2, 0.4, 0.7], 1, 100.46, 365.256],
+    ['mars', 1.524 * AU, 3.39e6, [0.76, 0.42, 0.25], 4, 355.43, 686.98],
+    ['jupiter', 5.203 * AU, 6.99e7, [0.78, 0.63, 0.44], 3, 34.4, 4332.59],
+    ['saturn', 9.537 * AU, 5.82e7, [0.86, 0.76, 0.55], 3, 49.94, 10759.22],
+    ['uranus', 19.19 * AU, 2.54e7, [0.62, 0.85, 0.89], 3, 313.23, 30688.5],
+    ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3, 304.88, 60182],
   ];
+  const bodies: OrbitalBody[] = [];
   const planetSprites: number[][] = [];
   const planetTargets: Target[] = [];
-  planets.forEach(([name, a, r, color, matId], i) => {
+  planets.forEach(([name, a, r, color, matId, L0, periodDays]) => {
     orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
+    const spriteFloatBase = planetSprites.length * 8;
     if (name === 'earth') {
       meshes.push(sphere(earthFrame, [0, 0, 0], r, color, matId, 1.0));
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
+      bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
       return;
     }
-    const ang = 0.7 + i * 2.39996; // golden-angle spread, aesthetic epoch
-    const pos: V3 = [a * Math.cos(ang), 0, a * Math.sin(ang)];
+    const pos: V3 = [a, 0, 0]; // ephemeris fills this in before first render
     meshes.push(sphere(sunFrame, pos, r, color, matId, matId === 3 ? 0.4 : 0));
     planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.28]);
+    bodies.push({ a, periodDays, L0, positions: [pos], spriteFloatBase });
     planetTargets.push({
       name: name.toUpperCase(),
       slug: name,
       frame: sunFrame,
-      pos,
+      pos, // shared reference — the target rides the ephemeris
       dist: 28 * r,
       pitch: 0.15,
-      // Arrive on the sunlit side: camera offset direction ≈ planet -> sun.
-      yaw: Math.atan2(-pos[0], -pos[2]),
+      sunlit: true,
       parent: 'system',
       exit: Math.max(3 * a, 1e12),
       radius: r,
@@ -166,13 +185,15 @@ export function buildUniverse(): Universe {
     });
   });
 
-  // Moon: real semi-major axis & radius.
-  const moonPos: V3 = [3.844e8 * Math.cos(2.2), 0, 3.844e8 * Math.sin(2.2)];
+  // Moon: real semi-major axis, radius, and mean longitude.
+  const moonPos: V3 = [3.844e8, 0, 0];
   meshes.push(sphere(earthFrame, moonPos, 1.737e6, [0.72, 0.7, 0.68], 4));
   orbits.push({ frame: earthFrame, center: [0, 0, 0], radius: 3.844e8, color: [0.7, 0.72, 0.8], alpha: 0.16 });
+  bodies.push({ a: 3.844e8, periodDays: 27.3217, L0: 218.32, positions: [moonPos] });
 
   // Sun glare + planet locator sprites (so the system reads at 1e13 m).
   planetSprites.push([0, 0, 0, 2.2e9, 1.0, 0.85, 0.6, 2.2]);
+  const planetSpriteGroup = groups.length;
   groups.push({ frame: sunFrame, pos: [0, 0, 0], data: new Float32Array(planetSprites.flat()) });
 
   // ---- Surface site: ground plane, reference cubes, the 1 m cube ----
@@ -473,7 +494,7 @@ export function buildUniverse(): Universe {
       pos: [0, 0, 0],
       dist: 4.2e7,
       pitch: 0.15,
-      yaw: Math.atan2(-earthPos[0], -earthPos[2]),
+      sunlit: true,
       parent: 'system',
       exit: 9.9e11,
       child: 'surface',
@@ -487,7 +508,7 @@ export function buildUniverse(): Universe {
       pos: moonPos,
       dist: 8e6,
       pitch: 0.1,
-      yaw: Math.atan2(-earthPos[0], -earthPos[2]),
+      sunlit: true,
       parent: 'earth',
       exit: 1.2e8,
       radius: 1.737e6,
@@ -507,5 +528,5 @@ export function buildUniverse(): Universe {
     ...starTargets,
   ];
 
-  return { root, sunFrame, meshes, groups, orbits, targets };
+  return { root, sunFrame, meshes, groups, orbits, targets, bodies, planetSpriteGroup };
 }

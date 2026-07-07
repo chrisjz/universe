@@ -65,6 +65,49 @@ async function start(): Promise<void> {
   const u = buildUniverse();
   const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data));
 
+  // ---- simulation clock & mean-longitude ephemeris ----
+  // Planet/Moon positions are real for the simulated date (circular, coplanar
+  // approximation). The clock starts at the actual current time.
+  const J2000 = Date.UTC(2000, 0, 1, 12);
+  const SPEEDS = [1, 60, 3600, 86400, 604800, 2629800, 31557600, 315576000];
+  const SPEED_LABELS = [
+    'real time',
+    '1 min/s',
+    '1 hour/s',
+    '1 day/s',
+    '1 week/s',
+    '1 month/s',
+    '1 year/s',
+    '10 years/s',
+  ];
+  let simMs = Date.now();
+  let speedIndex = 0;
+  let paused = false;
+
+  function updateBodies(): void {
+    const days = (simMs - J2000) / 86400000;
+    for (const b of u.bodies) {
+      const theta = 2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
+      const x = b.a * Math.cos(theta),
+        z = b.a * Math.sin(theta);
+      if (b.frameOffset) {
+        b.frameOffset[0] = x;
+        b.frameOffset[2] = z;
+      }
+      for (const p of b.positions) {
+        p[0] = x;
+        p[2] = z;
+      }
+      if (b.spriteFloatBase !== undefined) {
+        const d = u.groups[u.planetSpriteGroup].data;
+        d[b.spriteFloatBase] = x;
+        d[b.spriteFloatBase + 2] = z;
+      }
+    }
+    renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+  }
+  updateBodies(); // targets must sit at their real positions before any ?goto jump
+
   // ---- camera state ----
   const cam = {
     frame: u.targets[0].frame,
@@ -88,6 +131,13 @@ async function start(): Promise<void> {
     Math.sin(cam.pitch),
     Math.cos(cam.pitch) * Math.cos(cam.yaw),
   ];
+
+  // Arrival yaw for sunlit-side targets, computed live (bodies move now).
+  function arrivalYaw(t: Target): number | undefined {
+    if (!t.sunlit) return undefined;
+    const s = relPos(u.sunFrame, [0, 0, 0], t.frame, t.pos);
+    return Math.atan2(s[0], s[2]);
+  }
 
   // ---- seamless zoom: focus retargeting ----
   // A retarget changes what scrolling converges on without moving the camera:
@@ -198,8 +248,10 @@ async function start(): Promise<void> {
       to: t,
       pitch0: cam.pitch,
       yaw0: cam.yaw,
-      yawDelta:
-        t.yaw === undefined ? 0 : ((((t.yaw - cam.yaw) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
+      yawDelta: (() => {
+        const ay = arrivalYaw(t);
+        return ay === undefined ? 0 : ((((ay - cam.yaw) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+      })(),
       t: 0,
       dur: clamp(1.5 + decades * 0.28, 2, 9),
       switched: false,
@@ -215,7 +267,8 @@ async function start(): Promise<void> {
     cam.focus = [...t.pos] as V3;
     cam.dist = t.dist;
     cam.pitch = t.pitch;
-    if (t.yaw !== undefined) cam.yaw = t.yaw;
+    const ay = arrivalYaw(t);
+    if (ay !== undefined) cam.yaw = ay;
     activeTarget = i;
     focusName = t.name;
   }
@@ -299,6 +352,9 @@ async function start(): Promise<void> {
       flyTo(n - 1);
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
+    if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
+    if (e.key === ']') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
+    if (e.key === 'p' || e.key === 'P') paused = !paused;
     if (e.key === 'Escape') {
       flight = null;
       retarget = null;
@@ -315,6 +371,14 @@ async function start(): Promise<void> {
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
+  // ?speed=<sim seconds per real second> — snaps to the nearest preset.
+  const speedParam = parseFloat(params.get('speed') ?? '');
+  if (Number.isFinite(speedParam) && speedParam > 0) {
+    speedIndex = SPEEDS.reduce(
+      (best, s, i) => (Math.abs(Math.log(s / speedParam)) < Math.abs(Math.log(SPEEDS[best] / speedParam)) ? i : best),
+      0,
+    );
+  }
   // ?click=fx,fy — synthetic click at fractional screen coords, fired once
   // after a few frames. Exists so headless tests can exercise picking.
   let pendingClick: number[] | null = (params.get('click') ?? '').split(',').map(parseFloat);
@@ -400,9 +464,19 @@ async function start(): Promise<void> {
       clickFocus(pendingClick[0] * canvas.clientWidth, pendingClick[1] * canvas.clientHeight);
       pendingClick = null;
     }
+    if (!paused) {
+      simMs += dt * SPEEDS[speedIndex] * 1000;
+      updateBodies();
+    }
     updateFlight(dt);
     updateRetarget(dt);
     updateAutoTarget();
+    // Track the focused body: orbiting targets move, and the camera must
+    // move with them (flights and glides manage the focus themselves).
+    if (!flight && !retarget) {
+      const t = u.targets[activeTarget];
+      cam.focus = [t.pos[0], t.pos[1], t.pos[2]];
+    }
 
     const { view, right, up } = viewRotation(cam.yaw, cam.pitch);
     const dir: V3 = [
@@ -498,7 +572,15 @@ async function start(): Promise<void> {
     });
 
     renderer.render(data);
-    hud.update(2 * cam.dist * Math.tan(FOV / 2), focusName, activeTarget, touring);
+    hud.update(
+      2 * cam.dist * Math.tan(FOV / 2),
+      focusName,
+      activeTarget,
+      touring,
+      simMs,
+      SPEED_LABELS[speedIndex],
+      paused,
+    );
     requestAnimationFrame(frame);
   }
 

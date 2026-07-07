@@ -45,6 +45,7 @@ export class Hud {
   private widthEl = document.querySelector('#scale .width') as HTMLElement;
   private expEl = document.querySelector('#scale .exp') as HTMLElement;
   private ctxEl = document.querySelector('#scale .ctx') as HTMLElement;
+  private timeEl = document.querySelector('#scale .time') as HTMLElement;
   private nameEl = document.querySelector('#focus .name') as HTMLElement;
   private buttons = new Map<number, HTMLButtonElement>();
   private tourBtn!: HTMLButtonElement;
@@ -66,12 +67,24 @@ export class Hud {
     bar.appendChild(this.tourBtn);
   }
 
-  update(viewWidth: number, focusName: string, activeTarget: number, touring: boolean): void {
+  update(
+    viewWidth: number,
+    focusName: string,
+    activeTarget: number,
+    touring: boolean,
+    simMs: number,
+    speedLabel: string,
+    paused: boolean,
+  ): void {
     const w = formatWidth(viewWidth);
     this.widthEl.textContent = w.main;
     this.expEl.textContent = `field of view ${w.exp}`;
     this.ctxEl.textContent = contextFor(viewWidth);
     this.nameEl.textContent = focusName;
+    const d = new Date(simMs);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+    this.timeEl.textContent = paused ? `${date} · paused` : `${date} · ${speedLabel}`;
     for (const [i, b] of this.buttons) b.classList.toggle('active', i === activeTarget);
     this.tourBtn.textContent = touring ? 'T STOP TOUR' : 'T GRAND TOUR';
   }
