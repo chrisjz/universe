@@ -112,6 +112,37 @@
         color: #e8eef8;
         letter-spacing: 0.15em;
       }
+      #focus .src {
+        font-size: 9px;
+        color: #7d8ba1;
+        margin-top: 4px;
+        letter-spacing: 0.12em;
+      }
+      #seam {
+        top: calc(64px + env(safe-area-inset-top, 0px));
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #8494ab;
+        background: rgba(14, 20, 32, 0.75);
+        border: 1px solid rgba(110, 140, 190, 0.25);
+        border-radius: 5px;
+        padding: 7px 12px;
+        backdrop-filter: blur(6px);
+        text-align: center;
+        max-width: min(640px, calc(100vw - 260px));
+      }
+      #seam .m {
+        color: #e8eef8;
+      }
+      #seam .a {
+        color: #f0b45f;
+      }
+      #seam .i {
+        color: #5fd4f0;
+      }
       #focus .hint {
         font-size: 10px;
         color: #6d7a8f;
@@ -244,6 +275,37 @@
         #focus .name {
           font-size: 10px;
         }
+        #focus .src {
+          font-size: 9px;
+          color: #7d8ba1;
+          margin-top: 4px;
+          letter-spacing: 0.12em;
+        }
+        #seam {
+          top: calc(64px + env(safe-area-inset-top, 0px));
+          left: 50%;
+          transform: translateX(-50%);
+          display: none;
+          font-size: 10px;
+          letter-spacing: 0.12em;
+          color: #8494ab;
+          background: rgba(14, 20, 32, 0.75);
+          border: 1px solid rgba(110, 140, 190, 0.25);
+          border-radius: 5px;
+          padding: 7px 12px;
+          backdrop-filter: blur(6px);
+          text-align: center;
+          max-width: min(640px, calc(100vw - 260px));
+        }
+        #seam .m {
+          color: #e8eef8;
+        }
+        #seam .a {
+          color: #f0b45f;
+        }
+        #seam .i {
+          color: #5fd4f0;
+        }
         #focus .hint {
           display: none;
         }
@@ -291,7 +353,15 @@
     </div>
     <div class="hud" id="focus">
       <div class="name">—</div>
-      <div class="hint">click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · T tour</div>
+      <div class="src">—</div>
+      <div class="hint">
+        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · X seam · T tour
+      </div>
+    </div>
+    <div class="hud" id="seam">
+      THE HONEST SEAM — <span class="m">natural: measured</span> ·
+      <span class="a">amber: real size, stylized look</span> ·
+      <span class="i">cyan: illustrative</span>
     </div>
     <div class="hud" id="targets"></div>
     <div id="search">

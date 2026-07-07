@@ -58,6 +58,9 @@ export class Hud {
   private ctxEl = document.querySelector('#scale .ctx') as HTMLElement;
   private timeEl = document.querySelector('#scale .time') as HTMLElement;
   private nameEl = document.querySelector('#focus .name') as HTMLElement;
+  private srcEl = document.querySelector('#focus .src') as HTMLElement;
+  private seamEl = document.getElementById('seam') as HTMLElement;
+  private seamBtn!: HTMLButtonElement;
   private buttons = new Map<number, HTMLButtonElement>();
   private tourBtn!: HTMLButtonElement;
 
@@ -74,6 +77,7 @@ export class Hud {
     onTarget: (i: number) => void,
     onTour: () => void,
     onTime: (action: 'slower' | 'pause' | 'faster') => void,
+    onSeam: () => void,
   ) {
     this.targets = targets;
     this.onTarget = onTarget;
@@ -89,6 +93,11 @@ export class Hud {
     searchBtn.title = 'search ( / )';
     searchBtn.addEventListener('click', () => this.openSearch());
     bar.appendChild(searchBtn);
+    this.seamBtn = document.createElement('button');
+    this.seamBtn.textContent = '◐';
+    this.seamBtn.title = 'the honest seam: what is measured vs imagined ( X )';
+    this.seamBtn.addEventListener('click', onSeam);
+    bar.appendChild(this.seamBtn);
     const scroller = document.createElement('div');
     scroller.className = 'scroller';
     bar.appendChild(scroller);
@@ -108,6 +117,11 @@ export class Hud {
     this.tourBtn.addEventListener('click', onTour);
     bar.appendChild(this.tourBtn);
     this.wireSearch();
+  }
+
+  setSeam(on: boolean): void {
+    this.seamEl.style.display = on ? 'block' : 'none';
+    this.seamBtn.classList.toggle('active', on);
   }
 
   // ---- search: every target (all 195 named stars included) is reachable ----
@@ -183,12 +197,14 @@ export class Hud {
     speedLabel: string,
     paused: boolean,
     starCount: number,
+    source: string,
   ): void {
     const w = formatWidth(viewWidth);
     this.widthEl.textContent = w.main;
     this.expEl.textContent = `field of view ${w.exp}`;
     this.ctxEl.textContent = contextFor(viewWidth);
     this.nameEl.textContent = focusName;
+    this.srcEl.textContent = source;
     const d = new Date(simMs);
     const pad = (n: number) => String(n).padStart(2, '0');
     const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
