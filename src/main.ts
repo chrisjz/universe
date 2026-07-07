@@ -212,9 +212,10 @@ async function start(): Promise<void> {
     },
     { passive: false },
   );
+  const visibleCount = u.targets.filter((t) => !t.hidden).length;
   window.addEventListener('keydown', (e) => {
     const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= u.targets.length) {
+    if (n >= 1 && n <= visibleCount) {
       touring = false;
       flyTo(n - 1);
     }
@@ -254,7 +255,7 @@ async function start(): Promise<void> {
         if (tourDwell > 1.6) {
           tourDwell = 0;
           tourIndex++;
-          if (tourIndex >= u.targets.length) {
+          if (tourIndex >= u.targets.length || u.targets[tourIndex].hidden) {
             touring = false;
             return;
           }
@@ -302,15 +303,16 @@ async function start(): Promise<void> {
   let last = performance.now();
   const t0 = last;
 
+  // Ground collision only applies at the surface site; resolve its frame by
+  // slug (never by array position — hidden targets are appended at the end).
+  const surfaceFrame = u.targets.find((t) => t.slug === 'surface')!.frame;
+
   function frame(now: number): void {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     updateFlight(dt);
     updateRetarget(dt);
     updateAutoTarget();
-
-    // Keep the camera above the ground when parked at the surface site.
-    const surfaceFrame = u.targets[u.targets.length - 1].frame;
 
     const { view, right, up } = viewRotation(cam.yaw, cam.pitch);
     const dir: V3 = [

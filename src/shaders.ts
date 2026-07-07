@@ -103,9 +103,9 @@ struct FOut {
   var out : FOut;
   out.depth = logDepth(length(in.wp));
 
-  if (matId == 2) { // star surface: emissive, no lighting
+  if (matId == 2) { // star surface: emissive, no lighting; highlight keeps the star's own hue
     let g = fbm(lp * 5.0 + vec3f(t * 0.03, 0.0, -t * 0.02));
-    out.col = vec4f(base * (1.15 + 0.55 * g) + vec3f(0.9, 0.5, 0.1) * pow(g, 3.0) * 0.6, 1.0);
+    out.col = vec4f(base * (0.85 + 0.4 * g) + base * base * pow(g, 3.0) * 0.55, 1.0);
     return out;
   }
 

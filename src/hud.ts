@@ -46,17 +46,18 @@ export class Hud {
   private expEl = document.querySelector('#scale .exp') as HTMLElement;
   private ctxEl = document.querySelector('#scale .ctx') as HTMLElement;
   private nameEl = document.querySelector('#focus .name') as HTMLElement;
-  private buttons: HTMLButtonElement[] = [];
+  private buttons = new Map<number, HTMLButtonElement>();
   private tourBtn!: HTMLButtonElement;
 
   constructor(targets: Target[], onTarget: (i: number) => void, onTour: () => void) {
     const bar = document.getElementById('targets')!;
     targets.forEach((t, i) => {
+      if (t.hidden) return;
       const b = document.createElement('button');
       b.textContent = `${i + 1} ${t.name}`;
       b.addEventListener('click', () => onTarget(i));
       bar.appendChild(b);
-      this.buttons.push(b);
+      this.buttons.set(i, b);
     });
     this.tourBtn = document.createElement('button');
     this.tourBtn.textContent = 'T GRAND TOUR';
@@ -71,7 +72,7 @@ export class Hud {
     this.expEl.textContent = `field of view ${w.exp}`;
     this.ctxEl.textContent = contextFor(viewWidth);
     this.nameEl.textContent = focusName;
-    this.buttons.forEach((b, i) => b.classList.toggle('active', i === activeTarget));
+    for (const [i, b] of this.buttons) b.classList.toggle('active', i === activeTarget);
     this.tourBtn.textContent = touring ? 'T STOP TOUR' : 'T GRAND TOUR';
   }
 }
