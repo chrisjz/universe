@@ -23,6 +23,9 @@ export interface MeshObj {
   // The inward journey dives *through* solid objects; each scale layer hides
   // once the camera's focus distance drops below this (the film's cross-fade).
   hideBelow?: number;
+  // Honest-seam provenance: 0 = measured, 0.5 = real dimensions but stylized
+  // look, 1 = illustrative. Drives the seam view's recoloring.
+  prov?: number;
 }
 
 export interface PointGroup {
@@ -35,6 +38,7 @@ export interface PointGroup {
   fadeExtent?: number;
   hideBelow?: number; // skip entirely below this focus distance (see MeshObj)
   nearFade?: boolean; // fade sprites near the camera (see the Grp.misc shader note)
+  prov?: number; // honest-seam provenance (see MeshObj)
 }
 export interface OrbitLine {
   frame: Frame;
@@ -66,6 +70,7 @@ export interface Target {
   // Catalog stars get a color so the renderer can substitute a real star mesh
   // for their sprite up close (sprites jitter at 1e16 m f32 magnitudes).
   starColor?: [number, number, number];
+  source?: string; // provenance caption shown in the HUD while focused
 }
 
 // A body on a circular mean-longitude orbit in its frame's XZ plane. Every
@@ -242,7 +247,20 @@ export function buildUniverse(): Universe {
     matId: number,
     rim = 0,
     emissive = 0,
-  ): MeshObj => ({ frame, pos, mesh: 'sphere', size: [r, r, r], bound: r, color, emissive, matId, rim, gridScale: 0 });
+    // Real radius, orbit, and albedo — procedural surface detail: 0.5.
+  ): MeshObj => ({
+    frame,
+    pos,
+    mesh: 'sphere',
+    size: [r, r, r],
+    bound: r,
+    color,
+    emissive,
+    matId,
+    rim,
+    gridScale: 0,
+    prov: 0.5,
+  });
 
   meshes.push(sphere(sunFrame, [0, 0, 0], 6.957e8, [1.0, 0.72, 0.35], 2));
 
@@ -270,6 +288,7 @@ export function buildUniverse(): Universe {
       earthMesh.hideBelow = 2e-3;
       // Diurnal rotation spins this basis (and with it the Blue Marble UVs).
       earthMesh.rot = earthRot;
+      earthMesh.prov = 0; // NASA imagery: measured
       meshes.push(earthMesh);
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
       bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
@@ -287,6 +306,7 @@ export function buildUniverse(): Universe {
       dist: 28 * r,
       pitch: 0.15,
       sunlit: true,
+      source: 'measured orbit & size — stylized surface',
       parent: 'system',
       exit: Math.max(3 * a, 1e12),
       radius: r,
@@ -303,7 +323,7 @@ export function buildUniverse(): Universe {
   // Sun glare + planet locator sprites (so the system reads at 1e13 m).
   planetSprites.push([0, 0, 0, 2.2e9, 1.0, 0.85, 0.6, 2.2]);
   const planetSpriteGroup = groups.length;
-  groups.push({ frame: sunFrame, pos: [0, 0, 0], data: new Float32Array(planetSprites.flat()) });
+  groups.push({ frame: sunFrame, pos: [0, 0, 0], data: new Float32Array(planetSprites.flat()), prov: 0 });
 
   // ---- The picnic (Powers of Ten, 1977): a one-meter blanket in the park
   // ---- by the lake, Lake Michigan glinting to the east ----
@@ -320,6 +340,7 @@ export function buildUniverse(): Universe {
     gridScale: 60000,
     rot: siteBasis,
     hideBelow: 2e-3, // the macro world fades once the dive passes the weave
+    prov: 1,
   });
   const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
@@ -334,6 +355,7 @@ export function buildUniverse(): Universe {
     gridScale: 0,
     rot: siteBasis,
     hideBelow: 2e-3,
+    prov: 1,
   });
   meshes.push(prop(0, 0.012, 0, [0.5, 0.012, 0.5], [0.9, 0.9, 0.9], 7)); // THE one-meter blanket
   meshes.push(prop(0.22, 0.045, 0.28, [0.1, 0.015, 0.15], [0.35, 0.12, 0.08])); // the book
@@ -404,6 +426,7 @@ export function buildUniverse(): Universe {
       gridScale: 0,
       rot,
       hideBelow,
+      prov: 1,
     });
     const msphere = (eun: V3, r: number, color: [number, number, number], hideBelow?: number): MeshObj => ({
       frame: micro,
@@ -417,6 +440,7 @@ export function buildUniverse(): Universe {
       rim: 0,
       gridScale: 0,
       hideBelow,
+      prov: 1,
     });
 
     // 1e-2: the weave — warp and weft threads of the red cell.
@@ -515,7 +539,7 @@ export function buildUniverse(): Universe {
       d[o + 5] = 0.95;
       d[o + 6] = 0.85;
       d[o + 7] = 1.6;
-      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 8e-10, hideBelow: 5e-13 });
+      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 8e-10, hideBelow: 5e-13, prov: 1 });
     }
 
     // 1e-14: the carbon nucleus — 6 protons + 6 neutrons; the one at the
@@ -566,7 +590,7 @@ export function buildUniverse(): Universe {
         d[o + 7] = 0.12;
         o += 8;
       }
-      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 2.5e-14 });
+      groups.push({ frame: micro, pos: [0, 0, 0], data: d, fadeExtent: 2.5e-14, prov: 1 });
     }
 
     // The zoom chain, downward. All stages share the dive axis and the site
@@ -583,6 +607,7 @@ export function buildUniverse(): Universe {
       exit,
       hidden: true,
       button: true, // the inward journey earns a place on the HUD bar
+      source: 'illustrative — true sizes, stylized arrangement',
     });
     microTargets.push(
       { ...stage('weave', 'THE WEAVE', 0.02, 'surface', 0.55), child: 'fiber', enter: 2.2e-3 },
@@ -658,13 +683,14 @@ export function buildUniverse(): Universe {
           exit: Math.max(6e17, 3 * Math.hypot(x, y, z)),
           radius,
           hidden: true,
+          source: 'measured — ATHYG: Tycho-2 + Gaia DR3, stylized surface',
           // The famous five have real hand-built meshes; everyone else gets a
           // dynamic one from this color when focused.
           starColor: f ? undefined : c,
         });
       }
     });
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true, prov: 0 });
   }
   meshes.push(...starMeshes);
 
@@ -724,7 +750,7 @@ export function buildUniverse(): Universe {
       const s = Math.sqrt(1 - u * u);
       put(rr * s * Math.cos(ph), rr * u, rr * s * Math.sin(ph), 3e17, [1.0, 0.92, 0.78], 0.02 + rand() * 0.03);
     }
-    groups.push({ frame: galaxy, pos: [0, 0, 0], data: d });
+    groups.push({ frame: galaxy, pos: [0, 0, 0], data: d, prov: 1 });
   }
 
   // ---- Cosmic web: nodes + filaments, each point one "galaxy" ----
@@ -779,7 +805,7 @@ export function buildUniverse(): Universe {
         );
       }
     }
-    groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts) });
+    groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts), prov: 1 });
   }
 
   // The main zoom chain is universe → galaxy → system → earth → surface;
@@ -788,6 +814,7 @@ export function buildUniverse(): Universe {
     {
       name: 'OBSERVABLE UNIVERSE',
       slug: 'universe',
+      source: 'illustrative — procedural cosmic structure',
       frame: root,
       pos: [0, 0, 0],
       dist: 7e26,
@@ -798,6 +825,7 @@ export function buildUniverse(): Universe {
     {
       name: 'COSMIC WEB',
       slug: 'web',
+      source: 'illustrative — procedural cosmic structure',
       frame: root,
       pos: webNodePos,
       dist: 1.2e26,
@@ -808,6 +836,7 @@ export function buildUniverse(): Universe {
     {
       name: 'MILKY WAY',
       slug: 'galaxy',
+      source: 'illustrative — real dimensions, procedural structure',
       frame: galaxy,
       pos: [0, 0, 0],
       dist: 3.4e21,
@@ -820,6 +849,7 @@ export function buildUniverse(): Universe {
     {
       name: 'SOLAR SYSTEM',
       slug: 'system',
+      source: 'measured — real orbits & sizes, mean-longitude ephemeris',
       frame: sunFrame,
       pos: [0, 0, 0],
       dist: 1.15e13,
@@ -832,6 +862,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE SUN',
       slug: 'sun',
+      source: 'measured size & color — stylized surface',
       frame: sunFrame,
       pos: [0, 0, 0],
       dist: 4.5e9,
@@ -843,6 +874,7 @@ export function buildUniverse(): Universe {
     {
       name: 'EARTH',
       slug: 'earth',
+      source: 'measured — NASA Blue Marble & Black Marble',
       frame: earthFrame,
       pos: [0, 0, 0],
       dist: 4.2e7,
@@ -857,6 +889,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE MOON',
       slug: 'moon',
+      source: 'measured orbit & size — stylized surface',
       frame: earthFrame,
       pos: moonPos,
       dist: 8e6,
@@ -869,6 +902,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
+      source: 'real place, 41.878°N 87.630°W — illustrative scene',
       frame: surface,
       pos: anchor([0, 0.3, 0]),
       dist: 6,

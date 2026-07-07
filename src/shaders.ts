@@ -33,6 +33,16 @@ fn bigLength(v : vec3f) -> f32 {
   if (m < 1e-30) { return 0.0; }
   return length(v / m) * m;
 }
+
+// The honest seam (camUp.w toggles it): recolor by provenance so you can see
+// what is measured and what is imagined. 0 = measured (untouched),
+// 0.5 = real dimensions but stylized look (amber), 1 = illustrative (cyan).
+fn seamTint(col : vec3f, prov : f32) -> vec3f {
+  if (G.camUp.w < 0.5 || prov <= 0.01) { return col; }
+  let g = dot(col, vec3f(0.299, 0.587, 0.114));
+  if (prov < 0.75) { return mix(col, vec3f(1.0, 0.72, 0.3) * (g * 0.9 + 0.1), 0.75); }
+  return vec3f(0.3, 0.85, 1.0) * (g * 0.85 + 0.15);
+}
 `;
 
 const NOISE = /* wgsl */ `
@@ -72,7 +82,7 @@ struct Obj {
   model : mat4x4f,
   color : vec4f, // rgb + emissive
   sun   : vec4f, // xyz: dir to sun (world axes), w: material id
-  misc  : vec4f, // x: rim strength, y: local->meters scale (grid), z: textured flag, w unused
+  misc  : vec4f, // x: rim strength, y: local->meters scale (grid), z: textured flag, w: provenance
 };
 @group(1) @binding(0) var<uniform> O : Obj;
 
@@ -115,7 +125,7 @@ struct FOut {
 
   if (matId == 2) { // star surface: emissive, no lighting; highlight keeps the star's own hue
     let g = fbm(lp * 5.0 + vec3f(t * 0.03, 0.0, -t * 0.02));
-    out.col = vec4f(base * (0.85 + 0.4 * g) + base * base * pow(g, 3.0) * 0.55, 1.0);
+    out.col = vec4f(seamTint(base * (0.85 + 0.4 * g) + base * base * pow(g, 3.0) * 0.55, O.misc.w), 1.0);
     return out;
   }
 
@@ -183,7 +193,7 @@ struct FOut {
     let rim = pow(1.0 - max(dot(n, v), 0.0), 2.6) * (0.15 + dif);
     col = col + vec3f(0.3, 0.5, 1.0) * rim * O.misc.x;
   }
-  out.col = vec4f(col, 1.0);
+  out.col = vec4f(seamTint(col, O.misc.w), 1.0);
   return out;
 }
 `;
@@ -196,6 +206,7 @@ struct Grp {
   misc : vec4f, // x: near-fade distance — sprites closer than this fade out
                 // (f32 cancellation jitters near sprites at 1e16 m coords;
                 // a double-precision star mesh takes over up close)
+                // y: provenance (see seamTint)
 };
 @group(1) @binding(0) var<uniform> P : Grp;
 
@@ -232,7 +243,7 @@ struct VOut {
   var o : VOut;
   o.pos = clip;
   o.uv = vec2f(ux, uy);
-  o.col = pcol;
+  o.col = seamTint(pcol, P.misc.y);
   var inten = pint * P.origin.w;
   if (P.misc.x > 0.0) { inten = inten * smoothstep(P.misc.x * 0.35, P.misc.x, d0); }
   o.inten = inten;
@@ -275,6 +286,7 @@ struct VOut { @builtin(position) pos : vec4f };
 }
 
 @fragment fn fs() -> @location(0) vec4f {
-  return vec4f(L.color.rgb * L.color.a, 1.0); // additive
+  // Orbit guides depict real orbits with a drawn line: stylized-on-real.
+  return vec4f(seamTint(L.color.rgb, 0.5) * L.color.a, 1.0); // additive
 }
 `;

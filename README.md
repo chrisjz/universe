@@ -53,18 +53,19 @@ npm run dev
 
 Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 
-| Input       | Action                                                                                                         |
-| ----------- | -------------------------------------------------------------------------------------------------------------- |
-| **scroll**  | seamless zoom — all the way down, all the way back up                                                          |
-| **click**   | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there |
-| **2×click** | fly to what's under the cursor                                                                                 |
-| **drag**    | orbit the current focus                                                                                        |
-| **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                   |
-| **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                  |
-| **[ ]**     | slow down / speed up time (real time → 10 years per second)                                                    |
-| **P**       | pause the simulation clock                                                                                     |
-| **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                    |
-| **Esc**     | cancel the current flight                                                                                      |
+| Input       | Action                                                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| **scroll**  | seamless zoom — all the way down, all the way back up                                                                 |
+| **click**   | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there        |
+| **2×click** | fly to what's under the cursor                                                                                        |
+| **drag**    | orbit the current focus                                                                                               |
+| **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
+| **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
+| **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
+| **[ ]**     | slow down / speed up time (real time → 10 years per second)                                                           |
+| **P**       | pause the simulation clock                                                                                            |
+| **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
+| **Esc**     | cancel the current flight                                                                                             |
 
 On touch screens: drag orbits, **pinch zooms**, tap focuses, **double-tap
 flies**, and the search / time / tour controls are on-screen buttons.
@@ -87,6 +88,12 @@ bytes per star. Five of them are destinations —
 [`?goto=betelgeuse`](https://chrisjz.github.io/universe/?goto=betelgeuse), and
 [`?goto=polaris`](https://chrisjz.github.io/universe/?goto=polaris) — rendered
 at their real radii (Betelgeuse is 764 solar radii and it _feels_ like it).
+
+And the atlas is honest about itself: every focus shows its provenance in the
+HUD, and pressing **X** opens the seam — measured data keeps its natural
+colors, things with real dimensions but stylized looks turn amber, and the
+purely illustrative turns blueprint-cyan. Stand at the picnic and toggle it:
+the ground you stand on is imagined; the sky above you is real.
 
 ## How 27 orders of magnitude fit in one float pipeline
 
@@ -143,7 +150,7 @@ src/
 - [ ] Axial tilt (23.4°) and seasons
 - [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
-- [ ] Honest rendering seam: visually distinguish measured vs procedural
+- [x] The honest seam: press **X** to see what is measured and what is imagined
 
 ## Development
 

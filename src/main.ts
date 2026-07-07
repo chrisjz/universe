@@ -86,6 +86,7 @@ async function start(): Promise<void> {
   let simMs = Date.now();
   let speedIndex = 0;
   let paused = false;
+  let seam = false; // the honest seam: recolor by provenance (X)
 
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
@@ -126,7 +127,7 @@ async function start(): Promise<void> {
   let starCount = 0;
   void streamStars(`${import.meta.env.BASE_URL}stars/`, (instances) => {
     groupIndex.push(renderer.addPointGroup(instances));
-    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18, nearFade: true });
+    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18, nearFade: true, prov: 0 });
     starCount += instances.length / 8;
   });
 
@@ -347,6 +348,10 @@ async function start(): Promise<void> {
       if (action === 'faster') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
       if (action === 'pause') paused = !paused;
     },
+    () => {
+      seam = !seam;
+      hud.setSeam(seam);
+    },
   );
 
   // ---- input ----
@@ -467,6 +472,10 @@ async function start(): Promise<void> {
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
     if (e.key === ']') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
     if (e.key === 'p' || e.key === 'P') paused = !paused;
+    if (e.key === 'x' || e.key === 'X') {
+      seam = !seam;
+      hud.setSeam(seam);
+    }
     if (e.key === 'Escape') {
       flight = null;
       retarget = null;
@@ -478,6 +487,10 @@ async function start(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const searchParam = params.get('search');
   if (searchParam !== null) hud.openSearch(searchParam);
+  if (params.get('seam') !== null) {
+    seam = true;
+    hud.setSeam(true);
+  }
   const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
@@ -622,7 +635,7 @@ async function start(): Promise<void> {
     globals[20] = up[0];
     globals[21] = up[1];
     globals[22] = up[2];
-    globals[23] = 0;
+    globals[23] = seam ? 1 : 0;
     globals[24] = CAP;
     globals[25] = 1 / Math.log2(1 + FAR / nearRef);
     globals[26] = (now - t0) / 1000;
@@ -647,6 +660,7 @@ async function start(): Promise<void> {
               matId: 2,
               rim: 0,
               gridScale: 0,
+              prov: 0.5, // real radius & color, stylized surface
             },
           ]
         : [];
@@ -693,6 +707,7 @@ async function start(): Promise<void> {
       o[24] = m.rim;
       o[25] = m.gridScale;
       o[26] = renderer.earthReady ? 1 : 0; // textured flag (matId 1 only)
+      o[27] = m.prov ?? 0;
       data.meshes.push({ kind: m.mesh, data: o, earth: m.matId === 1 });
     }
 
@@ -722,6 +737,7 @@ async function start(): Promise<void> {
       gd[2] = rel[2];
       gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
       gd[4] = g.nearFade ? 1.2e12 : 0;
+      gd[5] = g.prov ?? 0;
       data.groups.push({ index: groupIndex[i], data: gd });
     });
 
@@ -735,6 +751,7 @@ async function start(): Promise<void> {
       SPEED_LABELS[speedIndex],
       paused,
       starCount,
+      u.targets[activeTarget].source ?? '',
     );
     requestAnimationFrame(frame);
   }
