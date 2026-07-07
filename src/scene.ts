@@ -25,6 +25,10 @@ export interface PointGroup {
   frame: Frame;
   pos: V3;
   data: Float32Array<ArrayBuffer>;
+  // Star fields fade out as the camera pulls beyond this extent, so a million
+  // additive sprites collapsing into a few pixels don't bloom to white (the
+  // procedural galaxy provides the from-a-distance glow instead).
+  fadeExtent?: number;
 }
 export interface OrbitLine {
   frame: Frame;
@@ -226,26 +230,8 @@ export function buildUniverse(): Universe {
   meshes.push(box([-3.5, 0.5, 4], [0.5, 0.5, 0.5], [0.62, 0.63, 0.66]));
   meshes.push(box([1.5, 2, -7], [0.4, 2, 0.4], [0.55, 0.58, 0.64])); // 4 m obelisk
 
-  // ---- Local stars (within ~100 pc of the Sun) ----
-  {
-    const n = 4500;
-    const d = new Float32Array(n * 8);
-    for (let i = 0; i < n; i++) {
-      const o = i * 8;
-      d[o] = gaussian(rand) * 8e17;
-      d[o + 1] = gaussian(rand) * 8e17;
-      d[o + 2] = gaussian(rand) * 8e17;
-      d[o + 3] = 2e9 * (0.5 + rand());
-      const t = rand();
-      const c: [number, number, number] =
-        t < 0.12 ? [0.65, 0.75, 1.0] : t < 0.5 ? [0.95, 0.95, 1.0] : t < 0.82 ? [1.0, 0.88, 0.68] : [1.0, 0.6, 0.45];
-      d[o + 4] = c[0];
-      d[o + 5] = c[1];
-      d[o + 6] = c[2];
-      d[o + 7] = 0.25 + rand() * 0.6;
-    }
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d });
-  }
+  // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
+  // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
 
   // ---- The 300 brightest REAL stars (HYG catalog): true positions,
   // ---- colors from B-V, brightness from apparent magnitude ----
@@ -311,7 +297,7 @@ export function buildUniverse(): Universe {
         });
       }
     });
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18 });
   }
   meshes.push(...starMeshes);
 

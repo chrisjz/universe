@@ -20,6 +20,7 @@ import {
 import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
 import { buildUniverse, Target } from './scene';
+import { streamStars } from './stars';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -107,6 +108,14 @@ async function start(): Promise<void> {
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
+
+  // ---- stream the ATHYG star tiles (brightest chunks first) ----
+  let starCount = 0;
+  void streamStars(`${import.meta.env.BASE_URL}stars/`, (instances) => {
+    groupIndex.push(renderer.addPointGroup(instances));
+    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18 });
+    starCount += instances.length / 8;
+  });
 
   // ---- camera state ----
   const cam = {
@@ -568,6 +577,7 @@ async function start(): Promise<void> {
       gd[0] = rel[0];
       gd[1] = rel[1];
       gd[2] = rel[2];
+      gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1), 1) : 1;
       data.groups.push({ index: groupIndex[i], data: gd });
     });
 
@@ -580,6 +590,7 @@ async function start(): Promise<void> {
       simMs,
       SPEED_LABELS[speedIndex],
       paused,
+      starCount,
     );
     requestAnimationFrame(frame);
   }
