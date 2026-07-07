@@ -6,6 +6,7 @@
 import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
+import { BRIGHT_STARS } from './data/brightstars';
 
 export interface MeshObj {
   frame: Frame;
@@ -47,6 +48,7 @@ export interface Target {
   enter?: number;
   parent?: string;
   exit?: number;
+  hidden?: boolean; // reachable via URL / flights only, no HUD button
 }
 
 export interface Universe {
@@ -60,6 +62,33 @@ export interface Universe {
 
 const AU = 1.496e11;
 const KPC = 3.086e19;
+const R_SUN = 6.957e8;
+
+// B-V color index -> approximate RGB via blackbody temperature.
+function bvToRgb(bv: number): [number, number, number] {
+  const t = 4600 * (1 / (0.92 * bv + 1.7) + 1 / (0.92 * bv + 0.62));
+  const x = Math.min(Math.max(t, 2000), 30000) / 100;
+  let r: number, g: number, b: number;
+  if (x <= 66) {
+    r = 255;
+    g = 99.47 * Math.log(x) - 161.12;
+    b = x <= 19 ? 0 : 138.52 * Math.log(x - 10) - 305.04;
+  } else {
+    r = 329.7 * Math.pow(x - 60, -0.1332);
+    g = 288.12 * Math.pow(x - 60, -0.0755);
+    b = 255;
+  }
+  const clamp01 = (v: number) => Math.min(Math.max(v / 255, 0), 1);
+  // Blackbody RGB is washed out for cool stars; boost saturation so M-types
+  // actually read as orange-red.
+  const c = [clamp01(r), clamp01(g), clamp01(b)];
+  const mean = (c[0] + c[1] + c[2]) / 3;
+  return [
+    Math.min(Math.max(mean + (c[0] - mean) * 1.45, 0), 1),
+    Math.min(Math.max(mean + (c[1] - mean) * 1.45, 0), 1),
+    Math.min(Math.max(mean + (c[2] - mean) * 1.45, 0), 1),
+  ];
+}
 
 export function buildUniverse(): Universe {
   const rand = mulberry32(20260707);
@@ -177,6 +206,62 @@ export function buildUniverse(): Universe {
     }
     groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d });
   }
+
+  // ---- The 300 brightest REAL stars (HYG catalog): true positions,
+  // ---- colors from B-V, brightness from apparent magnitude ----
+  const starMeshes: MeshObj[] = [];
+  const starTargets: Target[] = [];
+  {
+    const d = new Float32Array(BRIGHT_STARS.length * 8);
+    // Famous destinations: real radii, rendered as star-surface spheres.
+    const famous = new Map<string, { slug: string; radius: number }>([
+      ['Sirius', { slug: 'sirius', radius: 1.71 * R_SUN }],
+      ['Rigil Kentaurus', { slug: 'alpha-centauri', radius: 1.22 * R_SUN }],
+      ['Vega', { slug: 'vega', radius: 2.36 * R_SUN }],
+      ['Betelgeuse', { slug: 'betelgeuse', radius: 764 * R_SUN }],
+      ['Polaris', { slug: 'polaris', radius: 37.5 * R_SUN }],
+    ]);
+    BRIGHT_STARS.forEach(([x, y, z, mag, ci, lum, name], i) => {
+      const o = i * 8;
+      const c = bvToRgb(ci);
+      d[o] = x;
+      d[o + 1] = y;
+      d[o + 2] = z;
+      d[o + 3] = Math.min(Math.max(R_SUN * Math.sqrt(lum), 5e8), 2e11);
+      d[o + 4] = c[0];
+      d[o + 5] = c[1];
+      d[o + 6] = c[2];
+      d[o + 7] = Math.min(Math.max(1.4 - 0.3 * mag, 0.35), 2.0);
+      const f = famous.get(name);
+      if (f) {
+        starMeshes.push({
+          frame: sunFrame,
+          pos: [x, y, z],
+          mesh: 'sphere',
+          size: [f.radius, f.radius, f.radius],
+          bound: f.radius,
+          color: c,
+          emissive: 0,
+          matId: 2,
+          rim: 0,
+          gridScale: 0,
+        });
+        starTargets.push({
+          name: name.toUpperCase(),
+          slug: f.slug,
+          frame: sunFrame,
+          pos: [x, y, z],
+          dist: 40 * f.radius,
+          pitch: 0.1,
+          parent: 'galaxy',
+          exit: 6e17,
+          hidden: true,
+        });
+      }
+    });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d });
+  }
+  meshes.push(...starMeshes);
 
   // ---- The galaxy: exponential disk + 2-arm log spiral + bulge + halo ----
   {
@@ -381,6 +466,7 @@ export function buildUniverse(): Universe {
       parent: 'earth',
       exit: 5.5e7,
     },
+    ...starTargets, // hidden: kept after the visible eight so keys 1-8 stay stable
   ];
 
   return { root, sunFrame, meshes, groups, orbits, targets };

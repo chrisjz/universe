@@ -53,6 +53,16 @@ Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/unive
 jumps straight to the Milky Way, and `&dist=6e20` sets the camera distance in
 meters — deep links into a 10²⁷-meter scene.
 
+The sky is real: the 300 brightest stars come from the HYG catalog with their
+true 3D positions, colors derived from their measured B–V indices, and
+brightness from apparent magnitude. Five of them are destinations —
+[`?goto=sirius`](https://chrisjz.github.io/universe/?goto=sirius),
+[`?goto=alpha-centauri`](https://chrisjz.github.io/universe/?goto=alpha-centauri),
+[`?goto=vega`](https://chrisjz.github.io/universe/?goto=vega),
+[`?goto=betelgeuse`](https://chrisjz.github.io/universe/?goto=betelgeuse), and
+[`?goto=polaris`](https://chrisjz.github.io/universe/?goto=polaris) — rendered
+at their real radii (Betelgeuse is 764 solar radii and it _feels_ like it).
+
 ## How 27 orders of magnitude fit in one float pipeline
 
 Single-precision floats hold ~7 significant digits; even float64 has ~57 km of
@@ -96,7 +106,8 @@ src/
 
 - [x] Scale engine: 10²⁷ m → 1 m in one seamless scene
 - [x] Scroll-zoom auto-retargeting (zoom _toward what's next_, hands-free)
-- [ ] Gaia DR3 star catalog, streamed as hierarchical LOD point tiles
+- [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
+- [ ] Full Gaia DR3 star catalog, streamed as hierarchical LOD point tiles
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
 - [ ] Earth terrain via map tiles at the bottom of the zoom
 - [ ] Click-to-focus on arbitrary objects (planets, stars, galaxies)
@@ -113,6 +124,13 @@ npm run lint      # eslint (typed rules)
 npm run format    # prettier --write
 npm run build     # tsc --noEmit && vite build
 ```
+
+## Data
+
+Star positions, magnitudes, and color indices come from the
+[HYG Database](https://github.com/astronexus/HYG-Database) (CC BY-SA 4.0) —
+a merger of Hipparcos, Yale Bright Star, and Gliese. Regenerate
+`src/data/brightstars.ts` with `node scripts/generate-stars.mjs <hyg.csv>`.
 
 ## License
 
