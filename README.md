@@ -8,6 +8,8 @@ down through a picnic blanket on the Chicago lakefront and into a proton
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+https://github.com/user-attachments/assets/41fea69f-20b1-414f-b9b9-e125d81d208a
+
 ![The grand tour: one continuous zoom from the cosmic web through the Chicago picnic into a proton](docs/tour.gif)
 
 _The grand tour, 43 orders of magnitude in one continuous flight — press **T** in
