@@ -1,0 +1,38 @@
+{
+  "source": "ATHYG v3.2 (Tycho-2 + Gaia DR3), https://github.com/astronexus/ATHYG-Database, CC BY-SA 4.0",
+  "total": 853929,
+  "chunks": [
+    {
+      "file": "chunk-0.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-1.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-2.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-3.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-4.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-5.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-6.bin",
+      "count": 120000
+    },
+    {
+      "file": "chunk-7.bin",
+      "count": 13929
+    }
+  ]
+}

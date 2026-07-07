@@ -161,7 +161,7 @@ struct FOut {
 export const POINTS_WGSL =
   COMMON +
   /* wgsl */ `
-struct Grp { origin : vec4f };
+struct Grp { origin : vec4f }; // xyz: group origin rel camera, w: intensity fade
 @group(1) @binding(0) var<uniform> P : Grp;
 
 struct VOut {
@@ -198,7 +198,7 @@ struct VOut {
   o.pos = clip;
   o.uv = vec2f(ux, uy);
   o.col = pcol;
-  o.inten = pint;
+  o.inten = pint * P.origin.w;
   return o;
 }
 

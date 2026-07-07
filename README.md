@@ -61,9 +61,10 @@ jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/uni
 to any planet, and `&dist=6e20` sets the camera distance in meters — deep
 links into a 10²⁷-meter scene.
 
-The sky is real: the 300 brightest stars come from the HYG catalog with their
-true 3D positions, colors derived from their measured B–V indices, and
-brightness from apparent magnitude. Five of them are destinations —
+The sky is real: **854,000 stars** stream in progressively from binary tiles
+built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
+colors from measured B–V indices, brightness from apparent magnitude, 16
+bytes per star. Five of them are destinations —
 [`?goto=sirius`](https://chrisjz.github.io/universe/?goto=sirius),
 [`?goto=alpha-centauri`](https://chrisjz.github.io/universe/?goto=alpha-centauri),
 [`?goto=vega`](https://chrisjz.github.io/universe/?goto=vega),
@@ -116,7 +117,8 @@ src/
 - [x] Scroll-zoom auto-retargeting (zoom _toward what's next_, hands-free)
 - [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
 - [x] Click-to-focus: planets, moons, and every named star are clickable destinations
-- [ ] Full Gaia DR3 star catalog, streamed as hierarchical LOD point tiles
+- [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
+- [ ] Full Gaia DR3 (1.8B sources) via hierarchical spatial LOD tiles
 - [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [ ] Earth terrain via map tiles at the bottom of the zoom
@@ -136,10 +138,15 @@ npm run build     # tsc --noEmit && vite build
 
 ## Data
 
-Star positions, magnitudes, and color indices come from the
-[HYG Database](https://github.com/astronexus/HYG-Database) (CC BY-SA 4.0) —
-a merger of Hipparcos, Yale Bright Star, and Gliese. Regenerate
-`src/data/brightstars.ts` with `node scripts/generate-stars.mjs <hyg.csv>`.
+Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
+(both CC BY-SA 4.0):
+
+- [HYG](https://github.com/astronexus/HYG-Database) (Hipparcos + Yale + Gliese)
+  powers the 300 brightest stars and the named destinations —
+  `node scripts/generate-stars.mjs <hyg.csv>` regenerates `src/data/brightstars.ts`.
+- [ATHYG](https://github.com/astronexus/ATHYG-Database) (Tycho-2 + Gaia DR3)
+  powers the 854k-star deep sky — `node scripts/generate-star-tiles.mjs <athyg.csv>`
+  regenerates the binary tiles in `public/stars/`.
 
 ## License
 
