@@ -3,6 +3,8 @@
 // (pos, size, color, intensity — 8 floats/star) and handed over as it lands,
 // so the sky fills in progressively without blocking startup.
 
+import { orientSky } from './sky';
+
 const R_SUN = 6.957e8;
 const PC = 3.0857e16;
 
@@ -33,9 +35,8 @@ export async function streamStars(
     const out = new Float32Array(n * 8);
     for (let i = 0; i < n; i++) {
       const o = i * 16;
-      const x = view.getFloat32(o, true);
-      const y = view.getFloat32(o + 4, true);
-      const z = view.getFloat32(o + 8, true);
+      // Tiles store the pre-orientation convention; rotate into the true sky.
+      const [x, y, z] = orientSky(view.getFloat32(o, true), view.getFloat32(o + 4, true), view.getFloat32(o + 8, true));
       const absMag = view.getUint8(o + 15) / 8 - 15;
       const distPc = Math.max(Math.hypot(x, y, z) / PC, 0.1);
       const appMag = absMag + 5 * (Math.log10(distPc) - 1);

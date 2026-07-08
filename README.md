@@ -95,6 +95,11 @@ bytes per star. Five of them are destinations —
 [`?goto=betelgeuse`](https://chrisjz.github.io/universe/?goto=betelgeuse), and
 [`?goto=polaris`](https://chrisjz.github.io/universe/?goto=polaris) — rendered
 at their real radii (Betelgeuse is 764 solar radii and it _feels_ like it).
+And the sky is oriented truly: the ecliptic meets the celestial equator at
+the real equinoxes, Polaris stands over Earth's axis — altitude 41.9°, due
+north from the picnic, like any Chicago scout could tell you — and the
+summer Milky Way climbs out of Sagittarius exactly where it should
+(verified against textbook astronomy to under a degree).
 
 And the atlas is honest about itself: every focus shows its provenance in the
 HUD, and pressing **X** opens the seam — measured data keeps its natural
@@ -156,7 +161,7 @@ src/
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
 - [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time
 - [x] Axial tilt (23.44°) and seasons: real solstice sun, real day lengths
-- [ ] True ecliptic–galactic sky orientation (the celestial pole at Polaris)
+- [x] True ecliptic–galactic sky orientation: Polaris over the pole, the Milky Way where it really is
 - [x] Street-level Earth: Esri World Imagery rings, down to ~2 m/px over the picnic
 - [x] Terrain elevation: real DEM heights on the imagery rings (AWS Terrain Tiles)
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
