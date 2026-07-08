@@ -103,6 +103,18 @@ export interface Universe {
   scaleWeb: (a: number) => Float32Array<ArrayBuffer>; // comoving web × ΛCDM scale factor
   patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[];
   site: { lat: number; lon: number; ringSizes: number[]; waterLevel: number };
+  // Free Earth navigation: the roam point + the movable imagery stack.
+  nav: {
+    home: [number, number]; // the picnic (lat°, lon°)
+    roamLatLon: () => [number, number];
+    setRoam: (latDeg: number, lonDeg: number) => void;
+    setRoamFromWorld: (w: V3) => void; // w: world position relative Earth's center
+    roamMove: (delta: V3) => void; // world-space meters, great-circle step
+    imagerySite: () => [number, number];
+    setImagerySite: (latDeg: number, lonDeg: number) => string[]; // returns new texture keys
+    imageryKeys: () => string[];
+    dimpleEarth: (depth: number) => void; // sink the render sphere below carved terrain
+  };
 }
 
 const AU = 1.496e11;
@@ -148,8 +160,12 @@ export function ringGeometry(
       );
     }
   }
-  const hole0 = G / 2 - G / 8,
-    hole1 = G / 2 + G / 8; // central quarter = S/8 half-width hole
+  // The hole is one cell SMALLER per side than the next ring's S/8 extent,
+  // so adjacent LODs overlap by S/48: with real terrain the boundary
+  // vertices sample the DEM at different resolutions, and without overlap
+  // the T-junction opens visible cracks in steep country (Grand Canyon).
+  const hole0 = G / 2 - G / 8 + 1,
+    hole1 = G / 2 + G / 8 - 1;
   for (let j = 0; j < G; j++) {
     for (let i = 0; i < G; i++) {
       if (i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the hole (next ring / the lawn)
@@ -158,6 +174,43 @@ export function ringGeometry(
       idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
     }
   }
+  // Skirts: neighboring LODs sample the DEM at different resolutions, so in
+  // steep country their sheets can disagree by ~a cell of height and a
+  // grazing sight line slips BETWEEN them (a lavender wedge of sky in the
+  // Grand Canyon). A one-cell-deep curtain hangs from both perimeters and
+  // closes the gap; its stretched texels are barely visible edge-on.
+  const skirt = (2 * S) / G;
+  const emitSkirt = (loop: [number, number][]): void => {
+    const base = verts.length / 6;
+    for (const [i, j] of loop) {
+      const top = (j * (G + 1) + i) * 6;
+      const nx = ((i / G - 0.5) * S) / R_EARTH;
+      const nz = ((j / G - 0.5) * S) / R_EARTH;
+      const len = Math.hypot(nx, 1, nz);
+      const rr = R_EARTH + lift + hAt(i, j) - skirt;
+      verts.push((rr * nx) / len, rr / len - R_EARTH, (rr * nz) / len, verts[top + 3], verts[top + 4], verts[top + 5]);
+    }
+    const n = loop.length;
+    for (let k = 0; k < n; k++) {
+      const [i0, j0] = loop[k];
+      const [i1, j1] = loop[(k + 1) % n];
+      const t0 = j0 * (G + 1) + i0,
+        t1 = j1 * (G + 1) + i1;
+      idx.push(t0, base + k, t1, t1, base + k, base + ((k + 1) % n));
+    }
+  };
+  const outer: [number, number][] = [];
+  for (let i = 0; i < G; i++) outer.push([i, 0]);
+  for (let j = 0; j < G; j++) outer.push([G, j]);
+  for (let i = G; i > 0; i--) outer.push([i, G]);
+  for (let j = G; j > 0; j--) outer.push([0, j]);
+  emitSkirt(outer);
+  const hole: [number, number][] = [];
+  for (let i = hole0; i < hole1; i++) hole.push([i, hole0]);
+  for (let j = hole0; j < hole1; j++) hole.push([hole1, j]);
+  for (let i = hole1; i > hole0; i--) hole.push([i, hole1]);
+  for (let j = hole1; j > hole0; j--) hole.push([hole0, j]);
+  emitSkirt(hole);
   return { verts: new Float32Array(verts), indices: new Uint32Array(idx) };
 }
 
@@ -306,7 +359,20 @@ export function buildUniverse(): Universe {
   // westward). Scrub +12,000 years and Vega takes over as the pole star; it
   // also means the seasons drift through this sidereal calendar, which is
   // real (our dates are Julian days from J2000, not tropical years).
+  // Movable earth-fixed vectors (the roam point, the imagery-stack basis)
+  // re-rotated by every orientEarth call, plus hooks run after each pass.
+  const fixedVecs: { fixed: V3; out: V3 }[] = [];
+  const postOrient: (() => void)[] = [];
+  const registerFixed = (fixed: V3): V3 => {
+    const out: V3 = [...fixed];
+    fixedVecs.push({ fixed, out });
+    return out;
+  };
+  let lastTheta = 0;
+  let lastPhi = 0;
   const orientEarth = (theta: number, phi = 0): void => {
+    lastTheta = theta;
+    lastPhi = phi;
     const c = Math.cos(theta),
       s = Math.sin(theta);
     const cp = Math.cos(phi),
@@ -334,6 +400,78 @@ export function buildUniverse(): Universe {
       a.vec[1] = east[1] * a.eun[0] + up[1] * a.eun[1] + north[1] * a.eun[2];
       a.vec[2] = east[2] * a.eun[0] + up[2] * a.eun[1] + north[2] * a.eun[2];
     }
+    for (const f of fixedVecs) rot(f.fixed, f.out);
+    for (const h of postOrient) h();
+  };
+  const refreshOrient = (): void => orientEarth(lastTheta, lastPhi);
+
+  // Earth-fixed frame of a lat/lon (same convention as the site's up0):
+  const fixedDir = (lat: number, lon: number): V3 => [
+    Math.cos(lat) * Math.cos(lon),
+    Math.sin(lat),
+    -Math.cos(lat) * Math.sin(lon),
+  ];
+  const fixedBasis = (lat: number, lon: number, e: V3, uu: V3, n: V3): void => {
+    const d = fixedDir(lat, lon);
+    const h = Math.hypot(d[0], d[2]);
+    e[0] = d[2] / h;
+    e[1] = 0;
+    e[2] = -d[0] / h;
+    uu[0] = d[0];
+    uu[1] = d[1];
+    uu[2] = d[2];
+    n[0] = uu[1] * e[2] - uu[2] * e[1];
+    n[1] = uu[2] * e[0] - uu[0] * e[2];
+    n[2] = uu[0] * e[1] - uu[1] * e[0];
+  };
+
+  // ---- Free Earth navigation: the roam point ----
+  // A movable focus on the planet's surface. Its earth-fixed position and
+  // tangent basis are mutated by nav calls and ride the diurnal rotation
+  // like everything else on the planet.
+  const roam = { lat: SITE_LAT, lon: SITE_LON };
+  const roamFixedE: V3 = [0, 0, 0],
+    roamFixedU: V3 = [0, 0, 0],
+    roamFixedN: V3 = [0, 0, 0],
+    roamFixedPos: V3 = [0, 0, 0];
+  fixedBasis(roam.lat, roam.lon, roamFixedE, roamFixedU, roamFixedN);
+  const roamEast = registerFixed(roamFixedE);
+  const roamUp = registerFixed(roamFixedU);
+  const roamNorth = registerFixed(roamFixedN);
+  const roamPos = registerFixed(roamFixedPos);
+  const roamBasis: [V3, V3, V3] = [roamEast, roamUp, roamNorth];
+  const setRoam = (latDeg: number, lonDeg: number): void => {
+    roam.lat = Math.max(-89.9, Math.min(89.9, latDeg)) * DEG;
+    roam.lon = ((((lonDeg + 180) % 360) + 360) % 360) * DEG - Math.PI;
+    fixedBasis(roam.lat, roam.lon, roamFixedE, roamFixedU, roamFixedN);
+    roamFixedPos[0] = roamFixedU[0] * (R_EARTH + 1.5);
+    roamFixedPos[1] = roamFixedU[1] * (R_EARTH + 1.5);
+    roamFixedPos[2] = roamFixedU[2] * (R_EARTH + 1.5);
+    refreshOrient();
+  };
+  setRoam(SITE_LAT_DEG, SITE_LON_DEG);
+  const d3 = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // Slide the roam point along the sphere by a world-space delta (meters);
+  // the delta is re-expressed earth-fixed and applied as a great-circle step.
+  const roamMove = (delta: V3): void => {
+    const f: V3 = [d3(delta, earthRot[0]), d3(delta, earthRot[1]), d3(delta, earthRot[2])];
+    const p = fixedDir(roam.lat, roam.lon);
+    const along = d3(f, p);
+    const t: V3 = [f[0] - p[0] * along, f[1] - p[1] * along, f[2] - p[2] * along];
+    const m = Math.hypot(t[0], t[1], t[2]);
+    if (m < 1e-9) return;
+    const ang = m / R_EARTH;
+    const ca = Math.cos(ang),
+      sa = Math.sin(ang) / m;
+    const p2: V3 = [p[0] * ca + t[0] * sa, p[1] * ca + t[1] * sa, p[2] * ca + t[2] * sa];
+    setRoam(Math.asin(Math.max(-1, Math.min(1, p2[1]))) / DEG, Math.atan2(-p2[2], p2[0]) / DEG);
+  };
+  // Set the roam point from a world-space position relative to Earth's center
+  // (used to seed roaming at the point under the view).
+  const setRoamFromWorld = (w: V3): void => {
+    const f: V3 = [d3(w, earthRot[0]), d3(w, earthRot[1]), d3(w, earthRot[2])];
+    const l = Math.max(Math.hypot(f[0], f[1], f[2]), 1e-9);
+    setRoam(Math.asin(Math.max(-1, Math.min(1, f[1] / l))) / DEG, Math.atan2(-f[2], f[0]) / DEG);
   };
 
   // ---- Sun & planets (real radii and orbits) ----
@@ -376,6 +514,7 @@ export function buildUniverse(): Universe {
   const bodies: OrbitalBody[] = [];
   const planetSprites: number[][] = [];
   const planetTargets: Target[] = [];
+  let dimpleEarth: (depth: number) => void = () => {};
   planets.forEach(([name, a, r, color, matId, L0, periodDays]) => {
     orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
     const spriteFloatBase = planetSprites.length * 8;
@@ -389,6 +528,16 @@ export function buildUniverse(): Universe {
       earthMesh.prov = 0; // NASA imagery: measured
       earthMesh.tex = 'earth';
       meshes.push(earthMesh);
+      // Terrain dips below the imagery site's datum (a canyon under a rim
+      // site) would poke the smooth sphere through the carved rings; the
+      // caller shrinks the render sphere by the region's deepest depression
+      // (≤ ~0.1% of R — imperceptible at planet scale).
+      dimpleEarth = (depth: number): void => {
+        const rr = R_EARTH - Math.max(0, depth);
+        earthMesh.size[0] = rr;
+        earthMesh.size[1] = rr;
+        earthMesh.size[2] = rr;
+      };
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
       bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
       return;
@@ -426,34 +575,64 @@ export function buildUniverse(): Universe {
 
   // ---- The picnic (Powers of Ten, 1977): a one-meter blanket in the park
   // ---- by the lake, Lake Michigan glinting to the east ----
-  // Affine linearization of the equirectangular map around the site, used by
+  // Affine linearization of the equirectangular map around a site, used by
   // the imagery materials to sample the global Black Marble at night:
   // uv(site) plus du per east-meter / dv per north-meter.
-  const NIGHT_U0 = 0.5 + SITE_LON / (2 * Math.PI);
-  const NIGHT_V0 = 0.5 - SITE_LAT / Math.PI;
-  const NIGHT_DUDX = 1 / (2 * Math.PI * R_EARTH * Math.cos(SITE_LAT));
-  const NIGHT_DVDZ = -1 / (Math.PI * R_EARTH);
+  const nightUV = (lat: number, lon: number): [number, number, number, number] => [
+    0.5 + lon / (2 * Math.PI),
+    0.5 - lat / Math.PI,
+    1 / (2 * Math.PI * R_EARTH * Math.cos(lat)),
+    -1 / (Math.PI * R_EARTH),
+  ];
+
+  // ---- The movable street-level imagery stack ----
+  // The lawn disk and the six imagery rings anchor to their OWN earth-fixed
+  // basis, initialized at the picnic but re-plantable anywhere on Earth by
+  // setImagerySite (free roaming) — the picnic props stay in Chicago.
+  const img = { lat: SITE_LAT_DEG, lon: SITE_LON_DEG, gen: 0 };
+  const imgFixedE: V3 = [0, 0, 0],
+    imgFixedU: V3 = [0, 0, 0],
+    imgFixedN: V3 = [0, 0, 0];
+  fixedBasis(SITE_LAT, SITE_LON, imgFixedE, imgFixedU, imgFixedN);
+  const imgEast = registerFixed(imgFixedE);
+  const imgUp = registerFixed(imgFixedU);
+  const imgNorth = registerFixed(imgFixedN);
+  const imgBasis: [V3, V3, V3] = [imgEast, imgUp, imgNorth];
+  // Ring/lawn anchor: world offset from the surface frame's origin (the
+  // picnic) to the imagery anchor point — recomputed as the planet turns.
+  const ringPos: V3 = [0, 0, 0];
+  const lawnPos: V3 = [0, 0, 0];
+  postOrient.push(() => {
+    for (let i = 0; i < 3; i++) {
+      ringPos[i] = (imgUp[i] - up[i]) * (R_EARTH + 1.5);
+      lawnPos[i] = ringPos[i] - imgUp[i] * 0.02;
+    }
+  });
+  const imageryMeshes: MeshObj[] = [];
 
   // The lawn: a 380 m disk that plugs the innermost imagery ring's hole and
-  // samples THAT RING'S OWN texture (matId 9), so the picnic ground is the
-  // surrounding photograph — no seam, same lighting — with procedural
+  // samples THAT RING'S OWN texture (matId 9), so the ground under your feet
+  // IS the surrounding photograph — no seam, same lighting — with procedural
   // close-up detail and the faint 1 m grid on top.
-  meshes.push({
+  const nuv0 = nightUV(SITE_LAT, SITE_LON);
+  const lawnMesh: MeshObj = {
     frame: surface,
-    pos: anchor([0, -0.02, 0]),
+    pos: lawnPos,
     mesh: 'disk',
     size: [380, 1, 380],
     bound: 380,
-    color: [NIGHT_U0, NIGHT_V0, NIGHT_DUDX],
+    color: [nuv0[0], nuv0[1], nuv0[2]],
     emissive: 0,
     matId: 9,
-    rim: NIGHT_DVDZ,
+    rim: nuv0[3],
     gridScale: 2000 / 380, // shader: uv = lp/misc.y + 0.5 with lp in unit-disk coords
-    rot: siteBasis,
+    rot: imgBasis,
     hideBelow: 2e-3, // the macro world fades once the dive passes the weave
     prov: 0.5, // real imagery, stylized close-up detail
-    tex: 'ring5',
-  });
+    tex: 'ring5@0',
+  };
+  meshes.push(lawnMesh);
+  imageryMeshes.push(lawnMesh);
 
   // ---- Street-level Earth: six concentric imagery rings on the sphere ----
   // Annular (no overlap, no z-fighting), curved to the exact sphere, lifted
@@ -463,29 +642,48 @@ export function buildUniverse(): Universe {
   // rebuilds each ring via ringGeometry(S, heights) — same net, vertices
   // displaced radially by true relative elevation.
   const patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[] = [];
-  {
-    const ringPos = anchor([0, 0, 0]);
-    RING_SIZES.forEach((S, k) => {
-      const g = ringGeometry(S);
-      patchGeoms.push({ name: `ring${k}`, verts: g.verts, indices: g.indices });
-      meshes.push({
-        frame: surface,
-        pos: ringPos,
-        mesh: `ring${k}`,
-        size: [1, 1, 1], // geometry is already in meters
-        bound: S * 0.71,
-        color: [NIGHT_U0, NIGHT_V0, NIGHT_DUDX], // affine Black Marble uv (see shader)
-        emissive: 0,
-        matId: 8,
-        rim: NIGHT_DVDZ,
-        gridScale: S, // misc.y: the shader derives UVs from local pos / S
-        rot: siteBasis,
-        hideBelow: 2e-3,
-        prov: 0, // measured: it is literally aerial photography
-        tex: `ring${k}`,
-      });
+  RING_SIZES.forEach((S, k) => {
+    const g = ringGeometry(S);
+    patchGeoms.push({ name: `ring${k}`, verts: g.verts, indices: g.indices });
+    const m: MeshObj = {
+      frame: surface,
+      pos: ringPos,
+      mesh: `ring${k}`,
+      size: [1, 1, 1], // geometry is already in meters
+      bound: S * 0.71,
+      color: [nuv0[0], nuv0[1], nuv0[2]], // affine Black Marble uv (see shader)
+      emissive: 0,
+      matId: 8,
+      rim: nuv0[3],
+      gridScale: S, // misc.y: the shader derives UVs from local pos / S
+      rot: imgBasis,
+      hideBelow: 2e-3,
+      prov: 0, // measured: it is literally aerial photography
+      tex: `ring${k}@0`,
+    };
+    meshes.push(m);
+    imageryMeshes.push(m);
+  });
+
+  // Re-plant the imagery stack (lawn + rings) at a new site. Returns the
+  // generation-stamped texture keys for the caller to stream imagery into
+  // (stale keys should be dropped from the renderer).
+  const setImagerySite = (latDeg: number, lonDeg: number): string[] => {
+    img.lat = latDeg;
+    img.lon = lonDeg;
+    img.gen++;
+    fixedBasis(latDeg * DEG, lonDeg * DEG, imgFixedE, imgFixedU, imgFixedN);
+    const nuv = nightUV(latDeg * DEG, lonDeg * DEG);
+    imageryMeshes.forEach((m, i) => {
+      m.color[0] = nuv[0];
+      m.color[1] = nuv[1];
+      m.color[2] = nuv[2];
+      m.rim = nuv[3];
+      m.tex = i === 0 ? `ring5@${img.gen}` : `ring${i - 1}@${img.gen}`;
     });
-  }
+    refreshOrient();
+    return RING_SIZES.map((_, k) => `ring${k}@${img.gen}`);
+  };
   const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
     pos: anchor([e, u, n]),
@@ -1087,6 +1285,21 @@ export function buildUniverse(): Universe {
     ...microTargets,
     ...planetTargets,
     ...starTargets,
+    // Free Earth navigation: a movable surface focus. Panning near Earth
+    // roams this point anywhere on the planet; the imagery stack follows.
+    {
+      name: 'EARTH · ROAMING',
+      slug: 'roam',
+      source: 'real place — imagery © Esri/Maxar',
+      frame: earthFrame,
+      pos: roamPos,
+      dist: 2e5,
+      pitch: 0.35,
+      parent: 'earth',
+      exit: 5.5e7,
+      basis: roamBasis,
+      hidden: true,
+    },
   ];
 
   return {
@@ -1106,5 +1319,16 @@ export function buildUniverse(): Universe {
     // waterLevel: Lake Michigan's surface, ~176 m above sea level (IGLD85) —
     // the DEM floor, so lakebed bathymetry can't carve the water into a bowl.
     site: { lat: SITE_LAT_DEG, lon: SITE_LON_DEG, ringSizes: RING_SIZES, waterLevel: 176 },
+    nav: {
+      home: [SITE_LAT_DEG, SITE_LON_DEG],
+      roamLatLon: () => [roam.lat / DEG, roam.lon / DEG],
+      setRoam,
+      setRoamFromWorld,
+      roamMove,
+      imagerySite: () => [img.lat, img.lon],
+      setImagerySite,
+      imageryKeys: () => RING_SIZES.map((_, k) => `ring${k}@${img.gen}`),
+      dimpleEarth: (depth: number) => dimpleEarth(depth),
+    },
   };
 }

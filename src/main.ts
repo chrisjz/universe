@@ -161,22 +161,55 @@ async function start(): Promise<void> {
     `${import.meta.env.BASE_URL}earth/night.jpg`,
   );
 
-  // ---- street-level Earth: stream the Esri imagery rings, largest first ----
-  void streamImageryRings(u.site.lat, u.site.lon, u.site.ringSizes, (key, bmp) => renderer.addTexture(key, bmp));
-
-  // ---- terrain elevation: rebuild each ring with real DEM heights ----
+  // ---- street-level Earth: the re-plantable imagery + terrain stack ----
+  // Streams Esri imagery (largest ring first) and real DEM heights for the
+  // current site — initially the picnic, then wherever the user roams.
   // ?exag=25 exaggerates the relief (a seeing aid: the Midwest is honestly
   // flat at true scale). Anything but 1 is off-datum, so it is URL-only.
   const exag = Math.max(1, parseFloat(new URLSearchParams(location.search).get('exag') ?? '') || 1);
-  void (async () => {
-    for (let k = 0; k < u.site.ringSizes.length; k++) {
-      const S = u.site.ringSizes[k];
-      const heights = await fetchRingHeights(u.site.lat, u.site.lon, S, RING_GRID, u.site.waterLevel);
-      if (!heights) continue; // offline: the smooth sphere stands in
-      const g = ringGeometry(S, exag === 1 ? heights : heights.map((h) => h * exag));
+  let imageryGen = 0;
+  let imageryKeys = u.nav.imageryKeys();
+  function anchorImagery(lat: number, lon: number): void {
+    imageryGen++;
+    const gen = imageryGen;
+    const stale = imageryKeys;
+    imageryKeys = u.nav.setImagerySite(lat, lon);
+    stale.forEach((k) => renderer.dropTexture(k));
+    // Fresh site: flat geometry immediately (don't wear another site's
+    // terrain), then real heights as they land.
+    u.site.ringSizes.forEach((S, k) => {
+      const g = ringGeometry(S);
       renderer.addGeometry(`ring${k}`, g.verts, g.indices);
-    }
-  })();
+    });
+    void streamImageryRings(
+      lat,
+      lon,
+      u.site.ringSizes,
+      async (key, bmp) => {
+        if (gen === imageryGen) await renderer.addTexture(key, bmp);
+      },
+      imageryKeys,
+    );
+    const isHome = Math.abs(lat - u.nav.home[0]) < 1e-4 && Math.abs(lon - u.nav.home[1]) < 1e-4;
+    const waterLevel = isHome ? u.site.waterLevel : 0; // 0 = sea level (inland lakes may bowl)
+    u.nav.dimpleEarth(0);
+    void (async () => {
+      let deepest = 0; // meters below the site datum, across all rings
+      for (let k = 0; k < u.site.ringSizes.length; k++) {
+        const S = u.site.ringSizes[k];
+        const heights = await fetchRingHeights(lat, lon, S, RING_GRID, waterLevel);
+        if (gen !== imageryGen) return; // the user roamed on
+        if (!heights) continue; // offline: the smooth sphere stands in
+        for (const h of heights) deepest = Math.min(deepest, h);
+        // Sink the render sphere below the deepest carved terrain, so a
+        // canyon under a rim-top site doesn't fill with smooth Blue Marble.
+        u.nav.dimpleEarth(-deepest * exag + 30);
+        const g = ringGeometry(S, exag === 1 ? heights : heights.map((h) => h * exag));
+        renderer.addGeometry(`ring${k}`, g.verts, g.indices);
+      }
+    })();
+  }
+  anchorImagery(u.nav.home[0], u.nav.home[1]);
 
   // ---- stream the ATHYG star tiles (brightest chunks first) ----
   let starCount = 0;
@@ -409,15 +442,79 @@ async function start(): Promise<void> {
     },
   );
 
+  // ---- free Earth navigation: pan to roam anywhere on the planet ----
+  // Right-drag / shift-drag (mouse) or two-finger drag (touch) grabs the
+  // ground and slides the focus across the surface; the zoom then converges
+  // wherever you are, and the street-level imagery re-plants itself there.
+  const R_E = 6.371e6;
+  const roamIdx = bySlug.get('roam')!;
+  const surfaceIdx = bySlug.get('surface')!;
+  const earthFrameRef = u.targets[bySlug.get('earth')!].frame;
+  let lastPanAt = -1e9;
+
+  const roamable = (): boolean => {
+    const slug = u.targets[activeTarget].slug;
+    return (slug === 'earth' || slug === 'surface' || slug === 'roam') && cam.dist < 1.2e8;
+  };
+  const roamName = (): string => {
+    const [la, lo] = u.nav.roamLatLon();
+    const f = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(3)}°${v >= 0 ? pos : neg}`;
+    return `EARTH · ${f(la, 'N', 'S')} ${f(lo, 'E', 'W')}`;
+  };
+  // The point on the sphere under the view center; null if the view misses.
+  function surfacePointUnderView(): V3 | null {
+    const { fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const camPos = add(cam.focus, scale(camDir(), cam.dist));
+    const c = relPos(cam.frame, camPos, earthFrameRef, [0, 0, 0]);
+    const b = dot(c, fwd);
+    const disc = b * b - (dot(c, c) - R_E * R_E);
+    if (disc < 0) return null;
+    const t = -b - Math.sqrt(disc);
+    if (t <= 0) return null;
+    return add(c, scale(fwd, t));
+  }
+  // Enter roam mode (if not already there), seeded under the current view.
+  function beginRoam(): boolean {
+    const slug = u.targets[activeTarget].slug;
+    if (slug === 'roam') return true;
+    if (slug === 'surface') {
+      u.nav.setRoam(u.nav.home[0], u.nav.home[1]);
+    } else {
+      const p = surfacePointUnderView();
+      if (!p) return false;
+      u.nav.setRoamFromWorld(p);
+    }
+    flight = null;
+    touring = false;
+    retargetTo(roamIdx);
+    focusName = roamName();
+    return true;
+  }
+  // Grab-the-ground pan: slide the roam point by a screen-space delta.
+  function panBy(dx: number, dy: number): void {
+    const mpp = (2 * cam.dist * Math.tan(FOV / 2)) / canvas.clientHeight;
+    const { right, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    u.nav.roamMove(add(scale(right, -dx * mpp), scale(fwd, dy * mpp)));
+    lastPanAt = performance.now();
+    focusName = roamName();
+  }
+  const roamHomeDistM = (): number => {
+    const [la, lo] = u.nav.roamLatLon();
+    const dLat = (((la - u.nav.home[0]) * Math.PI) / 180) * R_E;
+    const dLon = (((lo - u.nav.home[1]) * Math.PI) / 180) * R_E * Math.cos((la * Math.PI) / 180);
+    return Math.hypot(dLat, dLon);
+  };
+
   // ---- input ----
   // A press that barely moves is a click (focus what's under the cursor);
   // anything longer or farther is an orbit drag. Double-click (or double-tap)
-  // flies there. Two touch pointers pinch-zoom.
+  // flies there. Two touch pointers pinch-zoom (and pan, near a planet).
   let dragging = false;
+  let panning = false;
   let pressed: { x: number; y: number; at: number } | null = null;
   let dragDist = 0;
   const pointers = new Map<number, { x: number; y: number }>();
-  let pinch: { startSep: number; startDist: number } | null = null;
+  let pinch: { startSep: number; startDist: number; cx: number; cy: number } | null = null;
   let lastTap = { x: 0, y: 0, at: -1e9 };
 
   function clickFocus(px: number, py: number): void {
@@ -433,17 +530,30 @@ async function start(): Promise<void> {
     return Math.hypot(a.x - b.x, a.y - b.y);
   };
 
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('pointerdown', (e) => {
     pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     canvas.setPointerCapture(e.pointerId);
     if (pointers.size === 2) {
       // second finger down: stop orbiting, start pinching
-      pinch = { startSep: Math.max(pinchSep(), 1), startDist: cam.dist };
+      const [a, b] = [...pointers.values()];
+      pinch = { startSep: Math.max(pinchSep(), 1), startDist: cam.dist, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
       dragging = false;
+      panning = false;
       pressed = null;
       flight = null;
       touring = false;
       return;
+    }
+    // Right button or shift-drag pans across the planet (free roam).
+    if ((e.button === 2 || e.shiftKey) && roamable()) {
+      panning = beginRoam();
+      if (panning) {
+        dragging = false;
+        pressed = null;
+        canvas.classList.add('dragging');
+        return;
+      }
     }
     dragging = true;
     dragDist = 0;
@@ -454,6 +564,11 @@ async function start(): Promise<void> {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     dragging = false;
+    if (panning) {
+      panning = false;
+      // Roamed back to the picnic? Hand the dive chain back.
+      if (roamHomeDistM() < 300 && u.targets[activeTarget].slug === 'roam') retargetTo(surfaceIdx);
+    }
     canvas.classList.remove('dragging');
     if (pressed && dragDist < 5 && performance.now() - pressed.at < 500) {
       const now = performance.now();
@@ -478,6 +593,7 @@ async function start(): Promise<void> {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     dragging = false;
+    panning = false;
     pressed = null;
     canvas.classList.remove('dragging');
   });
@@ -485,7 +601,21 @@ async function start(): Promise<void> {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     if (pinch && pointers.size === 2) {
       const sep = Math.max(pinchSep(), 1);
-      cam.dist = clamp((pinch.startDist * pinch.startSep) / sep, MIN_DIST, MAX_DIST);
+      const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+      cam.dist = clamp((pinch.startDist * pinch.startSep) / sep, minD, MAX_DIST);
+      // Two-finger drag pans across the planet (the touch face of free roam).
+      const [a, b] = [...pointers.values()];
+      const cx = (a.x + b.x) / 2,
+        cy = (a.y + b.y) / 2;
+      const dx = cx - pinch.cx,
+        dy = cy - pinch.cy;
+      pinch.cx = cx;
+      pinch.cy = cy;
+      if ((Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) && roamable() && beginRoam()) panBy(dx, dy);
+      return;
+    }
+    if (panning) {
+      panBy(e.movementX, e.movementY);
       return;
     }
     if (!dragging) return;
@@ -506,11 +636,16 @@ async function start(): Promise<void> {
       e.preventDefault();
       flight = null;
       touring = false;
-      cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0014), MIN_DIST, MAX_DIST);
+      // Roamed ground has no dive below it (the picnic is the only door
+      // down), so zooming floors at human scale there.
+      const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+      cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0014), minD, MAX_DIST);
     },
     { passive: false },
   );
-  const visibleCount = u.targets.filter((t) => !t.hidden).length;
+  // Number keys cover every HUD button in bar order (1–9, then 0): the
+  // main chain and the inward-journey stages alike.
+  const keyTargets = u.targets.map((t, i) => ({ t, i })).filter(({ t }) => !t.hidden || t.button);
   window.addEventListener('keydown', (e) => {
     if (hud.isSearchOpen()) return; // the search input owns the keyboard
     if (e.key === '/') {
@@ -518,10 +653,10 @@ async function start(): Promise<void> {
       hud.openSearch();
       return;
     }
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= visibleCount) {
+    const n = e.key === '0' ? 10 : parseInt(e.key, 10);
+    if (n >= 1 && n <= Math.min(keyTargets.length, 10)) {
       touring = false;
-      flyTo(n - 1);
+      flyTo(keyTargets[n - 1].i);
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
@@ -556,6 +691,17 @@ async function start(): Promise<void> {
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
     if (i >= 0) jumpTo(i);
+  }
+  // ?lat=&lon= — free-roam deep link: land anywhere on Earth, street-level
+  // imagery included (e.g. ?lat=48.8584&lon=2.2945&dist=3000 for Paris).
+  const latParam = parseFloat(params.get('lat') ?? '');
+  const lonParam = parseFloat(params.get('lon') ?? '');
+  if (Number.isFinite(latParam) && Number.isFinite(lonParam)) {
+    u.nav.setRoam(latParam, lonParam);
+    jumpTo(roamIdx);
+    cam.dist = 2e4;
+    anchorImagery(...u.nav.roamLatLon());
+    focusName = roamName();
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
@@ -673,6 +819,21 @@ async function start(): Promise<void> {
     updateFlight(dt);
     updateRetarget(dt);
     updateAutoTarget();
+    // Free roam: once panning settles, re-plant the street-level imagery
+    // stack under the roamed point (or back home when the picnic regains
+    // focus) — debounced, and only when close enough for it to matter.
+    if (performance.now() - lastPanAt > 700) {
+      const slug = u.targets[activeTarget].slug;
+      let want: [number, number] | null = null;
+      if (slug === 'roam' && cam.dist < 4e6) want = u.nav.roamLatLon();
+      else if (slug === 'surface') want = u.nav.home;
+      if (want) {
+        const [ilat, ilon] = u.nav.imagerySite();
+        const dLat = (want[0] - ilat) * 111e3;
+        const dLon = (want[1] - ilon) * 111e3 * Math.cos((want[0] * Math.PI) / 180);
+        if (Math.hypot(dLat, dLon) > 500) anchorImagery(want[0], want[1]);
+      }
+    }
     // Track the focused body: orbiting targets move, and the camera must
     // move with them (flights and glides manage the focus themselves).
     if (!flight && !retarget) {
