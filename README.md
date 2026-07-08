@@ -213,7 +213,8 @@ Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
 
 Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
 (day, July) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
-(night lights), public domain, in `public/earth/`. Street-level imagery around
+(night lights, the 2016 3-km release at 8192×4096), public domain, in
+`public/earth/`. Street-level imagery around
 the picnic site is fetched at runtime from **Esri World Imagery** — Source:
 Esri, Maxar, Earthstar Geographics, and the GIS User Community — used with
 attribution per Esri's terms. Terrain elevation comes from the
