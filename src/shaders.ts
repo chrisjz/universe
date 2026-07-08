@@ -181,7 +181,18 @@ struct FOut {
     if (matId == 9) { meters = lp.xz * 380.0; } // the lawn disk is a 380 m unit disk
     else { meters = lp.xz; }
     let nuv = vec2f(O.color.r + meters.x * O.color.b, O.color.g + meters.y * O.misc.x);
-    emissive = textureSample(nightTex, samp, nuv).rgb * smoothstep(0.03, -0.12, ndl) * vec3f(1.0, 0.85, 0.6);
+    let lights = textureSample(nightTex, samp, nuv).rgb;
+    let nightF = smoothstep(0.03, -0.12, ndl);
+    // From afar you see the city lights themselves; standing on the ground
+    // you see the imagery lit BY them. Black Marble is ~10 km/px, so up
+    // close it can only supply the overall glow level — use it as a dim
+    // warm ambient on the imagery and blend to the raw lights with camera
+    // distance, once a pixel of the night texture is genuinely far away.
+    let glowMix = smoothstep(1.0e4, 1.5e5, length(in.wp));
+    let lum = dot(lights, vec3f(0.299, 0.587, 0.114));
+    let lit = base * (0.06 + 0.3 * lum) * vec3f(1.0, 0.88, 0.7);
+    let glow = lights * vec3f(1.0, 0.85, 0.6);
+    emissive = nightF * mix(lit, glow, glowMix);
     if (matId == 9) {
       let lpm = lp.xz * 380.0;
       let d = length(in.wp);
