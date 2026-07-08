@@ -25,6 +25,7 @@ import { Renderer, FrameData } from './renderer';
 import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
 import { streamStars } from './stars';
 import { fetchRingHeights, streamImageryRings } from './terrain';
+import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -74,7 +75,9 @@ async function start(): Promise<void> {
   // Planet/Moon positions are real for the simulated date (circular, coplanar
   // approximation). The clock starts at the actual current time.
   const J2000 = Date.UTC(2000, 0, 1, 12);
-  const SPEEDS = [1, 60, 3600, 86400, 604800, 2629800, 31557600, 315576000];
+  const SPEEDS = [
+    1, 60, 3600, 86400, 604800, 2629800, 31557600, 315576000, 3.15576e10, 3.15576e13, 3.15576e15, 3.15576e16,
+  ];
   const SPEED_LABELS = [
     'real time',
     '1 min/s',
@@ -84,11 +87,24 @@ async function start(): Promise<void> {
     '1 month/s',
     '1 year/s',
     '10 years/s',
+    '1,000 yr/s',
+    '1 Myr/s',
+    '100 Myr/s',
+    '1 Gyr/s',
   ];
+  // Cosmic time: the clock runs from just after the Big Bang into the far
+  // ΛCDM future. Everything bound stays honest at human timescales; at deep
+  // time the ephemeris blurs (trig loses the orbital phase) — which is
+  // truthful in spirit: nobody knows where Jupiter is in 4 Gyr either.
+  const SIM_MIN_MS = J2000 + BIG_BANG_MS + 1e6 * YEAR_MS;
+  const SIM_MAX_MS = J2000 + 50e9 * YEAR_MS;
+  const PRECESSION_MS = 25772 * YEAR_MS; // the axial precession period
+  const GALACTIC_YEAR_MS = 225e6 * YEAR_MS; // the sun's orbit around the galaxy
   let simMs = Date.now();
   let speedIndex = 0;
   let paused = false;
   let seam = false; // the honest seam: recolor by provenance (X)
+  let webA = 1; // last-applied cosmic scale factor
 
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
@@ -120,8 +136,22 @@ async function start(): Promise<void> {
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
     // Chicago's picnic gets real local time. -78.63° is the longitude of
     // Tilt⁻¹·(direction to the sun at J2000) under the clockwise orbits.
+    // The second argument is the axial precession angle (25,772 yr cycle).
     const SIDEREAL_DAY_MS = 86164090.5;
-    u.orientEarth((-78.63 * Math.PI) / 180 + ((simMs - J2000) / SIDEREAL_DAY_MS) * 2 * Math.PI);
+    const sinceJ2000 = simMs - J2000;
+    u.orientEarth(
+      (-78.63 * Math.PI) / 180 + (sinceJ2000 / SIDEREAL_DAY_MS) * 2 * Math.PI,
+      (-2 * Math.PI * sinceJ2000) / PRECESSION_MS,
+    );
+    // The galactic year: β negative so the sun advances toward l = 90°
+    // (Cygnus), the real direction of galactic rotation.
+    u.orientGalaxy((-2 * Math.PI * sinceJ2000) / GALACTIC_YEAR_MS);
+    // Cosmic expansion: rescale the comoving web when a(t) moves ≥ 0.3%.
+    const a = scaleFactor(sinceJ2000);
+    if (Math.abs(a - webA) > 0.003 * webA) {
+      webA = a;
+      renderer.updatePointGroup(groupIndex[u.webGroup], u.scaleWeb(a));
+    }
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
@@ -535,6 +565,13 @@ async function start(): Promise<void> {
     simMs = atParam;
     updateBodies();
   }
+  // ?years=<offset from now> — deep-time deep link (e.g. ?years=-13e9 for
+  // just after the Big Bang, ?years=12000 for Vega as the pole star).
+  const yearsParam = parseFloat(params.get('years') ?? '');
+  if (Number.isFinite(yearsParam)) {
+    simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
+    updateBodies();
+  }
   // ?speed=<sim seconds per real second> — snaps to the nearest preset.
   const speedParam = parseFloat(params.get('speed') ?? '');
   if (Number.isFinite(speedParam) && speedParam > 0) {
@@ -630,7 +667,7 @@ async function start(): Promise<void> {
       pendingClick = null;
     }
     if (!paused) {
-      simMs += dt * SPEEDS[speedIndex] * 1000;
+      simMs = clamp(simMs + dt * SPEEDS[speedIndex] * 1000, SIM_MIN_MS, SIM_MAX_MS);
       updateBodies();
     }
     updateFlight(dt);

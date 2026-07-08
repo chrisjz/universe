@@ -42,11 +42,20 @@ Moon distance, the real Sun–galactic-center distance, a Milky Way with the rea
 ~2.6 kpc disk scale length. Time is real too: the
 planets and the Moon sit at their true positions for the simulated date (a
 mean-longitude ephemeris — circular, coplanar approximation) and move as the
-clock runs, from real time up to ten years per second — and the Earth turns
-at the sidereal rate, phase-locked so the sub-solar longitude matches UTC:
-the picnic sees sunrise when Chicago does, seasons included — a 71.6° summer
-solstice sun, 24.7° in December, fifteen-hour June days — and at one hour per
-second you can watch the sun set from the blanket. The roadmap swaps the
+clock runs, from real time up to a billion years per second — and the Earth
+turns at the sidereal rate, phase-locked so the sub-solar longitude matches
+UTC: the picnic sees sunrise when Chicago does, seasons included — a 71.6°
+summer solstice sun, 24.7° in December, fifteen-hour June days — and at one
+hour per second you can watch the sun set from the blanket. Push past ten
+years per second and the clock goes cosmic: Earth's axis precesses its
+25,772-year cone (scrub ahead 12,000 years and **Vega** is the pole star;
+rewind 4,800 and it's Thuban, just as the pyramid builders had it), the sun
+runs its 225-million-year lap around the galactic center, and the cosmic
+web — drawn in comoving coordinates — expands with the real ΛCDM scale
+factor: rewind toward the Big Bang and everything draws close together;
+run it forward 50 billion years and the filaments disperse into the dark.
+[`?years=-13e9`](https://chrisjz.github.io/universe/?goto=universe&years=-13e9)
+is a shareable link to just after the beginning. The roadmap swaps the
 placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies — without
 touching the engine.
 
@@ -68,7 +77,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
-| **[ ]**     | slow down / speed up time (real time → 10 years per second)                                                           |
+| **[ ]**     | slow down / speed up time (real time → 1 billion years per second)                                                    |
 | **P**       | pause the simulation clock                                                                                            |
 | **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
 | **Esc**     | cancel the current flight                                                                                             |
@@ -83,7 +92,8 @@ Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/unive
 jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/universe/?goto=jupiter)
 to any planet, `&dist=6e20` sets the camera distance in meters, and
 [`?tour=1`](https://chrisjz.github.io/universe/?tour=1) starts the grand tour on
-load — deep links into a 10²⁷-meter scene.
+load, and `&years=12000` sets the clock in deep time — deep links into a
+10²⁷-meter, 13.8-billion-year scene.
 
 The sky is real: **854,000 stars** stream in progressively from binary tiles
 built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
@@ -140,6 +150,8 @@ src/
   frames.ts    hierarchical double-precision reference frames (the scale engine)
   math.ts      double-precision vectors, f32 matrices, deterministic PRNG
   scene.ts     the placeholder universe: real dimensions, procedural structure
+  sky.ts       true sky orientation: equatorial/galactic -> scene rotations
+  cosmo.ts     cosmic time: the ΛCDM scale factor
   terrain.ts   street-level Earth: Esri imagery + AWS terrain tiles, stitched at runtime
   shaders.ts   WGSL: lit meshes, additive point sprites, orbit lines
   renderer.ts  thin WebGPU renderer (3 pipelines, 4x MSAA, log depth)
@@ -164,7 +176,7 @@ src/
 - [x] True ecliptic–galactic sky orientation: Polaris over the pole, the Milky Way where it really is
 - [x] Street-level Earth: Esri World Imagery rings, down to ~2 m/px over the picnic
 - [x] Terrain elevation: real DEM heights on the imagery rings (AWS Terrain Tiles)
-- [ ] Cosmic time scrubbing (deep-time structure evolution)
+- [x] Cosmic time scrubbing: 1 Gyr/s clock, axial precession, the galactic year, ΛCDM expansion
 - [x] The honest seam: press **X** to see what is measured and what is imagined
 
 ## Development
