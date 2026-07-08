@@ -27,6 +27,7 @@ import { streamStars } from './stars';
 import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
+import { moonEcliptic, earthEqCenterDeg } from './ephemeris';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -124,15 +125,31 @@ async function start(): Promise<void> {
       // moves the sun westward through the day AND closes a 24 h solar day.
       // With the sign positive the solar day was 24 h 7.9 m - a subtle bug
       // that made local noon drift ~2 degrees/day around the year.
-      const theta = -2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
-      const x = b.a * Math.cos(theta),
+      // The Moon gets the full inclined, perturbed ephemeris; Earth gets its
+      // equation of center (which also upgrades the picnic's solar time
+      // from mean to apparent — the sundial kind).
+      let x: number, y: number, z: number;
+      if (b.moon) {
+        const m = moonEcliptic(days);
+        const lon = (m.lonDeg * Math.PI) / 180;
+        const lat = (m.latDeg * Math.PI) / 180;
+        x = m.distM * Math.cos(lat) * Math.cos(lon);
+        y = m.distM * Math.sin(lat);
+        z = -m.distM * Math.cos(lat) * Math.sin(lon);
+      } else {
+        const ec = b.eqCenter ? earthEqCenterDeg(days) : 0;
+        const theta = -2 * Math.PI * ((b.L0 + ec) / 360 + days / b.periodDays);
+        x = b.a * Math.cos(theta);
+        y = 0;
         z = b.a * Math.sin(theta);
+      }
       if (b.frameOffset) {
         b.frameOffset[0] = x;
         b.frameOffset[2] = z;
       }
       for (const p of b.positions) {
         p[0] = x;
+        p[1] = y;
         p[2] = z;
       }
       if (b.spriteFloatBase !== undefined) {
@@ -141,6 +158,7 @@ async function start(): Promise<void> {
         d[b.spriteFloatBase + 2] = z;
       }
     }
+    updateMoonShadow();
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
@@ -163,6 +181,32 @@ async function start(): Promise<void> {
       renderer.updatePointGroup(groupIndex[u.webGroup], u.scaleWeb(a));
       rescaleGalaxies();
     }
+  }
+  // Lunar eclipses: as the Moon crosses Earth's shadow cone, dim its mesh
+  // through the penumbra and redden it in the umbra (sunlight refracted
+  // through Earth's atmosphere — the blood moon). Pure geometry: the cone
+  // radii come from the real Sun/Earth sizes and the live positions.
+  const earthBody = u.bodies.find((b) => b.eqCenter)!;
+  function updateMoonShadow(): void {
+    const e = earthBody.frameOffset!;
+    const m = u.moonMesh.pos;
+    const dSun = len(e);
+    const anti: V3 = [e[0] / dSun, e[1] / dSun, e[2] / dSun]; // antisolar direction
+    const along = dot(m, anti);
+    let lit = 1;
+    if (along > 0) {
+      const off = len(sub(m, scale(anti, along)));
+      const R_SUN = 6.957e8,
+        R_E = 6.371e6,
+        R_M = 1.737e6;
+      const umbra = R_E - (along * (R_SUN - R_E)) / dSun;
+      const penumbra = R_E + (along * (R_SUN + R_E)) / dSun;
+      lit = clamp((off - (umbra - R_M)) / (penumbra + R_M - (umbra - R_M)), 0, 1);
+    }
+    const deep = 1 - lit;
+    u.moonMesh.color[0] = 0.72 * (0.05 + 0.95 * lit) + 0.33 * deep;
+    u.moonMesh.color[1] = 0.7 * (0.05 + 0.95 * lit) + 0.1 * deep;
+    u.moonMesh.color[2] = 0.68 * (0.05 + 0.95 * lit) + 0.05 * deep;
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
@@ -740,6 +784,12 @@ async function start(): Promise<void> {
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
+  // ?yaw=&pitch= (degrees) — aim the camera; with them a URL can frame a
+  // sunset, Polaris, or a solar eclipse exactly.
+  const yawParam = parseFloat(params.get('yaw') ?? '');
+  if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
+  const pitchParam = parseFloat(params.get('pitch') ?? '');
+  if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
   // ?at=<ISO date/time> — start the simulation clock at a chosen moment.
   const atParam = Date.parse(params.get('at') ?? '');
   if (Number.isFinite(atParam)) {

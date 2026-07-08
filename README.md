@@ -101,8 +101,16 @@ to any planet, `&dist=6e20` sets the camera distance in meters, and
 [`?tour=1`](https://chrisjz.github.io/universe/?tour=1) starts the grand tour on
 load, `&years=12000` sets the clock in deep time, and
 [`?lat=48.8584&lon=2.2945`](https://chrisjz.github.io/universe/?lat=48.8584&lon=2.2945&dist=4000)
-lands you street-level anywhere on Earth — deep links into a 10²⁷-meter,
-13.8-billion-year scene.
+lands you street-level anywhere on Earth, with `&yaw=&pitch=` to aim the
+view — deep links into a 10²⁷-meter, 13.8-billion-year scene. Compose them
+and you can stand in a real eclipse:
+[Reykjavík, Aug 12 2026, 17:45 UTC](https://chrisjz.github.io/universe/?lat=64.147&lon=-21.94&at=2026-08-12T17:45:00Z&dist=25&yaw=71.8&pitch=2)
+faces the crescent of the total solar eclipse, and
+[the Moon on Mar 3 2026](https://chrisjz.github.io/universe/?goto=moon&at=2026-03-03T11:38:00Z)
+hangs blood-red in Earth's umbra — the Moon flies its true inclined,
+perturbed orbit (regressing node, varying distance), so every 2026 eclipse
+lands within ~10 minutes of its real time, annular vs total decided by the
+Moon's actual distance that day.
 
 The sky is real: **854,000 stars** stream in progressively from binary tiles
 built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
@@ -157,6 +165,7 @@ glides the point that zooming converges on.
 ```
 src/
   frames.ts    hierarchical double-precision reference frames (the scale engine)
+  ephemeris.ts the Moon for real: truncated Meeus series, eclipses on their dates
   math.ts      double-precision vectors, f32 matrices, deterministic PRNG
   scene.ts     the placeholder universe: real dimensions, procedural structure
   sky.ts       true sky orientation: equatorial/galactic -> scene rotations
@@ -190,7 +199,7 @@ src/
 - [x] The honest seam: press **X** to see what is measured and what is imagined
 - [x] Free Earth navigation: pan anywhere on the planet — street-level imagery and terrain follow (`?lat=&lon=`)
 - [x] Reverse time: the clock runs backwards too — rewind and watch the web draw together toward the Big Bang
-- [ ] Real eclipses: the Moon's true 5.14° inclined orbit with node regression — solar and lunar eclipses on their real dates
+- [x] Real eclipses: the Moon's inclined, perturbed orbit puts every 2026 eclipse within ~10 minutes of its true time — crescent sun from Reykjavík, blood moon in Earth's umbra
 - [ ] Constellations: lines and names over the true sky, learnable from the blanket
 - [ ] Real Moon surface (LRO textures + elevation), with Tranquility Base as a second surface site
 

@@ -86,6 +86,8 @@ export interface OrbitalBody {
   positions: V3[];
   frameOffset?: V3;
   spriteFloatBase?: number; // float offset of its locator sprite in the planet sprite group
+  eqCenter?: boolean; // apply Earth's equation of center (true vs mean longitude)
+  moon?: boolean; // use the full inclined, perturbed lunar ephemeris (ephemeris.ts)
 }
 
 export interface Universe {
@@ -98,6 +100,7 @@ export interface Universe {
   bodies: OrbitalBody[];
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
   webGroup: number; // index into groups; re-uploaded when the scale factor moves
+  moonMesh: MeshObj; // eclipse shading mutates its color as it crosses Earth's shadow
   orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
   orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
   scaleWeb: (a: number) => Float32Array<ArrayBuffer>; // comoving web × ΛCDM scale factor
@@ -539,7 +542,7 @@ export function buildUniverse(): Universe {
         earthMesh.size[2] = rr;
       };
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
-      bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
+      bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase, eqCenter: true });
       return;
     }
     const pos: V3 = [a, 0, 0]; // ephemeris fills this in before first render
@@ -562,11 +565,17 @@ export function buildUniverse(): Universe {
     });
   });
 
-  // Moon: real semi-major axis, radius, and mean longitude.
+  // Moon: real radius, and the full inclined, perturbed orbit (5.1°,
+  // regressing node, varying distance — see ephemeris.ts). This is what
+  // makes eclipses land on their true dates. During a lunar eclipse,
+  // updateBodies dims and reddens this mesh as it crosses Earth's shadow.
   const moonPos: V3 = [3.844e8, 0, 0];
-  meshes.push(sphere(earthFrame, moonPos, 1.737e6, [0.72, 0.7, 0.68], 4));
+  const moonMesh = sphere(earthFrame, moonPos, 1.737e6, [0.72, 0.7, 0.68], 4);
+  meshes.push(moonMesh);
+  // The drawn orbit ring stays in the ecliptic; the real moon rides up to
+  // 5.1° off it — visibly honest at moon zoom.
   orbits.push({ frame: earthFrame, center: [0, 0, 0], radius: 3.844e8, color: [0.7, 0.72, 0.8], alpha: 0.16 });
-  bodies.push({ a: 3.844e8, periodDays: 27.3217, L0: 218.32, positions: [moonPos] });
+  bodies.push({ a: 3.844e8, periodDays: 27.3217, L0: 218.32, positions: [moonPos], moon: true });
 
   // Sun glare + planet locator sprites (so the system reads at 1e13 m).
   planetSprites.push([0, 0, 0, 2.2e9, 1.0, 0.85, 0.6, 2.2]);
@@ -1328,6 +1337,7 @@ export function buildUniverse(): Universe {
     bodies,
     planetSpriteGroup,
     webGroup,
+    moonMesh,
     orientEarth,
     orientGalaxy,
     scaleWeb,
