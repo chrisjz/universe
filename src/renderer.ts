@@ -4,13 +4,15 @@
 
 import { MESH_WGSL, POINTS_WGSL, LINES_WGSL } from './shaders';
 
-export type MeshKind = 'sphere' | 'box' | 'disk';
+export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
 export type F32 = Float32Array<ArrayBuffer>;
 
 export interface FrameData {
   globals: F32; // 28 floats
-  meshes: { kind: MeshKind; data: F32; earth?: boolean }[]; // 28 floats each; earth -> textured bind group
+  // tex: 'earth' -> the day/night pair; other keys -> textures registered via
+  // addTexture (draw is skipped until the texture has landed).
+  meshes: { kind: MeshKind; data: F32; tex?: string }[]; // 28 floats each
   lines: F32[]; // 8 floats each
   groups: { index: number; data: F32 }[]; // 4 floats each
 }
@@ -241,6 +243,52 @@ export class Renderer {
     this.device.queue.writeBuffer(this.pointGroups[index].buf, 0, instances);
   }
 
+  // Register a named geometry (interleaved pos3+normal3 vertices).
+  addGeometry(name: string, verts: F32, indices: Uint32Array<ArrayBuffer>): void {
+    this.geoms.set(name, this.makeGeometry(verts, indices));
+  }
+
+  // Register a single-image texture (day slot; night slot stays black).
+  private texBGs = new Map<string, GPUBindGroup>();
+  hasTexture(key: string): boolean {
+    return this.texBGs.has(key);
+  }
+  async addTexture(key: string, bmp: ImageBitmap): Promise<void> {
+    const d = this.device;
+    const mips = Math.floor(Math.log2(Math.max(bmp.width, bmp.height))) + 1;
+    const tex = d.createTexture({
+      size: [bmp.width, bmp.height],
+      format: 'rgba8unorm',
+      mipLevelCount: mips,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    for (let level = 0; level < mips; level++) {
+      const w = Math.max(1, bmp.width >> level);
+      const h = Math.max(1, bmp.height >> level);
+      const m =
+        level === 0 ? bmp : await createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+      d.queue.copyExternalImageToTexture({ source: m }, { texture: tex, mipLevel: level }, [w, h]);
+      if (level > 0) m.close();
+    }
+    const black = d.createTexture({
+      size: [1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    d.queue.writeTexture({ texture: black }, new Uint8Array([0, 0, 0, 255]), { bytesPerRow: 4 }, [1, 1]);
+    this.texBGs.set(
+      key,
+      d.createBindGroup({
+        layout: this.texBGL,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: tex.createView() },
+          { binding: 2, resource: black.createView() },
+        ],
+      }),
+    );
+  }
+
   // Fetch the Earth day/night textures and swap them in when ready. Mip
   // levels are generated CPU-side via createImageBitmap resizing.
   async loadEarthTextures(dayUrl: string, nightUrl: string): Promise<void> {
@@ -348,8 +396,9 @@ export class Renderer {
     pass.setPipeline(this.meshPipe);
     for (let i = 0; i < nMesh; i++) {
       const g = this.geoms.get(frame.meshes[i].kind)!;
+      const tex = frame.meshes[i].tex;
       pass.setBindGroup(1, this.meshBG, [SLOT * i]);
-      pass.setBindGroup(2, frame.meshes[i].earth ? this.earthTexBG : this.defaultTexBG);
+      pass.setBindGroup(2, tex === 'earth' ? this.earthTexBG : tex ? this.texBGs.get(tex)! : this.defaultTexBG);
       pass.setVertexBuffer(0, g.vbuf);
       pass.setIndexBuffer(g.ibuf, 'uint32');
       pass.drawIndexed(g.indexCount);

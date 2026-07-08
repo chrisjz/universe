@@ -34,7 +34,7 @@ are illustrative — below the atom, nature stops posing for portraits.
 
 Earth is the real Earth — NASA Blue Marble by day, Black Marble city lights on
 the night side — and the bottom of the zoom is an homage: a one-meter
-red-checkered **picnic blanket on the Chicago lakefront** (41.878°N, 87.630°W),
+red-checkered **picnic blanket on the Chicago lakefront** (41.866°N, 87.617°W),
 where the Eames' _Powers of Ten_ opened in 1977. Structure outside the solar
 system is procedural placeholder (deterministic seed), but every dimension that
 can be real already is: actual planetary radii and semi-major axes, the real
@@ -156,7 +156,8 @@ src/
 - [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time
 - [x] Axial tilt (23.44°) and seasons: real solstice sun, real day lengths
 - [ ] True ecliptic–galactic sky orientation (the celestial pole at Polaris)
-- [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
+- [x] Street-level Earth: Esri World Imagery rings, down to ~2 m/px over the picnic
+- [ ] Terrain elevation (the rings are still sea-level smooth)
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [x] The honest seam: press **X** to see what is measured and what is imagined
 
@@ -184,8 +185,11 @@ Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
   regenerates the binary tiles in `public/stars/`.
 
 Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
-(day) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
-(night lights), public domain, in `public/earth/`.
+(day, July) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
+(night lights), public domain, in `public/earth/`. Street-level imagery around
+the picnic site is fetched at runtime from **Esri World Imagery** — Source:
+Esri, Maxar, Earthstar Geographics, and the GIS User Community — used with
+attribution per Esri's terms.
 
 ## License
 

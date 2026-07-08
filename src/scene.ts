@@ -26,6 +26,7 @@ export interface MeshObj {
   // Honest-seam provenance: 0 = measured, 0.5 = real dimensions but stylized
   // look, 1 = illustrative. Drives the seam view's recoloring.
   prov?: number;
+  tex?: string; // texture key: 'earth' = day/night pair; others via addTexture
 }
 
 export interface PointGroup {
@@ -96,6 +97,8 @@ export interface Universe {
   bodies: OrbitalBody[];
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
   orientEarth: (theta: number) => void; // diurnal rotation, θ around the planet's axis
+  patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[];
+  site: { lat: number; lon: number; ringSizes: number[] };
 }
 
 const AU = 1.496e11;
@@ -153,8 +156,11 @@ export function buildUniverse(): Universe {
   // rotation orientEarth(θ) spins that whole earth-fixed system — mesh
   // texture, site frame, site basis, and every anchored object — in lockstep.
   const DEG = Math.PI / 180;
-  const SITE_LAT = 41.8781 * DEG;
-  const SITE_LON = -87.6298 * DEG;
+  // Museum Campus lawns, on the lakefront — real grass in the real imagery.
+  const SITE_LAT_DEG = 41.8663;
+  const SITE_LON_DEG = -87.6167;
+  const SITE_LAT = SITE_LAT_DEG * DEG;
+  const SITE_LON = SITE_LON_DEG * DEG;
   // Earth-fixed (θ = 0) basis; the live basis below is rotated in place.
   const up0: V3 = [
     Math.cos(SITE_LAT) * Math.cos(SITE_LON),
@@ -299,6 +305,7 @@ export function buildUniverse(): Universe {
       // Diurnal rotation spins this basis (and with it the Blue Marble UVs).
       earthMesh.rot = earthRot;
       earthMesh.prov = 0; // NASA imagery: measured
+      earthMesh.tex = 'earth';
       meshes.push(earthMesh);
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
       bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase });
@@ -337,21 +344,77 @@ export function buildUniverse(): Universe {
 
   // ---- The picnic (Powers of Ten, 1977): a one-meter blanket in the park
   // ---- by the lake, Lake Michigan glinting to the east ----
+  // A local lawn (the imagery rings take over beyond it, and the innermost
+  // ring's central hole is exactly what this disk covers).
   meshes.push({
     frame: surface,
     pos: anchor([0, -0.02, 0]),
     mesh: 'disk',
-    size: [60000, 1, 60000],
-    bound: 60000,
-    color: [0.2, 0.31, 0.13], // park grass; the shader paints the lake east of ~40 m
+    size: [380, 1, 380],
+    bound: 380,
+    color: [0.2, 0.31, 0.13],
     emissive: 0,
     matId: 5,
     rim: 0,
-    gridScale: 60000,
+    gridScale: 380,
     rot: siteBasis,
     hideBelow: 2e-3, // the macro world fades once the dive passes the weave
     prov: 1,
   });
+
+  // ---- Street-level Earth: six concentric imagery rings on the sphere ----
+  // Annular (no overlap, no z-fighting), curved to the exact sphere, lifted
+  // slightly with size so boundaries nest cleanly, textured with stitched
+  // Esri World Imagery at matching zoom. The innermost ring resolves ~2 m/px.
+  const RING_SIZES = [2048e3, 512e3, 128e3, 32e3, 8e3, 2e3];
+  const patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[] = [];
+  {
+    const GRID = 24; // cells per side; center 6x6 (the S/8 hole) is skipped
+    const ringPos = anchor([0, 0, 0]);
+    RING_SIZES.forEach((S, k) => {
+      const lift = S * 4e-5;
+      const verts: number[] = [];
+      const idx: number[] = [];
+      for (let j = 0; j <= GRID; j++) {
+        for (let i = 0; i <= GRID; i++) {
+          const x = (i / GRID - 0.5) * S;
+          const z = (j / GRID - 0.5) * S;
+          const nx = x / R_EARTH,
+            nz = z / R_EARTH;
+          const len = Math.hypot(nx, 1, nz);
+          const rr = R_EARTH + lift;
+          verts.push((rr * nx) / len, rr / len - R_EARTH, (rr * nz) / len, nx / len, 1 / len, nz / len);
+        }
+      }
+      const hole0 = GRID / 2 - 3,
+        hole1 = GRID / 2 + 3; // 6x6 central cells = S/8 half-width hole
+      for (let j = 0; j < GRID; j++) {
+        for (let i = 0; i < GRID; i++) {
+          if (i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the S/8 hole (next ring / the lawn)
+          const a0 = j * (GRID + 1) + i,
+            b0 = a0 + GRID + 1;
+          idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
+        }
+      }
+      patchGeoms.push({ name: `ring${k}`, verts: new Float32Array(verts), indices: new Uint32Array(idx) });
+      meshes.push({
+        frame: surface,
+        pos: ringPos,
+        mesh: `ring${k}`,
+        size: [1, 1, 1], // geometry is already in meters
+        bound: S * 0.71,
+        color: [1, 1, 1],
+        emissive: 0,
+        matId: 8,
+        rim: 0,
+        gridScale: S, // misc.y: the shader derives UVs from local pos / S
+        rot: siteBasis,
+        hideBelow: 2e-3,
+        prov: 0, // measured: it is literally aerial photography
+        tex: `ring${k}`,
+      });
+    });
+  }
   const prop = (e: number, u: number, n: number, size: V3, color: [number, number, number], matId = 6): MeshObj => ({
     frame: surface,
     pos: anchor([e, u, n]),
@@ -912,7 +975,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
-      source: 'real place, 41.878°N 87.630°W — illustrative scene',
+      source: 'real place, 41.866°N 87.617°W — imagery © Esri/Maxar',
       frame: surface,
       pos: anchor([0, 0.3, 0]),
       dist: 6,
@@ -929,5 +992,17 @@ export function buildUniverse(): Universe {
     ...starTargets,
   ];
 
-  return { root, sunFrame, meshes, groups, orbits, targets, bodies, planetSpriteGroup, orientEarth };
+  return {
+    root,
+    sunFrame,
+    meshes,
+    groups,
+    orbits,
+    targets,
+    bodies,
+    planetSpriteGroup,
+    orientEarth,
+    patchGeoms,
+    site: { lat: SITE_LAT_DEG, lon: SITE_LON_DEG, ringSizes: RING_SIZES },
+  };
 }

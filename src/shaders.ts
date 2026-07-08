@@ -157,20 +157,20 @@ struct FOut {
     base = mix(base, base * vec3f(0.72, 0.68, 0.66), band);
   } else if (matId == 4) { // rocky
     base = base * (0.7 + 0.6 * fbm(lp * 9.0));
-  } else if (matId == 5) { // park ground: grass, a faint 1 m / 10 m grid, and the lake to the east
+  } else if (matId == 5) { // park lawn: grass and a faint 1 m / 10 m grid
     let lpm = lp.xz * O.misc.y; // meters; local +X = east, +Z = north
     let d = length(in.wp);
-    let lake = smoothstep(38.0, 50.0, lpm.x);
-    let f1 = exp(-d / 60.0) * (1.0 - lake);
-    let f10 = exp(-d / 500.0) * (1.0 - lake);
+    let f1 = exp(-d / 60.0);
+    let f10 = exp(-d / 500.0);
     let g1x = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.x) - 0.5) - 0.45);
     let g1z = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.y) - 0.5) - 0.45);
     let g10x = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.x / 10.0) - 0.5) - 0.492);
     let g10z = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.y / 10.0) - 0.5) - 0.492);
     base = base * (0.85 + 0.3 * fbm(vec3f(lpm.x * 0.2, 0.0, lpm.y * 0.2)));
     base = base * (1.0 - 0.22 * max(g1x, g1z) * f1 - 0.3 * max(g10x, g10z) * f10);
-    let water = vec3f(0.05, 0.17, 0.26) * (0.85 + 0.3 * fbm(vec3f(lpm.x * 0.08, t * 0.5, lpm.y * 0.08)));
-    base = mix(base, water, lake);
+  } else if (matId == 8) { // imagery ring: Esri World Imagery draped on the sphere
+    let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
+    base = textureSample(dayTex, samp, uv).rgb;
   } else if (matId == 7) { // the picnic blanket: 8x8 red/white checker
     let cell = (i32(floor((lp.x + 1.0) * 4.0)) + i32(floor((lp.z + 1.0) * 4.0))) & 1;
     base = mix(vec3f(0.72, 0.09, 0.07), vec3f(0.93, 0.9, 0.84), f32(cell));
@@ -184,7 +184,9 @@ struct FOut {
   let dif = max(ndl, 0.0);
   var amb = 0.05;
   var ambCol = vec3f(1.0);
-  if (matId >= 5) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); } // sky fill keeps the surface scene readable
+  // Sky fill keeps the human-scale picnic scene readable; the imagery rings
+  // (matId 8) are the planet itself and take planetary ambient instead.
+  if (matId >= 5 && matId != 8) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
   var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 
