@@ -7,6 +7,7 @@ import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
+import { orientSky } from './sky';
 
 export interface MeshObj {
   frame: Frame;
@@ -194,7 +195,9 @@ export function buildUniverse(): Universe {
   // ---- Frame tree ----
   const root = new Frame('universe', null, [0, 0, 0]);
   const galaxy = new Frame('milky-way', root, [0, 0, 0]);
-  const sunFrame = new Frame('sun', galaxy, [8.3 * KPC, 0, 9e17]); // real galactocentric distance
+  // Real galactocentric distance, oriented so the galactic center sits in
+  // its true scene direction (Sagittarius) and the disk in the true plane.
+  const sunFrame = new Frame('sun', galaxy, orientSky(8.3 * KPC, 0, 9e17));
 
   // Placeholder epoch position; updateBodies() overwrites it (in place) from
   // the mean-longitude ephemeris before the first frame renders.
@@ -274,9 +277,9 @@ export function buildUniverse(): Universe {
   // Axial tilt: the spin axis is inclined 23.44° from the orbit normal,
   // tipped toward orbital longitude 90° — so the north pole leans sunward at
   // the June solstice (Earth's heliocentric longitude 270°). Seasons follow:
-  // high summer sun in Chicago, low winter sun, varying day length.
-  // (The orbit plane itself still coincides with the galactic plane — a known
-  // simplification — so the sky's celestial pole is not yet at Polaris.)
+  // high summer sun in Chicago, low winter sun, varying day length. The axis
+  // (0, cos ε, −sin ε) is the scene's north celestial pole; sky.ts rotates
+  // the star catalog and the galaxy so Polaris really stands over it.
   const OBLIQUITY = (23.44 * Math.PI) / 180;
   const CE = Math.cos(OBLIQUITY),
     SE = -Math.sin(OBLIQUITY); // lean toward -Z: sunward at the June solstice under clockwise orbits
@@ -751,7 +754,8 @@ export function buildUniverse(): Universe {
       ['Polaris', { slug: 'polaris', radius: 37.5 * R_SUN }],
     ]);
     const usedSlugs = new Set<string>();
-    BRIGHT_STARS.forEach(([x, y, z, mag, ci, lum, name], i) => {
+    BRIGHT_STARS.forEach(([x0, y0, z0, mag, ci, lum, name], i) => {
+      const [x, y, z] = orientSky(x0, y0, z0); // into the true sky
       const o = i * 8;
       const c = bvToRgb(ci);
       const estRadius = Math.min(Math.max(R_SUN * Math.sqrt(lum), 5e8), 2e11);
@@ -818,7 +822,10 @@ export function buildUniverse(): Universe {
       Rmax = 4.8e20; // real Milky Way: ~2.6 kpc scale length, ~50 kly radius
     const pitch = Math.tan((13 * Math.PI) / 180);
     let o = 0;
-    const put = (x: number, y: number, z: number, size: number, c: [number, number, number], inten: number) => {
+    // Generated in the old galactic-swizzle convention (disk in XZ), then
+    // rotated into the true scene orientation with the same map as the stars.
+    const put = (x0: number, y0: number, z0: number, size: number, c: [number, number, number], inten: number) => {
+      const [x, y, z] = orientSky(x0, y0, z0);
       d[o] = x;
       d[o + 1] = y;
       d[o + 2] = z;
