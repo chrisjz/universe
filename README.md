@@ -74,6 +74,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **click**   | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there        |
 | **2×click** | fly to what's under the cursor                                                                                        |
 | **drag**    | orbit the current focus                                                                                               |
+| **⇧-drag**  | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                               |
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
@@ -82,8 +83,9 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
 | **Esc**     | cancel the current flight                                                                                             |
 
-On touch screens: drag orbits, **pinch zooms**, tap focuses, **double-tap
-flies**, and the search / time / tour controls are on-screen buttons.
+On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
+across the planet**, tap focuses, **double-tap flies**, and the search /
+time / tour controls are on-screen buttons.
 
 Or skip the install: the latest build is live at
 **<https://chrisjz.github.io/universe/>**.
@@ -92,8 +94,10 @@ Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/unive
 jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/universe/?goto=jupiter)
 to any planet, `&dist=6e20` sets the camera distance in meters, and
 [`?tour=1`](https://chrisjz.github.io/universe/?tour=1) starts the grand tour on
-load, and `&years=12000` sets the clock in deep time — deep links into a
-10²⁷-meter, 13.8-billion-year scene.
+load, `&years=12000` sets the clock in deep time, and
+[`?lat=48.8584&lon=2.2945`](https://chrisjz.github.io/universe/?lat=48.8584&lon=2.2945&dist=4000)
+lands you street-level anywhere on Earth — deep links into a 10²⁷-meter,
+13.8-billion-year scene.
 
 The sky is real: **854,000 stars** stream in progressively from binary tiles
 built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
@@ -166,8 +170,8 @@ src/
 - [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
 - [x] Click-to-focus: planets, moons, and every named star are clickable destinations
 - [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
-- [ ] Full Gaia DR3 (1.8B sources) via hierarchical spatial LOD tiles
-- [ ] Real deep-sky structure (SDSS/2MASS galaxies, cosmic-web survey data)
+- [ ] Gaia DR3 milestone: millions of stars via hierarchical spatial LOD tiles
+- [ ] Real deep-sky structure: the 2MASS Redshift Survey local universe (Virgo, Coma, the Great Wall) in place of the procedural web
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
@@ -178,6 +182,11 @@ src/
 - [x] Terrain elevation: real DEM heights on the imagery rings (AWS Terrain Tiles)
 - [x] Cosmic time scrubbing: 1 Gyr/s clock, axial precession, the galactic year, ΛCDM expansion
 - [x] The honest seam: press **X** to see what is measured and what is imagined
+- [x] Free Earth navigation: pan anywhere on the planet — street-level imagery and terrain follow (`?lat=&lon=`)
+- [ ] Reverse time: run the clock backwards (watch the web collapse toward the Big Bang)
+- [ ] Real eclipses: the Moon's true 5.14° inclined orbit with node regression — solar and lunar eclipses on their real dates
+- [ ] Constellations: lines and names over the true sky, learnable from the blanket
+- [ ] Real Moon surface (LRO textures + elevation), with Tranquility Base as a second surface site
 
 ## Development
 

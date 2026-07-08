@@ -120,8 +120,11 @@ export class Hud {
     targets.forEach((t, i) => {
       if (t.hidden && !t.button) return;
       const b = document.createElement('button');
-      // Only the primary eight get number-key labels.
-      b.textContent = !t.hidden ? `${++visibleIndex} ${t.name}` : t.name;
+      // Every button carries its number-key label, in bar order: 1–9 then 0
+      // (the main chain and the inward-journey stages alike).
+      const label = visibleIndex < 10 ? `${(visibleIndex + 1) % 10} ` : '';
+      visibleIndex++;
+      b.textContent = label + t.name;
       b.addEventListener('click', () => onTarget(i));
       scroller.appendChild(b);
       this.buttons.set(i, b);

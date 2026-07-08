@@ -178,14 +178,17 @@ export async function fetchRingHeights(
 }
 
 // Streams ring textures largest-first (context first, detail as it lands).
+// `keys` names each ring's texture (free roaming stamps them per site
+// generation so stale streams can be dropped); defaults to ring0..N.
 export async function streamImageryRings(
   lat: number,
   lon: number,
   sizes: number[],
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
+  keys?: string[],
 ): Promise<void> {
   for (let k = 0; k < sizes.length; k++) {
     const bmp = await buildPatchTexture(lat, lon, sizes[k]);
-    if (bmp) await onReady(`ring${k}`, bmp);
+    if (bmp) await onReady(keys?.[k] ?? `ring${k}`, bmp);
   }
 }

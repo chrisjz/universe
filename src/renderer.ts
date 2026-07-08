@@ -252,10 +252,19 @@ export class Renderer {
   // Black Marble (city lights for the imagery rings) once it has loaded.
   private texBGs = new Map<string, GPUBindGroup>();
   private dayViews = new Map<string, GPUTextureView>();
+  private dayTextures = new Map<string, GPUTexture>();
   private nightView: GPUTextureView | null = null;
   private blackView: GPUTextureView | null = null;
   hasTexture(key: string): boolean {
     return this.texBGs.has(key);
+  }
+  // Evict a registered texture (free-roam re-anchoring streams a fresh set
+  // per site; without eviction each visited site would pin ~30 MB of VRAM).
+  dropTexture(key: string): void {
+    this.dayTextures.get(key)?.destroy();
+    this.dayTextures.delete(key);
+    this.dayViews.delete(key);
+    this.texBGs.delete(key);
   }
   async addTexture(key: string, bmp: ImageBitmap): Promise<void> {
     const d = this.device;
@@ -284,6 +293,8 @@ export class Renderer {
       this.blackView = black.createView();
     }
     const view = tex.createView();
+    this.dayTextures.get(key)?.destroy(); // replacing an existing key
+    this.dayTextures.set(key, tex);
     this.dayViews.set(key, view);
     this.texBGs.set(
       key,
