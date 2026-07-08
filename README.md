@@ -83,7 +83,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
-| **[ ]**     | slow down / speed up time (real time → 1 billion years per second)                                                    |
+| **[ ]**     | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s              |
 | **P**       | pause the simulation clock                                                                                            |
 | **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
 | **Esc**     | cancel the current flight                                                                                             |
@@ -189,7 +189,7 @@ src/
 - [x] Cosmic time scrubbing: 1 Gyr/s clock, axial precession, the galactic year, ΛCDM expansion
 - [x] The honest seam: press **X** to see what is measured and what is imagined
 - [x] Free Earth navigation: pan anywhere on the planet — street-level imagery and terrain follow (`?lat=&lon=`)
-- [ ] Reverse time: run the clock backwards (watch the web collapse toward the Big Bang)
+- [x] Reverse time: the clock runs backwards too — rewind and watch the web draw together toward the Big Bang
 - [ ] Real eclipses: the Moon's true 5.14° inclined orbit with node regression — solar and lunar eclipses on their real dates
 - [ ] Constellations: lines and names over the true sky, learnable from the blanket
 - [ ] Real Moon surface (LRO textures + elevation), with Tranquility Base as a second surface site

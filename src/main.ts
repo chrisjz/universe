@@ -76,10 +76,13 @@ async function start(): Promise<void> {
   // Planet/Moon positions are real for the simulated date (circular, coplanar
   // approximation). The clock starts at the actual current time.
   const J2000 = Date.UTC(2000, 0, 1, 12);
-  const SPEEDS = [
+  // The clock is a signed velocity ladder: ] accelerates toward the future,
+  // [ decelerates through real time and on INTO reverse — all the way to
+  // −1 Gyr/s (rewind to the Big Bang and watch the web draw together).
+  const FWD_SPEEDS = [
     1, 60, 3600, 86400, 604800, 2629800, 31557600, 315576000, 3.15576e10, 3.15576e13, 3.15576e15, 3.15576e16,
   ];
-  const SPEED_LABELS = [
+  const FWD_LABELS = [
     'real time',
     '1 min/s',
     '1 hour/s',
@@ -93,6 +96,12 @@ async function start(): Promise<void> {
     '100 Myr/s',
     '1 Gyr/s',
   ];
+  const SPEEDS = [...FWD_SPEEDS.map((s) => -s).reverse(), ...FWD_SPEEDS];
+  const SPEED_LABELS = [
+    ...FWD_LABELS.map((l) => (l === 'real time' ? 'reverse time' : `−${l}`)).reverse(),
+    ...FWD_LABELS,
+  ];
+  const REAL_TIME_INDEX = FWD_SPEEDS.length; // +1 s/s
   // Cosmic time: the clock runs from just after the Big Bang into the far
   // ΛCDM future. Everything bound stays honest at human timescales; at deep
   // time the ephemeris blurs (trig loses the orbital phase) — which is
@@ -102,7 +111,7 @@ async function start(): Promise<void> {
   const PRECESSION_MS = 25772 * YEAR_MS; // the axial precession period
   const GALACTIC_YEAR_MS = 225e6 * YEAR_MS; // the sun's orbit around the galaxy
   let simMs = Date.now();
-  let speedIndex = 0;
+  let speedIndex = REAL_TIME_INDEX;
   let paused = false;
   let seam = false; // the honest seam: recolor by provenance (X)
   let webA = 1; // last-applied cosmic scale factor
@@ -744,13 +753,14 @@ async function start(): Promise<void> {
     simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
     updateBodies();
   }
-  // ?speed=<sim seconds per real second> — snaps to the nearest preset.
+  // ?speed=<sim seconds per real second> — snaps to the nearest preset;
+  // negative values run the clock backwards (?speed=-3.15576e16 rewinds
+  // at a billion years per second).
   const speedParam = parseFloat(params.get('speed') ?? '');
-  if (Number.isFinite(speedParam) && speedParam > 0) {
-    speedIndex = SPEEDS.reduce(
-      (best, s, i) => (Math.abs(Math.log(s / speedParam)) < Math.abs(Math.log(SPEEDS[best] / speedParam)) ? i : best),
-      0,
-    );
+  if (Number.isFinite(speedParam) && speedParam !== 0) {
+    const score = (s: number): number =>
+      Math.sign(s) === Math.sign(speedParam) ? Math.abs(Math.log(Math.abs(s / speedParam))) : Infinity;
+    speedIndex = SPEEDS.reduce((best, s, i) => (score(s) < score(SPEEDS[best]) ? i : best), REAL_TIME_INDEX);
   }
   // ?click=fx,fy — synthetic click at fractional screen coords, fired once
   // after a few frames. Exists so headless tests can exercise picking.
