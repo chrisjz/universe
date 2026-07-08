@@ -135,12 +135,15 @@ async function start(): Promise<void> {
   void streamImageryRings(u.site.lat, u.site.lon, u.site.ringSizes, (key, bmp) => renderer.addTexture(key, bmp));
 
   // ---- terrain elevation: rebuild each ring with real DEM heights ----
+  // ?exag=25 exaggerates the relief (a seeing aid: the Midwest is honestly
+  // flat at true scale). Anything but 1 is off-datum, so it is URL-only.
+  const exag = Math.max(1, parseFloat(new URLSearchParams(location.search).get('exag') ?? '') || 1);
   void (async () => {
     for (let k = 0; k < u.site.ringSizes.length; k++) {
       const S = u.site.ringSizes[k];
       const heights = await fetchRingHeights(u.site.lat, u.site.lon, S, RING_GRID, u.site.waterLevel);
       if (!heights) continue; // offline: the smooth sphere stands in
-      const g = ringGeometry(S, heights);
+      const g = ringGeometry(S, exag === 1 ? heights : heights.map((h) => h * exag));
       renderer.addGeometry(`ring${k}`, g.verts, g.indices);
     }
   })();
