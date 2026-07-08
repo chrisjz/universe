@@ -213,23 +213,33 @@ export function buildUniverse(): Universe {
   // axis (+Y — no axial tilt yet). One call re-orients the globe texture, the
   // site frame offset, the live site basis, every anchored object, and the
   // fibril bases, so the camera and the picnic ride the turning planet.
+  // Axial tilt: the spin axis is inclined 23.44° from the orbit normal,
+  // tipped toward orbital longitude 90° — so the north pole leans sunward at
+  // the June solstice (Earth's heliocentric longitude 270°). Seasons follow:
+  // high summer sun in Chicago, low winter sun, varying day length.
+  // (The orbit plane itself still coincides with the galactic plane — a known
+  // simplification — so the sky's celestial pole is not yet at Polaris.)
+  const OBLIQUITY = (23.44 * Math.PI) / 180;
+  const CE = Math.cos(OBLIQUITY),
+    SE = -Math.sin(OBLIQUITY); // lean toward -Z: sunward at the June solstice under clockwise orbits
   const orientEarth = (theta: number): void => {
     const c = Math.cos(theta),
       s = Math.sin(theta);
+    // world = Tilt · R_y(θ) · earthFixed
     const rot = (v0: V3, out: V3): void => {
       const x = v0[0] * c + v0[2] * s;
+      const y = v0[1];
       const z = -v0[0] * s + v0[2] * c;
       out[0] = x;
-      out[1] = v0[1];
-      out[2] = z;
+      out[1] = y * CE - z * SE;
+      out[2] = y * SE + z * CE;
     };
     rot(east0, east);
     rot(up0, up);
     rot(north0, north);
-    earthRot[0][0] = c;
-    earthRot[0][2] = -s;
-    earthRot[2][0] = s;
-    earthRot[2][2] = c;
+    rot([1, 0, 0], earthRot[0]);
+    rot([0, 1, 0], earthRot[1]);
+    rot([0, 0, 1], earthRot[2]);
     orientTilts();
     for (const a of anchored) {
       a.vec[0] = east[0] * a.eun[0] + up[0] * a.eun[1] + north[0] * a.eun[2];

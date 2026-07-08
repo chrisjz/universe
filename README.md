@@ -44,8 +44,9 @@ planets and the Moon sit at their true positions for the simulated date (a
 mean-longitude ephemeris — circular, coplanar approximation) and move as the
 clock runs, from real time up to ten years per second — and the Earth turns
 at the sidereal rate, phase-locked so the sub-solar longitude matches UTC:
-the picnic sees sunrise when Chicago does, and at one hour per second you can
-watch the sun set from the blanket. The roadmap swaps the
+the picnic sees sunrise when Chicago does, seasons included — a 71.6° summer
+solstice sun, 24.7° in December, fifteen-hour June days — and at one hour per
+second you can watch the sun set from the blanket. The roadmap swaps the
 placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies, Earth terrain
 tiles — without touching the engine.
 
@@ -153,7 +154,8 @@ src/
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
 - [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time
-- [ ] Axial tilt (23.4°) and seasons
+- [x] Axial tilt (23.44°) and seasons: real solstice sun, real day lengths
+- [ ] True ecliptic–galactic sky orientation (the celestial pole at Polaris)
 - [ ] Street-level Earth: elevation/imagery tile streaming at the bottom of the zoom
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [x] The honest seam: press **X** to see what is measured and what is imagined
