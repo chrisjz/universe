@@ -156,9 +156,10 @@ export function buildUniverse(): Universe {
   // rotation orientEarth(θ) spins that whole earth-fixed system — mesh
   // texture, site frame, site basis, and every anchored object — in lockstep.
   const DEG = Math.PI / 180;
-  // Museum Campus lawns, on the lakefront — real grass in the real imagery.
-  const SITE_LAT_DEG = 41.8663;
-  const SITE_LON_DEG = -87.6167;
+  // Hutchinson Field, Grant Park — open lakefront lawn, real grass in the
+  // real imagery (the first pick landed on the Field Museum's roof).
+  const SITE_LAT_DEG = 41.86934;
+  const SITE_LON_DEG = -87.61842;
   const SITE_LAT = SITE_LAT_DEG * DEG;
   const SITE_LON = SITE_LON_DEG * DEG;
   // Earth-fixed (θ = 0) basis; the live basis below is rotated in place.
@@ -344,22 +345,33 @@ export function buildUniverse(): Universe {
 
   // ---- The picnic (Powers of Ten, 1977): a one-meter blanket in the park
   // ---- by the lake, Lake Michigan glinting to the east ----
-  // A local lawn (the imagery rings take over beyond it, and the innermost
-  // ring's central hole is exactly what this disk covers).
+  // Affine linearization of the equirectangular map around the site, used by
+  // the imagery materials to sample the global Black Marble at night:
+  // uv(site) plus du per east-meter / dv per north-meter.
+  const NIGHT_U0 = 0.5 + SITE_LON / (2 * Math.PI);
+  const NIGHT_V0 = 0.5 - SITE_LAT / Math.PI;
+  const NIGHT_DUDX = 1 / (2 * Math.PI * R_EARTH * Math.cos(SITE_LAT));
+  const NIGHT_DVDZ = -1 / (Math.PI * R_EARTH);
+
+  // The lawn: a 380 m disk that plugs the innermost imagery ring's hole and
+  // samples THAT RING'S OWN texture (matId 9), so the picnic ground is the
+  // surrounding photograph — no seam, same lighting — with procedural
+  // close-up detail and the faint 1 m grid on top.
   meshes.push({
     frame: surface,
     pos: anchor([0, -0.02, 0]),
     mesh: 'disk',
     size: [380, 1, 380],
     bound: 380,
-    color: [0.2, 0.31, 0.13],
+    color: [NIGHT_U0, NIGHT_V0, NIGHT_DUDX],
     emissive: 0,
-    matId: 5,
-    rim: 0,
-    gridScale: 380,
+    matId: 9,
+    rim: NIGHT_DVDZ,
+    gridScale: 2000 / 380, // shader: uv = lp/misc.y + 0.5 with lp in unit-disk coords
     rot: siteBasis,
     hideBelow: 2e-3, // the macro world fades once the dive passes the weave
-    prov: 1,
+    prov: 0.5, // real imagery, stylized close-up detail
+    tex: 'ring5',
   });
 
   // ---- Street-level Earth: six concentric imagery rings on the sphere ----
@@ -403,10 +415,10 @@ export function buildUniverse(): Universe {
         mesh: `ring${k}`,
         size: [1, 1, 1], // geometry is already in meters
         bound: S * 0.71,
-        color: [1, 1, 1],
+        color: [NIGHT_U0, NIGHT_V0, NIGHT_DUDX], // affine Black Marble uv (see shader)
         emissive: 0,
         matId: 8,
-        rim: 0,
+        rim: NIGHT_DVDZ,
         gridScale: S, // misc.y: the shader derives UVs from local pos / S
         rot: siteBasis,
         hideBelow: 2e-3,
@@ -975,7 +987,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
-      source: 'real place, 41.866°N 87.617°W — imagery © Esri/Maxar',
+      source: 'real place, 41.869°N 87.618°W — imagery © Esri/Maxar',
       frame: surface,
       pos: anchor([0, 0.3, 0]),
       dist: 6,

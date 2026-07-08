@@ -168,9 +168,32 @@ struct FOut {
     let g10z = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.y / 10.0) - 0.5) - 0.492);
     base = base * (0.85 + 0.3 * fbm(vec3f(lpm.x * 0.2, 0.0, lpm.y * 0.2)));
     base = base * (1.0 - 0.22 * max(g1x, g1z) * f1 - 0.3 * max(g10x, g10z) * f10);
-  } else if (matId == 8) { // imagery ring: Esri World Imagery draped on the sphere
+  } else if (matId == 8 || matId == 9) {
+    // Imagery draped on the sphere (Esri World Imagery). matId 9 is the lawn:
+    // it samples the innermost ring's texture so the picnic ground IS the
+    // surrounding photograph, plus close-up procedural detail and the 1 m grid.
     let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
     base = textureSample(dayTex, samp, uv).rgb;
+    // Night: the global Black Marble sampled via a local affine linearization
+    // of the equirectangular map around the site (color.rg = uv there,
+    // color.b = du per east-meter, misc.x = dv per north-meter).
+    var meters = lp.xz;
+    if (matId == 9) { meters = lp.xz * 380.0; } // the lawn disk is a 380 m unit disk
+    else { meters = lp.xz; }
+    let nuv = vec2f(O.color.r + meters.x * O.color.b, O.color.g + meters.y * O.misc.x);
+    emissive = textureSample(nightTex, samp, nuv).rgb * smoothstep(0.03, -0.12, ndl) * vec3f(1.0, 0.85, 0.6);
+    if (matId == 9) {
+      let lpm = lp.xz * 380.0;
+      let d = length(in.wp);
+      let f1 = exp(-d / 60.0);
+      let f10 = exp(-d / 500.0);
+      let g1x = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.x) - 0.5) - 0.45);
+      let g1z = 1.0 - smoothstep(0.0, 0.05, abs(fract(lpm.y) - 0.5) - 0.45);
+      let g10x = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.x / 10.0) - 0.5) - 0.492);
+      let g10z = 1.0 - smoothstep(0.0, 0.006, abs(fract(lpm.y / 10.0) - 0.5) - 0.492);
+      base = base * (0.9 + 0.2 * fbm(vec3f(lpm.x * 0.6, 0.0, lpm.y * 0.6)));
+      base = base * (1.0 - 0.16 * max(g1x, g1z) * f1 - 0.2 * max(g10x, g10z) * f10);
+    }
   } else if (matId == 7) { // the picnic blanket: 8x8 red/white checker
     let cell = (i32(floor((lp.x + 1.0) * 4.0)) + i32(floor((lp.z + 1.0) * 4.0))) & 1;
     base = mix(vec3f(0.72, 0.09, 0.07), vec3f(0.93, 0.9, 0.84), f32(cell));
@@ -186,7 +209,7 @@ struct FOut {
   var ambCol = vec3f(1.0);
   // Sky fill keeps the human-scale picnic scene readable; the imagery rings
   // (matId 8) are the planet itself and take planetary ambient instead.
-  if (matId >= 5 && matId != 8) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
+  if (matId >= 5 && matId != 8 && matId != 9) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
   var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 

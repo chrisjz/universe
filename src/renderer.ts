@@ -248,8 +248,12 @@ export class Renderer {
     this.geoms.set(name, this.makeGeometry(verts, indices));
   }
 
-  // Register a single-image texture (day slot; night slot stays black).
+  // Register a single-image texture. The night slot carries the global
+  // Black Marble (city lights for the imagery rings) once it has loaded.
   private texBGs = new Map<string, GPUBindGroup>();
+  private dayViews = new Map<string, GPUTextureView>();
+  private nightView: GPUTextureView | null = null;
+  private blackView: GPUTextureView | null = null;
   hasTexture(key: string): boolean {
     return this.texBGs.has(key);
   }
@@ -270,23 +274,47 @@ export class Renderer {
       d.queue.copyExternalImageToTexture({ source: m }, { texture: tex, mipLevel: level }, [w, h]);
       if (level > 0) m.close();
     }
-    const black = d.createTexture({
-      size: [1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    d.queue.writeTexture({ texture: black }, new Uint8Array([0, 0, 0, 255]), { bytesPerRow: 4 }, [1, 1]);
+    if (!this.blackView) {
+      const black = d.createTexture({
+        size: [1, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      d.queue.writeTexture({ texture: black }, new Uint8Array([0, 0, 0, 255]), { bytesPerRow: 4 }, [1, 1]);
+      this.blackView = black.createView();
+    }
+    const view = tex.createView();
+    this.dayViews.set(key, view);
     this.texBGs.set(
       key,
       d.createBindGroup({
         layout: this.texBGL,
         entries: [
           { binding: 0, resource: this.sampler },
-          { binding: 1, resource: tex.createView() },
-          { binding: 2, resource: black.createView() },
+          { binding: 1, resource: view },
+          { binding: 2, resource: this.nightView ?? this.blackView },
         ],
       }),
     );
+  }
+
+  // Once the Black Marble lands, rebind it into every registered texture so
+  // imagery rings glow with real city lights at night (load-order safe).
+  private setNightView(view: GPUTextureView): void {
+    this.nightView = view;
+    for (const [key, day] of this.dayViews) {
+      this.texBGs.set(
+        key,
+        this.device.createBindGroup({
+          layout: this.texBGL,
+          entries: [
+            { binding: 0, resource: this.sampler },
+            { binding: 1, resource: day },
+            { binding: 2, resource: view },
+          ],
+        }),
+      );
+    }
   }
 
   // Fetch the Earth day/night textures and swap them in when ready. Mip
@@ -323,14 +351,16 @@ export class Renderer {
     };
     const [day, night] = await Promise.all([load(dayUrl), load(nightUrl)]);
     if (!day || !night) return; // keep the procedural fallback
+    const nightView = night.createView();
     this.earthTexBG = this.device.createBindGroup({
       layout: this.texBGL,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: day.createView() },
-        { binding: 2, resource: night.createView() },
+        { binding: 2, resource: nightView },
       ],
     });
+    this.setNightView(nightView);
     this.earthReady = true;
   }
 

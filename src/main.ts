@@ -688,16 +688,9 @@ async function start(): Promise<void> {
           ]
         : [];
 
-    // Imagery rings are a daytime product: after local sunset they hide, and
-    // the globe's real Black Marble city lights show through from beneath
-    // (the rings sit only meters above the sphere).
-    const siteSun = norm(relPos(u.sunFrame, [0, 0, 0], surfaceFrame, [0, 0, 0]));
-    const siteDay = dot(siteSun, surfaceUp) > -0.03;
-
     for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
       if (m.tex !== undefined && m.tex !== 'earth' && !renderer.hasTexture(m.tex)) continue; // imagery not landed yet
-      if (m.matId === 8 && !siteDay) continue; // nighttime: the Black Marble sphere takes over
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
       if (m.bound / Math.max(d, 1e-18) < 2e-8) continue; // sub-pixel

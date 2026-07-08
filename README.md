@@ -34,7 +34,7 @@ are illustrative — below the atom, nature stops posing for portraits.
 
 Earth is the real Earth — NASA Blue Marble by day, Black Marble city lights on
 the night side — and the bottom of the zoom is an homage: a one-meter
-red-checkered **picnic blanket on the Chicago lakefront** (41.866°N, 87.617°W),
+red-checkered **picnic blanket on the Chicago lakefront** (41.869°N, 87.618°W),
 where the Eames' _Powers of Ten_ opened in 1977. Structure outside the solar
 system is procedural placeholder (deterministic seed), but every dimension that
 can be real already is: actual planetary radii and semi-major axes, the real
