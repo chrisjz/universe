@@ -1,9 +1,9 @@
-# UNIVERSE
+# Universe Atlas
 
-**A true-scale, explorable atlas of the universe in your browser** — one continuous
-scroll across **43 orders of magnitude**: from the observable universe (~10²⁷ m)
-down through a picnic blanket on the Chicago lakefront and into a proton
-(10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~25 KB gzipped.
+**The universe in your browser, to true scale** — one continuous scroll across
+**43 orders of magnitude**, from quark to cosmos: the observable universe
+(~10²⁷ m) down through a picnic blanket on the Chicago lakefront and into a
+proton (10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~25 KB gzipped.
 
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
