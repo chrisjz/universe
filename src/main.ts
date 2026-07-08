@@ -24,6 +24,7 @@ import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
 import { buildUniverse, Target } from './scene';
 import { streamStars } from './stars';
+import { streamImageryRings } from './terrain';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -66,6 +67,7 @@ async function start(): Promise<void> {
   }
 
   const u = buildUniverse();
+  u.patchGeoms.forEach((g) => renderer.addGeometry(g.name, g.verts, g.indices));
   const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data));
 
   // ---- simulation clock & mean-longitude ephemeris ----
@@ -128,6 +130,9 @@ async function start(): Promise<void> {
     `${import.meta.env.BASE_URL}earth/day.jpg`,
     `${import.meta.env.BASE_URL}earth/night.jpg`,
   );
+
+  // ---- street-level Earth: stream the Esri imagery rings, largest first ----
+  void streamImageryRings(u.site.lat, u.site.lon, u.site.ringSizes, (key, bmp) => renderer.addTexture(key, bmp));
 
   // ---- stream the ATHYG star tiles (brightest chunks first) ----
   let starCount = 0;
@@ -510,6 +515,12 @@ async function start(): Promise<void> {
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
+  // ?at=<ISO date/time> — start the simulation clock at a chosen moment.
+  const atParam = Date.parse(params.get('at') ?? '');
+  if (Number.isFinite(atParam)) {
+    simMs = atParam;
+    updateBodies();
+  }
   // ?speed=<sim seconds per real second> — snaps to the nearest preset.
   const speedParam = parseFloat(params.get('speed') ?? '');
   if (Number.isFinite(speedParam) && speedParam > 0) {
@@ -679,6 +690,7 @@ async function start(): Promise<void> {
 
     for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
+      if (m.tex !== undefined && m.tex !== 'earth' && !renderer.hasTexture(m.tex)) continue; // imagery not landed yet
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
       if (m.bound / Math.max(d, 1e-18) < 2e-8) continue; // sub-pixel
@@ -720,7 +732,7 @@ async function start(): Promise<void> {
       o[25] = m.gridScale;
       o[26] = renderer.earthReady ? 1 : 0; // textured flag (matId 1 only)
       o[27] = m.prov ?? 0;
-      data.meshes.push({ kind: m.mesh, data: o, earth: m.matId === 1 });
+      data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }
 
     for (const orbit of u.orbits) {

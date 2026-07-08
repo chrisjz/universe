@@ -4,13 +4,15 @@
 
 import { MESH_WGSL, POINTS_WGSL, LINES_WGSL } from './shaders';
 
-export type MeshKind = 'sphere' | 'box' | 'disk';
+export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
 export type F32 = Float32Array<ArrayBuffer>;
 
 export interface FrameData {
   globals: F32; // 28 floats
-  meshes: { kind: MeshKind; data: F32; earth?: boolean }[]; // 28 floats each; earth -> textured bind group
+  // tex: 'earth' -> the day/night pair; other keys -> textures registered via
+  // addTexture (draw is skipped until the texture has landed).
+  meshes: { kind: MeshKind; data: F32; tex?: string }[]; // 28 floats each
   lines: F32[]; // 8 floats each
   groups: { index: number; data: F32 }[]; // 4 floats each
 }
@@ -241,6 +243,80 @@ export class Renderer {
     this.device.queue.writeBuffer(this.pointGroups[index].buf, 0, instances);
   }
 
+  // Register a named geometry (interleaved pos3+normal3 vertices).
+  addGeometry(name: string, verts: F32, indices: Uint32Array<ArrayBuffer>): void {
+    this.geoms.set(name, this.makeGeometry(verts, indices));
+  }
+
+  // Register a single-image texture. The night slot carries the global
+  // Black Marble (city lights for the imagery rings) once it has loaded.
+  private texBGs = new Map<string, GPUBindGroup>();
+  private dayViews = new Map<string, GPUTextureView>();
+  private nightView: GPUTextureView | null = null;
+  private blackView: GPUTextureView | null = null;
+  hasTexture(key: string): boolean {
+    return this.texBGs.has(key);
+  }
+  async addTexture(key: string, bmp: ImageBitmap): Promise<void> {
+    const d = this.device;
+    const mips = Math.floor(Math.log2(Math.max(bmp.width, bmp.height))) + 1;
+    const tex = d.createTexture({
+      size: [bmp.width, bmp.height],
+      format: 'rgba8unorm',
+      mipLevelCount: mips,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    for (let level = 0; level < mips; level++) {
+      const w = Math.max(1, bmp.width >> level);
+      const h = Math.max(1, bmp.height >> level);
+      const m =
+        level === 0 ? bmp : await createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+      d.queue.copyExternalImageToTexture({ source: m }, { texture: tex, mipLevel: level }, [w, h]);
+      if (level > 0) m.close();
+    }
+    if (!this.blackView) {
+      const black = d.createTexture({
+        size: [1, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      d.queue.writeTexture({ texture: black }, new Uint8Array([0, 0, 0, 255]), { bytesPerRow: 4 }, [1, 1]);
+      this.blackView = black.createView();
+    }
+    const view = tex.createView();
+    this.dayViews.set(key, view);
+    this.texBGs.set(
+      key,
+      d.createBindGroup({
+        layout: this.texBGL,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: view },
+          { binding: 2, resource: this.nightView ?? this.blackView },
+        ],
+      }),
+    );
+  }
+
+  // Once the Black Marble lands, rebind it into every registered texture so
+  // imagery rings glow with real city lights at night (load-order safe).
+  private setNightView(view: GPUTextureView): void {
+    this.nightView = view;
+    for (const [key, day] of this.dayViews) {
+      this.texBGs.set(
+        key,
+        this.device.createBindGroup({
+          layout: this.texBGL,
+          entries: [
+            { binding: 0, resource: this.sampler },
+            { binding: 1, resource: day },
+            { binding: 2, resource: view },
+          ],
+        }),
+      );
+    }
+  }
+
   // Fetch the Earth day/night textures and swap them in when ready. Mip
   // levels are generated CPU-side via createImageBitmap resizing.
   async loadEarthTextures(dayUrl: string, nightUrl: string): Promise<void> {
@@ -275,14 +351,16 @@ export class Renderer {
     };
     const [day, night] = await Promise.all([load(dayUrl), load(nightUrl)]);
     if (!day || !night) return; // keep the procedural fallback
+    const nightView = night.createView();
     this.earthTexBG = this.device.createBindGroup({
       layout: this.texBGL,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: day.createView() },
-        { binding: 2, resource: night.createView() },
+        { binding: 2, resource: nightView },
       ],
     });
+    this.setNightView(nightView);
     this.earthReady = true;
   }
 
@@ -348,8 +426,9 @@ export class Renderer {
     pass.setPipeline(this.meshPipe);
     for (let i = 0; i < nMesh; i++) {
       const g = this.geoms.get(frame.meshes[i].kind)!;
+      const tex = frame.meshes[i].tex;
       pass.setBindGroup(1, this.meshBG, [SLOT * i]);
-      pass.setBindGroup(2, frame.meshes[i].earth ? this.earthTexBG : this.defaultTexBG);
+      pass.setBindGroup(2, tex === 'earth' ? this.earthTexBG : tex ? this.texBGs.get(tex)! : this.defaultTexBG);
       pass.setVertexBuffer(0, g.vbuf);
       pass.setIndexBuffer(g.ibuf, 'uint32');
       pass.drawIndexed(g.indexCount);
