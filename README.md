@@ -35,11 +35,16 @@ are illustrative — below the atom, nature stops posing for portraits.
 Earth is the real Earth — NASA Blue Marble by day, Black Marble city lights on
 the night side — and the bottom of the zoom is an homage: a one-meter
 red-checkered **picnic blanket on the Chicago lakefront** (41.869°N, 87.618°W),
-where the Eames' _Powers of Ten_ opened in 1977. Structure outside the solar
-system is procedural placeholder (deterministic seed), but every dimension that
-can be real already is: actual planetary radii and semi-major axes, the real
-Moon distance, the real Sun–galactic-center distance, a Milky Way with the real
-~2.6 kpc disk scale length. Time is real too: the
+where the Eames' _Powers of Ten_ opened in 1977. Structure is real wherever a
+catalog reaches: 854,000 ATHYG stars, and — out to ~260 Mpc — the **real local
+universe**, 43,000 galaxies of the 2MASS Redshift Survey with Virgo, Coma, and
+the Great Wall at their measured places (the empty band along the Milky Way's
+plane is the survey's genuine zone of avoidance — dust, not absence). Only
+beyond the surveys' reach does procedural placeholder (deterministic seed)
+take over, and every dimension that can be real already is: actual planetary
+radii and semi-major axes, the real Moon distance, the real
+Sun–galactic-center distance, a Milky Way with the real ~2.6 kpc disk scale
+length. Time is real too: the
 planets and the Moon sit at their true positions for the simulated date (a
 mean-longitude ephemeris — circular, coplanar approximation) and move as the
 clock runs, from real time up to a billion years per second — and the Earth
@@ -155,6 +160,7 @@ src/
   math.ts      double-precision vectors, f32 matrices, deterministic PRNG
   scene.ts     the placeholder universe: real dimensions, procedural structure
   sky.ts       true sky orientation: equatorial/galactic -> scene rotations
+  galaxies.ts  the real local universe: 43k 2MASS Redshift Survey galaxies
   cosmo.ts     cosmic time: the ΛCDM scale factor
   terrain.ts   street-level Earth: Esri imagery + AWS terrain tiles, stitched at runtime
   shaders.ts   WGSL: lit meshes, additive point sprites, orbit lines
@@ -171,7 +177,7 @@ src/
 - [x] Click-to-focus: planets, moons, and every named star are clickable destinations
 - [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
 - [ ] Gaia DR3 milestone: millions of stars via hierarchical spatial LOD tiles
-- [ ] Real deep-sky structure: the 2MASS Redshift Survey local universe (Virgo, Coma, the Great Wall) in place of the procedural web
+- [x] Real deep-sky structure: 43k 2MASS Redshift Survey galaxies — Virgo, Coma, the Great Wall — out to ~260 Mpc
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
@@ -210,6 +216,11 @@ Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
 - [ATHYG](https://github.com/astronexus/ATHYG-Database) (Tycho-2 + Gaia DR3)
   powers the 854k-star deep sky — `node scripts/generate-star-tiles.mjs <athyg.csv>`
   regenerates the binary tiles in `public/stars/`.
+
+The local universe is the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mrs/)
+(Huchra et al. 2012, ApJS 199, 26): 43,533 galaxies with measured positions
+and redshifts — `node scripts/generate-galaxies.mjs <2mrs_1175_done.dat>`
+regenerates `public/galaxies/2mrs.bin`.
 
 Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
 (day, July) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)

@@ -24,6 +24,7 @@ import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
 import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
 import { streamStars } from './stars';
+import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { Hud } from './hud';
@@ -151,6 +152,7 @@ async function start(): Promise<void> {
     if (Math.abs(a - webA) > 0.003 * webA) {
       webA = a;
       renderer.updatePointGroup(groupIndex[u.webGroup], u.scaleWeb(a));
+      rescaleGalaxies();
     }
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
@@ -218,6 +220,30 @@ async function start(): Promise<void> {
     u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18, nearFade: true, prov: 0 });
     starCount += instances.length / 8;
   });
+
+  // ---- the real local universe: 43k 2MASS Redshift Survey galaxies ----
+  // Virgo, Coma, Perseus–Pisces, the Great Wall — measured positions,
+  // comoving like the web (they ride the same scale factor).
+  let galaxyBase: Float32Array | null = null;
+  let galaxyGroup = -1;
+  void loadGalaxies(`${import.meta.env.BASE_URL}galaxies/2mrs.bin`).then((instances) => {
+    if (!instances) return;
+    galaxyBase = Float32Array.from(instances);
+    galaxyGroup = u.groups.length;
+    groupIndex.push(renderer.addPointGroup(instances));
+    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 2.6e25, prov: 0 });
+    if (webA !== 1) rescaleGalaxies();
+  });
+  function rescaleGalaxies(): void {
+    if (!galaxyBase || galaxyGroup < 0) return;
+    const d = u.groups[galaxyGroup].data;
+    for (let i = 0; i < d.length; i += 8) {
+      d[i] = galaxyBase[i] * webA;
+      d[i + 1] = galaxyBase[i + 1] * webA;
+      d[i + 2] = galaxyBase[i + 2] * webA;
+    }
+    renderer.updatePointGroup(groupIndex[galaxyGroup], d);
+  }
 
   // ---- camera state ----
   const cam = {

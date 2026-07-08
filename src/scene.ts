@@ -7,7 +7,7 @@ import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
-import { orientSky } from './sky';
+import { orientSky, raDecToScene } from './sky';
 
 export interface MeshObj {
   frame: Frame;
@@ -1114,7 +1114,14 @@ export function buildUniverse(): Universe {
     }
     webNodePos = nodes[7];
     const pts: number[] = [];
+    // The volume within ~260 Mpc is REAL now — the 2MASS Redshift Survey
+    // (galaxies.ts) fills it with 43k measured galaxies — so the procedural
+    // placeholder only populates the space beyond the survey's reach, with
+    // a feathered boundary so the hand-off has no dark shell.
+    const SURVEY_R = 6e24;
     const putGal = (x: number, y: number, z: number) => {
+      const rr0 = Math.hypot(x, y, z);
+      if (rr0 < SURVEY_R + (rand() - 0.15) * 5e24) return;
       const warm = rand() < 0.3;
       pts.push(
         x,
@@ -1155,6 +1162,15 @@ export function buildUniverse(): Universe {
     webGroup = groups.length;
     groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts), prov: 1 });
   }
+  // The web bookmark lands on the real Coma cluster — the heart of the
+  // Great Wall, ~100 Mpc away in the 2MRS data (RA 194.95°, Dec +27.98°).
+  {
+    const coma = raDecToScene(194.953, 27.981);
+    const d = 3.05e24;
+    webNodePos[0] = coma[0] * d;
+    webNodePos[1] = coma[1] * d;
+    webNodePos[2] = coma[2] * d;
+  }
   // Cosmic expansion: the web is drawn in comoving coordinates (the arrays
   // above are the a = 1 snapshot); scaleWeb(a) multiplies the space between
   // galaxies by the ΛCDM scale factor. Node 0 is us, so we stay the origin —
@@ -1193,10 +1209,10 @@ export function buildUniverse(): Universe {
     {
       name: 'COSMIC WEB',
       slug: 'web',
-      source: 'illustrative — procedural cosmic structure',
+      source: 'measured to ~260 Mpc — 2MASS Redshift Survey; procedural beyond',
       frame: root,
       pos: webNodePos,
-      dist: 1.2e26,
+      dist: 2.6e25,
       pitch: 0.2,
       parent: 'universe',
       exit: 3.5e26,
