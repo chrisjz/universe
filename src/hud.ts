@@ -5,6 +5,21 @@ import { Target } from './scene';
 
 const AU = 1.496e11;
 const LY = 9.4607e15;
+const YEAR_MS = 3.15576e10;
+
+// Beyond ±10,000 years a calendar date stops meaning anything — switch to
+// cosmic phrasing ("2.31 Myr from now", "13.79 Gyr ago").
+export function formatDeepTime(msFromNow: number): string {
+  const y = msFromNow / YEAR_MS;
+  const a = Math.abs(y);
+  const num =
+    a < 1e6
+      ? `${Math.round(a).toLocaleString('en-US')} yr`
+      : a < 1e9
+        ? `${(a / 1e6).toPrecision(3)} Myr`
+        : `${(a / 1e9).toPrecision(4)} Gyr`;
+  return y < 0 ? `${num} ago` : `${num} from now`;
+}
 
 export function formatWidth(m: number): { main: string; exp: string } {
   const exp = `≈ 10^${Math.round(Math.log10(m))} m`;
@@ -205,9 +220,15 @@ export class Hud {
     this.ctxEl.textContent = contextFor(viewWidth);
     this.nameEl.textContent = focusName;
     this.srcEl.textContent = source;
-    const d = new Date(simMs);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+    const msFromNow = simMs - Date.now();
+    let date: string;
+    if (Math.abs(msFromNow) < 1e4 * YEAR_MS) {
+      const d = new Date(simMs);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+    } else {
+      date = formatDeepTime(msFromNow);
+    }
     const stars = starCount > 0 ? ` · ${Math.round(starCount / 1000)}k stars` : '';
     this.timeEl.textContent = (paused ? `${date} · paused` : `${date} · ${speedLabel}`) + stars;
     const pauseBtn = document.querySelector<HTMLButtonElement>('#scale .timectl button[data-t="pause"]');

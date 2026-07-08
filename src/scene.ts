@@ -97,7 +97,10 @@ export interface Universe {
   targets: Target[];
   bodies: OrbitalBody[];
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
-  orientEarth: (theta: number) => void; // diurnal rotation, θ around the planet's axis
+  webGroup: number; // index into groups; re-uploaded when the scale factor moves
+  orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
+  orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
+  scaleWeb: (a: number) => Float32Array<ArrayBuffer>; // comoving web × ΛCDM scale factor
   patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[];
   site: { lat: number; lon: number; ringSizes: number[]; waterLevel: number };
 }
@@ -198,6 +201,21 @@ export function buildUniverse(): Universe {
   // Real galactocentric distance, oriented so the galactic center sits in
   // its true scene direction (Sagittarius) and the disk in the true plane.
   const sunFrame = new Frame('sun', galaxy, orientSky(8.3 * KPC, 0, 9e17));
+  // The galactic year: the sun orbits the galactic center every ~225 Myr,
+  // moving toward l = 90° (Cygnus). β is the accumulated orbit angle; the
+  // offset is recomputed in the pre-orientation convention (disk plane =
+  // local XZ, pole = +y) and re-oriented, so the whole solar neighborhood —
+  // planets, picnic, 854k stars — rides around the disk together.
+  const orientGalaxy = (beta: number): void => {
+    const cb = Math.cos(beta),
+      sb = Math.sin(beta);
+    const x = 8.3 * KPC * cb + 9e17 * sb;
+    const z = -8.3 * KPC * sb + 9e17 * cb;
+    const p = orientSky(x, 0, z);
+    sunFrame.offset[0] = p[0];
+    sunFrame.offset[1] = p[1];
+    sunFrame.offset[2] = p[2];
+  };
 
   // Placeholder epoch position; updateBodies() overwrites it (in place) from
   // the mean-longitude ephemeris before the first frame renders.
@@ -283,17 +301,26 @@ export function buildUniverse(): Universe {
   const OBLIQUITY = (23.44 * Math.PI) / 180;
   const CE = Math.cos(OBLIQUITY),
     SE = -Math.sin(OBLIQUITY); // lean toward -Z: sunward at the June solstice under clockwise orbits
-  const orientEarth = (theta: number): void => {
+  // Axial precession: the spin axis sweeps a 23.44° cone around the ecliptic
+  // pole once per 25,772 years (φ, negative with time — the equinoxes move
+  // westward). Scrub +12,000 years and Vega takes over as the pole star; it
+  // also means the seasons drift through this sidereal calendar, which is
+  // real (our dates are Julian days from J2000, not tropical years).
+  const orientEarth = (theta: number, phi = 0): void => {
     const c = Math.cos(theta),
       s = Math.sin(theta);
-    // world = Tilt · R_y(θ) · earthFixed
+    const cp = Math.cos(phi),
+      sp = Math.sin(phi);
+    // world = R_y(φ) · Tilt · R_y(θ) · earthFixed
     const rot = (v0: V3, out: V3): void => {
       const x = v0[0] * c + v0[2] * s;
       const y = v0[1];
       const z = -v0[0] * s + v0[2] * c;
-      out[0] = x;
-      out[1] = y * CE - z * SE;
-      out[2] = y * SE + z * CE;
+      const ty = y * CE - z * SE;
+      const tz = y * SE + z * CE;
+      out[0] = x * cp + tz * sp;
+      out[1] = ty;
+      out[2] = -x * sp + tz * cp;
     };
     rot(east0, east);
     rot(up0, up);
@@ -876,6 +903,7 @@ export function buildUniverse(): Universe {
 
   // ---- Cosmic web: nodes + filaments, each point one "galaxy" ----
   let webNodePos: V3 = [0, 0, 0];
+  let webGroup = 0;
   {
     const NODES = 64;
     const nodes: V3[] = [[0, 0, 0]]; // node 0 = our Local Group, so we sit inside the web
@@ -926,8 +954,29 @@ export function buildUniverse(): Universe {
         );
       }
     }
+    webGroup = groups.length;
     groups.push({ frame: root, pos: [0, 0, 0], data: new Float32Array(pts), prov: 1 });
   }
+  // Cosmic expansion: the web is drawn in comoving coordinates (the arrays
+  // above are the a = 1 snapshot); scaleWeb(a) multiplies the space between
+  // galaxies by the ΛCDM scale factor. Node 0 is us, so we stay the origin —
+  // the comoving observer's view. Galaxies themselves don't grow: positions
+  // scale, sprite sizes don't.
+  const webBase = Float32Array.from(groups[webGroup].data);
+  const webNodeBase: V3 = [...webNodePos];
+  const scaleWeb = (a: number): Float32Array<ArrayBuffer> => {
+    const d = groups[webGroup].data;
+    for (let i = 0; i < d.length; i += 8) {
+      d[i] = webBase[i] * a;
+      d[i + 1] = webBase[i + 1] * a;
+      d[i + 2] = webBase[i + 2] * a;
+    }
+    // The web bookmark rides its node so the camera still arrives somewhere.
+    webNodePos[0] = webNodeBase[0] * a;
+    webNodePos[1] = webNodeBase[1] * a;
+    webNodePos[2] = webNodeBase[2] * a;
+    return d;
+  };
 
   // The main zoom chain is universe → galaxy → system → earth → surface;
   // sun / moon / web are leaves you visit explicitly and scroll back out of.
@@ -1049,7 +1098,10 @@ export function buildUniverse(): Universe {
     targets,
     bodies,
     planetSpriteGroup,
+    webGroup,
     orientEarth,
+    orientGalaxy,
+    scaleWeb,
     patchGeoms,
     // waterLevel: Lake Michigan's surface, ~176 m above sea level (IGLD85) —
     // the DEM floor, so lakebed bathymetry can't carve the water into a bowl.
