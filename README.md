@@ -47,8 +47,8 @@ at the sidereal rate, phase-locked so the sub-solar longitude matches UTC:
 the picnic sees sunrise when Chicago does, seasons included — a 71.6° summer
 solstice sun, 24.7° in December, fifteen-hour June days — and at one hour per
 second you can watch the sun set from the blanket. The roadmap swaps the
-placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies, Earth terrain
-tiles — without touching the engine.
+placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies — without
+touching the engine.
 
 ## Try it
 
@@ -135,6 +135,7 @@ src/
   frames.ts    hierarchical double-precision reference frames (the scale engine)
   math.ts      double-precision vectors, f32 matrices, deterministic PRNG
   scene.ts     the placeholder universe: real dimensions, procedural structure
+  terrain.ts   street-level Earth: Esri imagery + AWS terrain tiles, stitched at runtime
   shaders.ts   WGSL: lit meshes, additive point sprites, orbit lines
   renderer.ts  thin WebGPU renderer (3 pipelines, 4x MSAA, log depth)
   hud.ts       live scale readout (m → km → AU → ly → Gly) and target buttons
@@ -157,7 +158,7 @@ src/
 - [x] Axial tilt (23.44°) and seasons: real solstice sun, real day lengths
 - [ ] True ecliptic–galactic sky orientation (the celestial pole at Polaris)
 - [x] Street-level Earth: Esri World Imagery rings, down to ~2 m/px over the picnic
-- [ ] Terrain elevation (the rings are still sea-level smooth)
+- [x] Terrain elevation: real DEM heights on the imagery rings (AWS Terrain Tiles)
 - [ ] Cosmic time scrubbing (deep-time structure evolution)
 - [x] The honest seam: press **X** to see what is measured and what is imagined
 
@@ -189,7 +190,10 @@ Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1
 (night lights), public domain, in `public/earth/`. Street-level imagery around
 the picnic site is fetched at runtime from **Esri World Imagery** — Source:
 Esri, Maxar, Earthstar Geographics, and the GIS User Community — used with
-attribution per Esri's terms.
+attribution per Esri's terms. Terrain elevation comes from the
+[Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) open dataset on
+AWS (Mapzen terrarium encoding; SRTM, GMTED2010, ETOPO1 et al.), decoded at
+runtime and floored at Lake Michigan's 176 m surface so the lake stays flat.
 
 ## License
 

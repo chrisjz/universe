@@ -22,9 +22,9 @@ import {
 } from './math';
 import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
-import { buildUniverse, Target } from './scene';
+import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
 import { streamStars } from './stars';
-import { streamImageryRings } from './terrain';
+import { fetchRingHeights, streamImageryRings } from './terrain';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -133,6 +133,17 @@ async function start(): Promise<void> {
 
   // ---- street-level Earth: stream the Esri imagery rings, largest first ----
   void streamImageryRings(u.site.lat, u.site.lon, u.site.ringSizes, (key, bmp) => renderer.addTexture(key, bmp));
+
+  // ---- terrain elevation: rebuild each ring with real DEM heights ----
+  void (async () => {
+    for (let k = 0; k < u.site.ringSizes.length; k++) {
+      const S = u.site.ringSizes[k];
+      const heights = await fetchRingHeights(u.site.lat, u.site.lon, S, RING_GRID, u.site.waterLevel);
+      if (!heights) continue; // offline: the smooth sphere stands in
+      const g = ringGeometry(S, heights);
+      renderer.addGeometry(`ring${k}`, g.verts, g.indices);
+    }
+  })();
 
   // ---- stream the ATHYG star tiles (brightest chunks first) ----
   let starCount = 0;
