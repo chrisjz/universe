@@ -98,12 +98,64 @@ export interface Universe {
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
   orientEarth: (theta: number) => void; // diurnal rotation, θ around the planet's axis
   patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[];
-  site: { lat: number; lon: number; ringSizes: number[] };
+  site: { lat: number; lon: number; ringSizes: number[]; waterLevel: number };
 }
 
 const AU = 1.496e11;
 const KPC = 3.086e19;
 const R_SUN = 6.957e8;
+const R_EARTH = 6.371e6;
+
+// ---- Street-level imagery rings: the shared vertex net ----
+// Six concentric annular patches (each S/4 the size of the last) curved to
+// the exact sphere in site-local coordinates (x east, z north, meters).
+// main.ts rebuilds a ring with real heights once elevation streams in.
+export const RING_SIZES = [2048e3, 512e3, 128e3, 32e3, 8e3, 2e3];
+export const RING_GRID = 48; // cells per side; the central quarter (the S/8 hole) is skipped
+
+export function ringGeometry(
+  S: number,
+  heights?: Float32Array | null,
+): { verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> } {
+  const G = RING_GRID;
+  const lift = S * 4e-5;
+  const cell = S / G;
+  const hAt = (i: number, j: number) =>
+    heights ? heights[Math.min(G, Math.max(0, j)) * (G + 1) + Math.min(G, Math.max(0, i))] : 0;
+  const verts: number[] = [];
+  const idx: number[] = [];
+  for (let j = 0; j <= G; j++) {
+    for (let i = 0; i <= G; i++) {
+      const nx = ((i / G - 0.5) * S) / R_EARTH;
+      const nz = ((j / G - 0.5) * S) / R_EARTH;
+      const len = Math.hypot(nx, 1, nz);
+      const rr = R_EARTH + lift + hAt(i, j);
+      // Normal: the sphere normal tilted by the terrain slope (small-angle).
+      const dhdx = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * cell);
+      const dhdz = (hAt(i, j + 1) - hAt(i, j - 1)) / (2 * cell);
+      const nl = Math.hypot(nx / len - dhdx, 1 / len, nz / len - dhdz);
+      verts.push(
+        (rr * nx) / len,
+        rr / len - R_EARTH,
+        (rr * nz) / len,
+        (nx / len - dhdx) / nl,
+        1 / len / nl,
+        (nz / len - dhdz) / nl,
+      );
+    }
+  }
+  const hole0 = G / 2 - G / 8,
+    hole1 = G / 2 + G / 8; // central quarter = S/8 half-width hole
+  for (let j = 0; j < G; j++) {
+    for (let i = 0; i < G; i++) {
+      if (i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the hole (next ring / the lawn)
+      const a0 = j * (G + 1) + i,
+        b0 = a0 + G + 1;
+      idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
+    }
+  }
+  return { verts: new Float32Array(verts), indices: new Uint32Array(idx) };
+}
 
 const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -148,7 +200,6 @@ export function buildUniverse(): Universe {
   // the mean-longitude ephemeris before the first frame renders.
   const earthPos: V3 = [AU, 0, 0];
   const earthFrame = new Frame('earth', sunFrame, earthPos);
-  const R_EARTH = 6.371e6;
 
   // The landing site: the Chicago lakefront where the Eames' "Powers of Ten"
   // (1977) opens on a picnic blanket. dir(lat, lon) is the exact inverse of
@@ -378,37 +429,15 @@ export function buildUniverse(): Universe {
   // Annular (no overlap, no z-fighting), curved to the exact sphere, lifted
   // slightly with size so boundaries nest cleanly, textured with stitched
   // Esri World Imagery at matching zoom. The innermost ring resolves ~2 m/px.
-  const RING_SIZES = [2048e3, 512e3, 128e3, 32e3, 8e3, 2e3];
+  // Built flat here; once real elevation streams in (terrain.ts), main.ts
+  // rebuilds each ring via ringGeometry(S, heights) — same net, vertices
+  // displaced radially by true relative elevation.
   const patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[] = [];
   {
-    const GRID = 24; // cells per side; center 6x6 (the S/8 hole) is skipped
     const ringPos = anchor([0, 0, 0]);
     RING_SIZES.forEach((S, k) => {
-      const lift = S * 4e-5;
-      const verts: number[] = [];
-      const idx: number[] = [];
-      for (let j = 0; j <= GRID; j++) {
-        for (let i = 0; i <= GRID; i++) {
-          const x = (i / GRID - 0.5) * S;
-          const z = (j / GRID - 0.5) * S;
-          const nx = x / R_EARTH,
-            nz = z / R_EARTH;
-          const len = Math.hypot(nx, 1, nz);
-          const rr = R_EARTH + lift;
-          verts.push((rr * nx) / len, rr / len - R_EARTH, (rr * nz) / len, nx / len, 1 / len, nz / len);
-        }
-      }
-      const hole0 = GRID / 2 - 3,
-        hole1 = GRID / 2 + 3; // 6x6 central cells = S/8 half-width hole
-      for (let j = 0; j < GRID; j++) {
-        for (let i = 0; i < GRID; i++) {
-          if (i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the S/8 hole (next ring / the lawn)
-          const a0 = j * (GRID + 1) + i,
-            b0 = a0 + GRID + 1;
-          idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
-        }
-      }
-      patchGeoms.push({ name: `ring${k}`, verts: new Float32Array(verts), indices: new Uint32Array(idx) });
+      const g = ringGeometry(S);
+      patchGeoms.push({ name: `ring${k}`, verts: g.verts, indices: g.indices });
       meshes.push({
         frame: surface,
         pos: ringPos,
@@ -1015,6 +1044,8 @@ export function buildUniverse(): Universe {
     planetSpriteGroup,
     orientEarth,
     patchGeoms,
-    site: { lat: SITE_LAT_DEG, lon: SITE_LON_DEG, ringSizes: RING_SIZES },
+    // waterLevel: Lake Michigan's surface, ~176 m above sea level (IGLD85) —
+    // the DEM floor, so lakebed bathymetry can't carve the water into a bowl.
+    site: { lat: SITE_LAT_DEG, lon: SITE_LON_DEG, ringSizes: RING_SIZES, waterLevel: 176 },
   };
 }
