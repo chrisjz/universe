@@ -184,14 +184,19 @@ struct FOut {
     let lights = textureSample(nightTex, samp, nuv).rgb;
     let nightF = smoothstep(0.03, -0.12, ndl);
     // From afar you see the city lights themselves; standing on the ground
-    // you see the imagery lit BY them. Black Marble is ~10 km/px, so up
+    // you see the imagery lit BY them. Black Marble is ~5 km/px, so up
     // close it can only supply the overall glow level — use it as a dim
     // warm ambient on the imagery and blend to the raw lights with camera
     // distance, once a pixel of the night texture is genuinely far away.
+    // In between, the glow is modulated by the day imagery's luminance —
+    // streets and rooftops are bright by day too — so the light pattern
+    // follows real city blocks instead of night-texture blob resolution.
     let glowMix = smoothstep(1.0e4, 1.5e5, length(in.wp));
     let lum = dot(lights, vec3f(0.299, 0.587, 0.114));
+    let dayLum = dot(base, vec3f(0.299, 0.587, 0.114));
     let lit = base * (0.06 + 0.3 * lum) * vec3f(1.0, 0.88, 0.7);
-    let glow = lights * vec3f(1.0, 0.85, 0.6);
+    let detail = mix(0.35 + 1.3 * dayLum, 1.0, glowMix);
+    let glow = lights * vec3f(1.0, 0.85, 0.6) * detail;
     emissive = nightF * mix(lit, glow, glowMix);
     if (matId == 9) {
       let lpm = lp.xz * 380.0;
@@ -281,7 +286,15 @@ struct VOut {
   o.uv = vec2f(ux, uy);
   o.col = seamTint(pcol, P.misc.y);
   var inten = pint * P.origin.w;
-  if (P.misc.x > 0.0) { inten = inten * smoothstep(P.misc.x * 0.35, P.misc.x, d0); }
+  // Near fade: f32 cancellation jitters a sprite by ~6e-8 of its distance
+  // from the group origin, and a focused star's arrival distance grows with
+  // its radius — so the fade radius scales with the sprite's own remoteness
+  // (1%), floored at the group constant. The double-precision star mesh has
+  // taken over long before the sprite goes.
+  if (P.misc.x > 0.0) {
+    let nf = max(P.misc.x, 0.01 * bigLength(ppos));
+    inten = inten * smoothstep(nf * 0.35, nf, d0);
+  }
   o.inten = inten;
   return o;
 }
