@@ -117,6 +117,7 @@ export interface Universe {
     setImagerySite: (latDeg: number, lonDeg: number) => string[]; // returns new texture keys
     imageryKeys: () => string[];
     dimpleEarth: (depth: number) => void; // sink the render sphere below carved terrain
+    gnomonicEUN: (p: V3) => [number, number] | null; // imagery-local east/north meters
   };
 }
 
@@ -1355,6 +1356,15 @@ export function buildUniverse(): Universe {
       setImagerySite,
       imageryKeys: () => RING_SIZES.map((_, k) => `ring${k}@${img.gen}`),
       dimpleEarth: (depth: number) => dimpleEarth(depth),
+      // Gnomonic site-local coordinates (east/north meters on the imagery
+      // tangent) of a world position relative Earth's center — the same
+      // parameterization the terrain rings use, so the camera can ask how
+      // high the ground is beneath it. Null on the planet's far side.
+      gnomonicEUN: (p: V3): [number, number] | null => {
+        const py = d3(p, imgUp);
+        if (py <= 0) return null;
+        return [(R_EARTH * d3(p, imgEast)) / py, (R_EARTH * d3(p, imgNorth)) / py];
+      },
     },
   };
 }

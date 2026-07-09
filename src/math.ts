@@ -81,15 +81,25 @@ export function viewRotation(
   pitch: number,
   basis?: Basis,
   upHint?: V3,
+  tilt = 0,
 ): { view: Float32Array<ArrayBuffer>; right: V3; up: V3; fwd: V3 } {
   const dir = orbitDir(yaw, pitch, basis); // focus -> camera
-  const f = norm(scale(dir, -1)); // camera forward
+  let f = norm(scale(dir, -1)); // camera forward
   const upRef = upHint ?? basis?.[1] ?? [0, 1, 0];
   let r = cross(f, upRef);
   const rl = len(r);
   // Degenerate when looking straight along the up reference; fall back.
   r = rl > 1e-6 ? scale(r, 1 / rl) : norm(cross(f, basis?.[0] ?? [1, 0, 0]));
-  const u = cross(r, f);
+  let u = cross(r, f);
+  if (tilt !== 0) {
+    // First-person head-tilt: rotate the gaze up around the view right axis,
+    // lifting it off the focus point (the camera position doesn't move —
+    // this is how you look at the sky while standing on the ground).
+    const ct = Math.cos(tilt),
+      st = Math.sin(tilt);
+    f = [f[0] * ct + u[0] * st, f[1] * ct + u[1] * st, f[2] * ct + u[2] * st];
+    u = cross(r, f);
+  }
   const m = new Float32Array(16);
   m[0] = r[0];
   m[4] = r[1];
