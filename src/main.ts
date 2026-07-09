@@ -28,6 +28,8 @@ import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { moonEcliptic, earthEqCenterDeg } from './ephemeris';
+import { raDecToScene } from './sky';
+import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
 const FOV = (60 * Math.PI) / 180;
@@ -298,6 +300,77 @@ async function start(): Promise<void> {
     renderer.updatePointGroup(groupIndex[galaxyGroup], d);
   }
 
+  // ---- constellation figures (toggle: C) ----
+  // The 88 IAU figures drawn on a dome around the sun, through the same
+  // true-sky rotation as the stars — so the lines land on their stars.
+  const SKY_DOME_R = 2.5e18;
+  let constellations = false;
+  {
+    const n = CONSTELLATION_SEGMENTS.length / 4;
+    const verts = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const a = raDecToScene(CONSTELLATION_SEGMENTS[i * 4], CONSTELLATION_SEGMENTS[i * 4 + 1]);
+      const b = raDecToScene(CONSTELLATION_SEGMENTS[i * 4 + 2], CONSTELLATION_SEGMENTS[i * 4 + 3]);
+      verts.set(a, i * 6);
+      verts.set(b, i * 6 + 3);
+    }
+    renderer.setSkyLines(verts);
+  }
+  const labelLayer = document.createElement('div');
+  labelLayer.id = 'sky-labels';
+  document.body.appendChild(labelLayer);
+  const skyLabels = CONSTELLATION_LABELS.map(([ra, dec, name]) => {
+    const el = document.createElement('span');
+    el.textContent = name;
+    labelLayer.appendChild(el);
+    return { dir: raDecToScene(ra, dec), el };
+  });
+  function updateSkyLabels(originRel: V3 | null, earthRel: V3): void {
+    if (!originRel) {
+      labelLayer.style.display = 'none';
+      return;
+    }
+    labelLayer.style.display = 'block';
+    const w = canvas.clientWidth,
+      h = canvas.clientHeight;
+    const tanF = Math.tan(FOV / 2);
+    const aspect = w / h;
+    const { right, up: upv, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    for (const l of skyLabels) {
+      const p: V3 = [
+        originRel[0] + l.dir[0] * SKY_DOME_R,
+        originRel[1] + l.dir[1] * SKY_DOME_R,
+        originRel[2] + l.dir[2] * SKY_DOME_R,
+      ];
+      const z = dot(p, fwd);
+      if (z <= 0) {
+        l.el.style.display = 'none';
+        continue;
+      }
+      // Occlusion: the lines depth-test against the planet; labels must too
+      // (a name shining through the ground gives the horizon away).
+      const pl = len(p);
+      const t = (dot(earthRel, p) / pl) * 1; // along-ray distance to Earth's center
+      if (t > 0 && t < pl) {
+        const cx = earthRel[0] - (p[0] / pl) * t;
+        const cy = earthRel[1] - (p[1] / pl) * t;
+        const cz = earthRel[2] - (p[2] / pl) * t;
+        if (Math.hypot(cx, cy, cz) < 6.371e6 * 0.995) {
+          l.el.style.display = 'none';
+          continue;
+        }
+      }
+      const sx = (dot(p, right) / (z * tanF * aspect)) * 0.5 + 0.5;
+      const sy = 0.5 - (dot(p, upv) / (z * tanF)) * 0.5;
+      if (sx < -0.05 || sx > 1.05 || sy < -0.05 || sy > 1.05) {
+        l.el.style.display = 'none';
+        continue;
+      }
+      l.el.style.display = 'block';
+      l.el.style.transform = `translate(${(sx * w).toFixed(1)}px, ${(sy * h).toFixed(1)}px) translate(-50%, -50%)`;
+    }
+  }
+
   // ---- camera state ----
   const cam = {
     frame: u.targets[0].frame,
@@ -518,6 +591,10 @@ async function start(): Promise<void> {
     () => {
       seam = !seam;
       hud.setSeam(seam);
+    },
+    () => {
+      constellations = !constellations;
+      hud.setConstellations(constellations);
     },
   );
 
@@ -745,6 +822,10 @@ async function start(): Promise<void> {
       seam = !seam;
       hud.setSeam(seam);
     }
+    if (e.key === 'c' || e.key === 'C') {
+      constellations = !constellations;
+      hud.setConstellations(constellations);
+    }
     if (e.key === 'Escape') {
       flight = null;
       retarget = null;
@@ -759,6 +840,11 @@ async function start(): Promise<void> {
   if (params.get('seam') !== null) {
     seam = true;
     hud.setSeam(true);
+  }
+  // ?constellations=1 — the 88 figures over the true sky.
+  if (params.get('constellations') !== null) {
+    constellations = true;
+    hud.setConstellations(true);
   }
   // ?tour=1 — start the grand tour after a beat (lets textures/stars land).
   if (params.get('tour') !== null) {
@@ -1062,6 +1148,26 @@ async function start(): Promise<void> {
       gd[5] = g.prov ?? 0;
       data.groups.push({ index: groupIndex[i], data: gd });
     });
+
+    // Constellation figures: a dome of line segments around the sun, shown
+    // while the camera is inside the stellar neighborhood.
+    const skyVisible = constellations && cam.dist < 2e19;
+    if (skyVisible) {
+      const rel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
+      const s = new Float32Array(8);
+      s[0] = rel[0];
+      s[1] = rel[1];
+      s[2] = rel[2];
+      s[3] = SKY_DOME_R;
+      s[4] = 0.35;
+      s[5] = 0.55;
+      s[6] = 0.85;
+      s[7] = 0.28;
+      data.sky = s;
+      updateSkyLabels(rel, relPos(earthFrameRef, [0, 0, 0], cam.frame, camLocal));
+    } else {
+      updateSkyLabels(null, [0, 0, 0]);
+    }
 
     renderer.render(data);
     hud.update(

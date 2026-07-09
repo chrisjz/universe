@@ -306,6 +306,43 @@ struct VOut {
 }
 `;
 
+// Constellation figures: free line-list segments on the celestial sphere
+// (unit directions × the dome radius in origin.w). Same uniform layout as
+// the orbit lines, so they share the dynamic buffer.
+export const SKY_WGSL =
+  COMMON +
+  /* wgsl */ `
+struct Line {
+  origin : vec4f, // xyz: dome center rel camera, w: dome radius
+  color  : vec4f, // rgb + alpha
+};
+@group(1) @binding(0) var<uniform> L : Line;
+
+struct VOut { @builtin(position) pos : vec4f };
+
+@vertex fn vs(@location(0) dir : vec3f) -> VOut {
+  let raw = L.origin.xyz + dir * L.origin.w;
+  let d0 = max(bigLength(raw), 1e-3);
+  let cap = G.params.x;
+  var dc = d0;
+  var pc = raw;
+  if (d0 > cap) {
+    dc = cap * (1.0 + log(d0 / cap));
+    pc = raw * (dc / d0);
+  }
+  var clip = G.viewProj * vec4f(pc, 1.0);
+  clip.z = logDepth(dc) * clip.w;
+  var o : VOut;
+  o.pos = clip;
+  return o;
+}
+
+@fragment fn fs() -> @location(0) vec4f {
+  // The stars are measured; the figures are ours: stylized-on-real.
+  return vec4f(seamTint(L.color.rgb, 0.5) * L.color.a, 1.0); // additive
+}
+`;
+
 export const LINES_WGSL =
   COMMON +
   /* wgsl */ `

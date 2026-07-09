@@ -87,12 +87,15 @@ export class Hud {
   private targets: Target[];
   private onTarget: (i: number) => void;
 
+  private constBtn!: HTMLButtonElement;
+
   constructor(
     targets: Target[],
     onTarget: (i: number) => void,
     onTour: () => void,
     onTime: (action: 'slower' | 'pause' | 'faster') => void,
     onSeam: () => void,
+    onConstellations: () => void,
   ) {
     this.targets = targets;
     this.onTarget = onTarget;
@@ -113,6 +116,11 @@ export class Hud {
     this.seamBtn.title = 'the honest seam: what is measured vs imagined ( X )';
     this.seamBtn.addEventListener('click', onSeam);
     bar.appendChild(this.seamBtn);
+    this.constBtn = document.createElement('button');
+    this.constBtn.textContent = '✦';
+    this.constBtn.title = 'constellations ( C )';
+    this.constBtn.addEventListener('click', onConstellations);
+    bar.appendChild(this.constBtn);
     const scroller = document.createElement('div');
     scroller.className = 'scroller';
     bar.appendChild(scroller);
@@ -140,6 +148,10 @@ export class Hud {
   setSeam(on: boolean): void {
     this.seamEl.style.display = on ? 'block' : 'none';
     this.seamBtn.classList.toggle('active', on);
+  }
+
+  setConstellations(on: boolean): void {
+    this.constBtn.classList.toggle('active', on);
   }
 
   // ---- search: every target (all 195 named stars included) is reachable ----

@@ -118,6 +118,25 @@
         margin-top: 4px;
         letter-spacing: 0.12em;
       }
+      /* Constellation name labels, projected onto the sky each frame. */
+      #sky-labels {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 2;
+        display: none;
+      }
+      #sky-labels span {
+        position: absolute;
+        left: 0;
+        top: 0;
+        font-size: 9px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(126, 158, 214, 0.6);
+        white-space: nowrap;
+        text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+      }
       #seam {
         top: calc(64px + env(safe-area-inset-top, 0px));
         left: 50%;
