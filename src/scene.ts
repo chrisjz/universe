@@ -1426,6 +1426,21 @@ export function buildUniverse(): Universe {
       enter: 2.8e6,
       radius: R_MOON,
     },
+    // Tranquility sits next to the Moon in the bar (8) so the bookmarks read
+    // outward-in without hopping between worlds: moon, its site, then Earth's.
+    {
+      name: 'TRANQUILITY BASE',
+      slug: 'tranquility',
+      source: 'Apollo 11 site, 0.674°N 23.473°E — LRO WAC imagery, LOLA terrain',
+      frame: tranquility,
+      pos: tqAnchor([0, 0.5, 0]),
+      dist: 4e4,
+      pitch: 0.35,
+      sunlit: true,
+      parent: 'moon',
+      exit: 7e6,
+      basis: tqBasis,
+    },
     {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
@@ -1440,20 +1455,7 @@ export function buildUniverse(): Universe {
       enter: 0.35,
       basis: siteBasis,
     },
-    {
-      name: 'TRANQUILITY BASE',
-      slug: 'tranquility',
-      source: 'Apollo 11 site, 0.674°N 23.473°E — LRO WAC imagery, LOLA terrain',
-      frame: tranquility,
-      pos: tqAnchor([0, 0.5, 0]),
-      dist: 4e4,
-      pitch: 0.35,
-      sunlit: true,
-      parent: 'moon',
-      exit: 7e6,
-      basis: tqBasis,
-    },
-    // Hidden targets stay after the visible eight so keys 1-8 remain stable.
+    // Hidden targets stay after the visible nine so keys 1-7 remain stable.
     ...microTargets,
     ...planetTargets,
     ...starTargets,
