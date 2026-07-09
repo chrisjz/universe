@@ -25,7 +25,7 @@ import { Renderer, FrameData } from './renderer';
 import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
 import { streamStars } from './stars';
 import { loadGalaxies } from './galaxies';
-import { fetchRingHeights, streamImageryRings } from './terrain';
+import { fetchRingHeights, streamImageryRings, streamMoonRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { moonEcliptic, earthEqCenterDeg } from './ephemeris';
 import { raDecToScene } from './sky';
@@ -162,6 +162,11 @@ async function start(): Promise<void> {
       }
     }
     updateMoonShadow();
+    // Synchronous lunar rotation: UNIFORM spin at the sidereal-month rate,
+    // phased by the mean longitude so the near side faces Earth on average.
+    // The ecliptic-longitude residuals (equation of the center etc.) then
+    // show up as the real ±7.9° optical libration in longitude.
+    u.orientMoon(Math.PI + ((218.3164477 + 13.17639648 * days) * Math.PI) / 180);
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
@@ -207,9 +212,14 @@ async function start(): Promise<void> {
       lit = clamp((off - (umbra - R_M)) / (penumbra + R_M - (umbra - R_M)), 0, 1);
     }
     const deep = 1 - lit;
-    u.moonMesh.color[0] = 0.72 * (0.05 + 0.95 * lit) + 0.33 * deep;
-    u.moonMesh.color[1] = 0.7 * (0.05 + 0.95 * lit) + 0.1 * deep;
-    u.moonMesh.color[2] = 0.68 * (0.05 + 0.95 * lit) + 0.05 * deep;
+    // A MULTIPLIER now (the mesh carries the real LROC texture): 1 in full
+    // sun, dimming through the penumbra, red-shifted deep in the umbra.
+    // The Tranquility ring meshes share this array, so during a lunar
+    // eclipse the ground you stand on dims and reddens with the globe.
+    const f = 0.05 + 0.95 * lit;
+    u.moonMesh.color[0] = f + 0.46 * deep;
+    u.moonMesh.color[1] = f + 0.14 * deep;
+    u.moonMesh.color[2] = f + 0.07 * deep;
   }
   updateBodies(); // targets must sit at their real positions before any ?goto jump
 
@@ -218,6 +228,45 @@ async function start(): Promise<void> {
     `${import.meta.env.BASE_URL}earth/day.jpg`,
     `${import.meta.env.BASE_URL}earth/night.jpg`,
   );
+
+  // ---- the real Moon: LROC WAC global color + baked LOLA site terrain ----
+  void fetch(`${import.meta.env.BASE_URL}moon/color.jpg`)
+    .then(async (r) => {
+      if (!r.ok) return;
+      await renderer.addTexture('moon', await createImageBitmap(await r.blob()));
+    })
+    .catch(() => {}); // offline: the procedural regolith stands in
+  // Tranquility Base terrain (baked by scripts/generate-moon.mjs): rebuild
+  // each moon ring on its real LOLA heights and sink the smooth globe below
+  // the deepest carved point (the site itself sits 1.9 km under the
+  // reference sphere — Mare Tranquillitatis is a low plain).
+  const moonTerrainFields: { S: number; h: Float32Array }[] = [];
+  void fetch(`${import.meta.env.BASE_URL}moon/tranquility.json`)
+    .then(async (r) => {
+      if (!r.ok) return;
+      const tq = (await r.json()) as { siteElev: number; rings: { S: number; heights: number[] }[] };
+      let deepest = 0;
+      tq.rings.forEach((ring, k) => {
+        const h = new Float32Array(ring.heights);
+        for (const v of h) deepest = Math.min(deepest, v);
+        moonTerrainFields.push({ S: ring.S, h });
+        const g = ringGeometry(ring.S, h, u.nav.moon.R, k < tq.rings.length - 1);
+        renderer.addGeometry(`moonring${k}`, g.verts, g.indices);
+      });
+      u.nav.moon.dimpleMoon(-tq.siteElev - deepest + 30);
+    })
+    .catch(() => {});
+  // The WAC imagery is ~60 tile fetches — stream it only once the Moon (or
+  // its surface site) actually has focus, not on every page load.
+  let moonImageryStarted = false;
+  function maybeStreamMoonImagery(): void {
+    const slug = u.targets[activeTarget].slug;
+    if (moonImageryStarted || (slug !== 'moon' && slug !== 'tranquility')) return;
+    moonImageryStarted = true;
+    void streamMoonRings(u.nav.moon.site[0], u.nav.moon.site[1], u.nav.moon.ringSizes, async (key, bmp) => {
+      await renderer.addTexture(key, bmp);
+    });
+  }
 
   // ---- street-level Earth: the re-plantable imagery + terrain stack ----
   // Streams Esri imagery (largest ring first) and real DEM heights for the
@@ -277,11 +326,11 @@ async function start(): Promise<void> {
   // ground belongs to a smaller ring (or the lawn at datum), so borrowing
   // the big ring's 80 m lift near the site would raise a phantom floor.
   let terrainFields: { S: number; h: Float32Array }[] = [];
-  function terrainHeightAt(e: number, n: number): number {
+  function terrainHeightAt(fields: { S: number; h: Float32Array }[], e: number, n: number): number {
     const G = RING_GRID;
     const m = Math.max(Math.abs(e), Math.abs(n));
-    for (let k = terrainFields.length - 1; k >= 0; k--) {
-      const { S, h } = terrainFields[k];
+    for (let k = fields.length - 1; k >= 0; k--) {
+      const { S, h } = fields[k];
       if (m >= S * 0.5) continue; // outside this ring — try a larger one
       const fx = Math.min(G - 1e-4, Math.max(0, (e / S + 0.5) * G));
       const fz = Math.min(G - 1e-4, Math.max(0, (n / S + 0.5) * G));
@@ -597,6 +646,7 @@ async function start(): Promise<void> {
     'sun',
     'earth',
     'moon',
+    'tranquility',
     'surface',
     'weave',
     'fiber',
@@ -1067,14 +1117,19 @@ async function start(): Promise<void> {
     // toward the zenith while the camera body rests on the ground.
     {
       const slug = u.targets[activeTarget].slug;
-      if (!flight && !retarget && (slug === 'surface' || slug === 'roam')) {
+      const onMoon = slug === 'tranquility';
+      if (!flight && !retarget && (slug === 'surface' || slug === 'roam' || onMoon)) {
+        const R = onMoon ? u.nav.moon.R : 6.371e6;
+        const bodyFrame = onMoon ? u.moonFrame : earthFrameRef;
+        const gnomonic = onMoon ? u.nav.moon.gnomonicEUN : u.nav.gnomonicEUN;
+        const fields = onMoon ? moonTerrainFields : terrainFields;
         for (let i = 0; i < 40; i++) {
           const camPos = add(cam.focus, scale(camDir(), cam.dist));
-          const rel = relPos(cam.frame, camPos, earthFrameRef, [0, 0, 0]);
+          const rel = relPos(cam.frame, camPos, bodyFrame, [0, 0, 0]);
           const r = len(rel);
-          if (r > 6.371e6 + 12e3) break; // far above any terrain
-          const en = u.nav.gnomonicEUN(rel);
-          const ground = 6.371e6 + 1.5 + (en ? terrainHeightAt(en[0], en[1]) : 0);
+          if (r > R + 12e3) break; // far above any terrain
+          const en = gnomonic(rel);
+          const ground = R + 1.5 + (en ? terrainHeightAt(fields, en[0], en[1]) : 0);
           if (i === 0 && r > ground + 60 && cam.tilt > 0) {
             // Comfortably clear of the ground (zooming away): the head-tilt
             // eases back so the familiar orbit gaze returns on its own.
@@ -1088,6 +1143,7 @@ async function start(): Promise<void> {
         cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
       }
     }
+    maybeStreamMoonImagery();
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
@@ -1150,7 +1206,9 @@ async function start(): Promise<void> {
 
     for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
-      if (m.tex !== undefined && m.tex !== 'earth' && !renderer.hasTexture(m.tex)) continue; // imagery not landed yet
+      // Imagery rings wait for their texture; the Earth and Moon globes draw
+      // with their procedural fallback until the real maps land.
+      if (m.tex !== undefined && m.tex !== 'earth' && m.tex !== 'moon' && !renderer.hasTexture(m.tex)) continue;
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
       if (m.bound / Math.max(d, 1e-18) < 2e-8) continue; // sub-pixel
@@ -1190,7 +1248,7 @@ async function start(): Promise<void> {
       o[23] = m.matId;
       o[24] = m.rim;
       o[25] = m.gridScale;
-      o[26] = renderer.earthReady ? 1 : 0; // textured flag (matId 1 only)
+      o[26] = (m.tex === 'moon' ? renderer.hasTexture('moon') : renderer.earthReady) ? 1 : 0; // textured flag
       o[27] = m.prov ?? 0;
       data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }
