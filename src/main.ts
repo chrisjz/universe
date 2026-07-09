@@ -48,6 +48,7 @@ interface Flight {
   logPeak: number;
   pitch0: number;
   yaw0: number;
+  tilt0: number; // sky-look head-tilt at departure, eased out in flight
   yawDelta: number; // shortest-arc turn toward the target's arrival yaw (0 if none)
   t: number;
   dur: number;
@@ -366,7 +367,7 @@ async function start(): Promise<void> {
       h = canvas.clientHeight;
     const tanF = Math.tan(FOV / 2);
     const aspect = w / h;
-    const { right, up: upv, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const { right, up: upv, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     for (const l of skyLabels) {
       const p: V3 = [
         originRel[0] + l.dir[0] * SKY_DOME_R,
@@ -409,6 +410,10 @@ async function start(): Promise<void> {
     yaw: 0.6,
     pitch: u.targets[0].pitch,
     dist: u.targets[0].dist,
+    // Sky-look head-tilt: when the terrain pitch floor stops the orbit, the
+    // blocked rotation becomes a first-person gaze lift instead — the camera
+    // stays on the ground and the view tilts up toward the zenith.
+    tilt: 0,
   };
   let flight: Flight | null = null;
   let retarget: { to: number; from: V3; t: number } | null = null;
@@ -506,7 +511,7 @@ async function start(): Promise<void> {
     const w = canvas.clientWidth,
       h = canvas.clientHeight;
     const tanF = Math.tan(FOV / 2);
-    const { right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const { right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const ray = norm(
       add(add(scale(right, ((px / w) * 2 - 1) * tanF * (w / h)), scale(up, (1 - (py / h) * 2) * tanF)), fwd),
     );
@@ -555,6 +560,7 @@ async function start(): Promise<void> {
       to: t,
       pitch0: cam.pitch,
       yaw0: cam.yaw,
+      tilt0: cam.tilt,
       yawDelta: (() => {
         const ay = arrivalYaw(t);
         return ay === undefined ? 0 : ((((ay - cam.yaw) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
@@ -574,6 +580,7 @@ async function start(): Promise<void> {
     cam.focus = [...t.pos] as V3;
     cam.dist = t.dist;
     cam.pitch = t.pitch;
+    cam.tilt = 0;
     const ay = arrivalYaw(t);
     if (ay !== undefined) cam.yaw = ay;
     activeTarget = i;
@@ -650,7 +657,7 @@ async function start(): Promise<void> {
   };
   // The point on the sphere under the view center; null if the view misses.
   function surfacePointUnderView(): V3 | null {
-    const { fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const { fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const camPos = add(cam.focus, scale(camDir(), cam.dist));
     const c = relPos(cam.frame, camPos, earthFrameRef, [0, 0, 0]);
     const b = dot(c, fwd);
@@ -809,7 +816,15 @@ async function start(): Promise<void> {
     dragDist += Math.abs(e.movementX) + Math.abs(e.movementY);
     if (dragDist < 5) return; // still within click slop — don't jitter the orbit
     cam.yaw -= e.movementX * 0.004;
-    cam.pitch = clamp(cam.pitch + e.movementY * 0.004, -1.53, 1.53);
+    // Dragging down while gazing at the sky first brings the gaze back to
+    // the horizon (consume the head-tilt), then resumes the normal orbit.
+    let dp = e.movementY * 0.004;
+    if (dp > 0 && cam.tilt > 0) {
+      const used = Math.min(cam.tilt, dp);
+      cam.tilt -= used;
+      dp -= used;
+    }
+    cam.pitch = clamp(cam.pitch + dp, -1.53, 1.53);
   });
   canvas.addEventListener('dblclick', (e) => {
     const i = pickAt(e.offsetX, e.offsetY);
@@ -968,6 +983,7 @@ async function start(): Promise<void> {
     const pT = smootherstep(t);
     cam.pitch = f.pitch0 + (f.to.pitch - f.pitch0) * pT;
     cam.yaw = f.yaw0 + f.yawDelta * pT;
+    cam.tilt = f.tilt0 * (1 - pT); // a flight always arrives gazing at its target
 
     if (t < 0.42) {
       // phase A: zoom out, focus fixed
@@ -1046,7 +1062,9 @@ async function start(): Promise<void> {
     // Ground collision: on a surface (picnic or roamed), orbiting toward
     // the sky must not swing the camera through the planet. If the camera
     // dips below the local terrain (same grids the rings render), the pitch
-    // floor rises until it is clear — a soft, terrain-aware horizon.
+    // floor rises until it is clear — and every degree the floor takes away
+    // is handed to the head-tilt, so the drag keeps rotating the GAZE up
+    // toward the zenith while the camera body rests on the ground.
     {
       const slug = u.targets[activeTarget].slug;
       if (!flight && !retarget && (slug === 'surface' || slug === 'roam')) {
@@ -1057,9 +1075,17 @@ async function start(): Promise<void> {
           if (r > 6.371e6 + 12e3) break; // far above any terrain
           const en = u.nav.gnomonicEUN(rel);
           const ground = 6.371e6 + 1.5 + (en ? terrainHeightAt(en[0], en[1]) : 0);
+          if (i === 0 && r > ground + 60 && cam.tilt > 0) {
+            // Comfortably clear of the ground (zooming away): the head-tilt
+            // eases back so the familiar orbit gaze returns on its own.
+            cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
+          }
           if (r >= ground + 1.2 || cam.pitch >= 1.53) break;
           cam.pitch = Math.min(cam.pitch + 0.02, 1.53);
+          cam.tilt = Math.min(cam.tilt + 0.02, 1.5); // blocked orbit -> sky gaze
         }
+      } else if (cam.tilt > 0 && !flight) {
+        cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
       }
     }
 
@@ -1067,7 +1093,7 @@ async function start(): Promise<void> {
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
     const targetUp = activeBasis()?.[1] ?? ([0, 1, 0] as V3);
     viewUp = norm(lerp3(viewUp, targetUp, Math.min(1, dt * 3)));
-    const { view, right, up } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
+    const { view, right, up } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const dir = camDir();
     let camLocal = add(cam.focus, scale(dir, cam.dist));
     if (cam.frame === surfaceFrame && !flight) {
