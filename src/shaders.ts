@@ -152,6 +152,27 @@ struct FOut {
       let ice = smoothstep(0.86, 0.96, abs(lp.y) + 0.06 * h);
       base = mix(base, vec3f(0.88, 0.91, 0.95), ice);
     }
+  } else if (matId == 10) { // the Moon: LROC WAC global color, eclipse tint in O.color
+    let uv = vec2f(0.5 + atan2(-lp.z, lp.x) / 6.2831853, 0.5 - asin(clamp(lp.y, -1.0, 1.0)) / 3.1415927);
+    if (O.misc.z > 0.5) {
+      base = textureSample(dayTex, samp, uv).rgb * O.color.rgb;
+    } else { // procedural regolith until (or unless) the texture loads
+      base = vec3f(0.72, 0.7, 0.68) * O.color.rgb * (0.7 + 0.6 * fbm(lp * 9.0));
+    }
+  } else if (matId == 11) {
+    // Moon imagery ring (LRO WAC via NASA Moon Trek): plain sun-lit imagery
+    // draped on the sphere — no night lights on an airless world. O.color
+    // carries the lunar-eclipse tint so the ground dims and reddens with
+    // the globe when Earth's shadow sweeps over the site. The 1.6 gain
+    // matches the raw WAC mosaic's exposure to the albedo-normalized global
+    // color map so the site patch doesn't sit dark on the globe.
+    let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
+    base = textureSample(dayTex, samp, uv).rgb * 1.6 * O.color.rgb;
+    // Up close the source is ~83 m/px: procedural regolith detail carries
+    // the last two orders of magnitude, fading out by a few km away.
+    let lpm = lp.xz * O.misc.y;
+    let reg = 0.75 + 0.5 * fbm(vec3f(lpm.x * 0.4, 0.0, lpm.y * 0.4));
+    base = base * mix(reg, 1.0, smoothstep(300.0, 3000.0, length(in.wp)));
   } else if (matId == 3) { // banded gas giant
     let band = fbm(vec3f(lp.y * 6.0, lp.y * 6.0 + 3.7, 0.5) + lp * 0.6);
     base = mix(base, base * vec3f(0.72, 0.68, 0.66), band);
@@ -224,8 +245,8 @@ struct FOut {
   var amb = 0.05;
   var ambCol = vec3f(1.0);
   // Sky fill keeps the human-scale picnic scene readable; the imagery rings
-  // (matId 8) are the planet itself and take planetary ambient instead.
-  if (matId >= 5 && matId != 8 && matId != 9) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
+  // (matId 8) and the Moon materials are planets and take planetary ambient.
+  if (matId >= 5 && matId != 8 && matId != 9 && matId != 10 && matId != 11) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
   var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 

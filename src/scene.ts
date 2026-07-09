@@ -101,7 +101,9 @@ export interface Universe {
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
   webGroup: number; // index into groups; re-uploaded when the scale factor moves
   moonMesh: MeshObj; // eclipse shading mutates its color as it crosses Earth's shadow
+  moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
+  orientMoon: (psi: number) => void; // synchronous spin around the orbit normal
   orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
   scaleWeb: (a: number) => Float32Array<ArrayBuffer>; // comoving web × ΛCDM scale factor
   patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[];
@@ -118,6 +120,14 @@ export interface Universe {
     imageryKeys: () => string[];
     dimpleEarth: (depth: number) => void; // sink the render sphere below carved terrain
     gnomonicEUN: (p: V3) => [number, number] | null; // imagery-local east/north meters
+    // Tranquility Base (fixed site — baked terrain, streamed WAC imagery).
+    moon: {
+      site: [number, number]; // (lat°, lon°)
+      ringSizes: number[];
+      R: number; // the site's datum radius (LOLA reference + site elevation)
+      dimpleMoon: (depth: number) => void;
+      gnomonicEUN: (p: V3) => [number, number] | null; // p relative the Moon's center
+    };
   };
 }
 
@@ -136,6 +146,8 @@ export const RING_GRID = 48; // cells per side; the central quarter (the S/8 hol
 export function ringGeometry(
   S: number,
   heights?: Float32Array | null,
+  R = R_EARTH, // datum radius: the sphere the ring curves onto (Moon rings pass their own)
+  hole = true, // the innermost ring of a stack can close its center (no lawn beneath)
 ): { verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> } {
   const G = RING_GRID;
   const lift = S * 4e-5;
@@ -146,17 +158,17 @@ export function ringGeometry(
   const idx: number[] = [];
   for (let j = 0; j <= G; j++) {
     for (let i = 0; i <= G; i++) {
-      const nx = ((i / G - 0.5) * S) / R_EARTH;
-      const nz = ((j / G - 0.5) * S) / R_EARTH;
+      const nx = ((i / G - 0.5) * S) / R;
+      const nz = ((j / G - 0.5) * S) / R;
       const len = Math.hypot(nx, 1, nz);
-      const rr = R_EARTH + lift + hAt(i, j);
+      const rr = R + lift + hAt(i, j);
       // Normal: the sphere normal tilted by the terrain slope (small-angle).
       const dhdx = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * cell);
       const dhdz = (hAt(i, j + 1) - hAt(i, j - 1)) / (2 * cell);
       const nl = Math.hypot(nx / len - dhdx, 1 / len, nz / len - dhdz);
       verts.push(
         (rr * nx) / len,
-        rr / len - R_EARTH,
+        rr / len - R,
         (rr * nz) / len,
         (nx / len - dhdx) / nl,
         1 / len / nl,
@@ -172,7 +184,7 @@ export function ringGeometry(
     hole1 = G / 2 + G / 8 - 1;
   for (let j = 0; j < G; j++) {
     for (let i = 0; i < G; i++) {
-      if (i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the hole (next ring / the lawn)
+      if (hole && i >= hole0 && i < hole1 && j >= hole0 && j < hole1) continue; // the hole (next ring / the lawn)
       const a0 = j * (G + 1) + i,
         b0 = a0 + G + 1;
       idx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);
@@ -188,11 +200,11 @@ export function ringGeometry(
     const base = verts.length / 6;
     for (const [i, j] of loop) {
       const top = (j * (G + 1) + i) * 6;
-      const nx = ((i / G - 0.5) * S) / R_EARTH;
-      const nz = ((j / G - 0.5) * S) / R_EARTH;
+      const nx = ((i / G - 0.5) * S) / R;
+      const nz = ((j / G - 0.5) * S) / R;
       const len = Math.hypot(nx, 1, nz);
-      const rr = R_EARTH + lift + hAt(i, j) - skirt;
-      verts.push((rr * nx) / len, rr / len - R_EARTH, (rr * nz) / len, verts[top + 3], verts[top + 4], verts[top + 5]);
+      const rr = R + lift + hAt(i, j) - skirt;
+      verts.push((rr * nx) / len, rr / len - R, (rr * nz) / len, verts[top + 3], verts[top + 4], verts[top + 5]);
     }
     const n = loop.length;
     for (let k = 0; k < n; k++) {
@@ -209,12 +221,14 @@ export function ringGeometry(
   for (let i = G; i > 0; i--) outer.push([i, G]);
   for (let j = G; j > 0; j--) outer.push([0, j]);
   emitSkirt(outer);
-  const hole: [number, number][] = [];
-  for (let i = hole0; i < hole1; i++) hole.push([i, hole0]);
-  for (let j = hole0; j < hole1; j++) hole.push([hole1, j]);
-  for (let i = hole1; i > hole0; i--) hole.push([i, hole1]);
-  for (let j = hole1; j > hole0; j--) hole.push([hole0, j]);
-  emitSkirt(hole);
+  if (hole) {
+    const holeLoop: [number, number][] = [];
+    for (let i = hole0; i < hole1; i++) holeLoop.push([i, hole0]);
+    for (let j = hole0; j < hole1; j++) holeLoop.push([hole1, j]);
+    for (let i = hole1; i > hole0; i--) holeLoop.push([i, hole1]);
+    for (let j = hole1; j > hole0; j--) holeLoop.push([hole0, j]);
+    emitSkirt(holeLoop);
+  }
   return { verts: new Float32Array(verts), indices: new Uint32Array(idx) };
 }
 
@@ -516,6 +530,8 @@ export function buildUniverse(): Universe {
     ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3, 304.88, 60182],
   ];
   const bodies: OrbitalBody[] = [];
+  // Named geometries registered with the renderer (Earth + Moon ring nets).
+  const patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[] = [];
   const planetSprites: number[][] = [];
   const planetTargets: Target[] = [];
   let dimpleEarth: (depth: number) => void = () => {};
@@ -566,17 +582,133 @@ export function buildUniverse(): Universe {
     });
   });
 
-  // Moon: real radius, and the full inclined, perturbed orbit (5.1°,
-  // regressing node, varying distance — see ephemeris.ts). This is what
-  // makes eclipses land on their true dates. During a lunar eclipse,
-  // updateBodies dims and reddens this mesh as it crosses Earth's shadow.
+  // Moon: real radius, the full inclined, perturbed orbit (5.1°, regressing
+  // node, varying distance — see ephemeris.ts), and the real surface: the
+  // LROC WAC global color mosaic on a tidally locked globe. The spin is
+  // UNIFORM (one sidereal month), not "always face Earth": the difference
+  // between uniform rotation and the varying orbital rate is the real
+  // optical libration in longitude (±7.9°) — you see it by scrubbing time.
+  // During a lunar eclipse, updateMoonShadow writes a dim/red multiplier
+  // into color as the Moon crosses Earth's shadow (rings share the tint).
+  const R_MOON = 1.7374e6; // LOLA reference radius
   const moonPos: V3 = [3.844e8, 0, 0];
-  const moonMesh = sphere(earthFrame, moonPos, 1.737e6, [0.72, 0.7, 0.68], 4);
+  const moonFrame = new Frame('moon', earthFrame, moonPos);
+  const moonRot: [V3, V3, V3] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  const moonMesh = sphere(earthFrame, moonPos, R_MOON, [1, 1, 1], 10);
+  moonMesh.rot = moonRot;
+  moonMesh.tex = 'moon';
+  moonMesh.prov = 0; // LROC imagery: measured
   meshes.push(moonMesh);
   // The drawn orbit ring stays in the ecliptic; the real moon rides up to
   // 5.1° off it — visibly honest at moon zoom.
   orbits.push({ frame: earthFrame, center: [0, 0, 0], radius: 3.844e8, color: [0.7, 0.72, 0.8], alpha: 0.16 });
   bodies.push({ a: 3.844e8, periodDays: 27.3217, L0: 218.32, positions: [moonPos], moon: true });
+
+  // ---- Tranquility Base: the second surface site ----
+  // Apollo 11's landing site on Mare Tranquillitatis. Fixed (no lunar roam),
+  // so its LOLA ring heightfields are baked at build time
+  // (scripts/generate-moon.mjs); the WAC imagery streams from NASA Moon Trek.
+  const TQ_LAT_DEG = 0.6741;
+  const TQ_LON_DEG = 23.473;
+  const TQ_ELEV = -1922; // LOLA site elevation vs the reference radius
+  const R_TQ = R_MOON + TQ_ELEV; // the site is the rings' datum, like the picnic
+  const MOON_RINGS = [1024e3, 256e3, 64e3, 16e3];
+  // Moon-fixed site basis (same lat/lon convention as Earth's fixedDir).
+  const tqFixedE: V3 = [0, 0, 0],
+    tqFixedU: V3 = [0, 0, 0],
+    tqFixedN: V3 = [0, 0, 0];
+  fixedBasis(TQ_LAT_DEG * DEG, TQ_LON_DEG * DEG, tqFixedE, tqFixedU, tqFixedN);
+  const tqEast: V3 = [...tqFixedE],
+    tqUp: V3 = [...tqFixedU],
+    tqNorth: V3 = [...tqFixedN];
+  const tqBasis: [V3, V3, V3] = [tqEast, tqUp, tqNorth];
+  // Site frame origin 1 m above the datum (same z-fight margin trick as the
+  // picnic); parented to the moon frame, whose offset IS the live moonPos.
+  const tranquility = new Frame('tranquility', moonFrame, [0, 0, 0]);
+  const tqAnchored: { vec: V3; eun: V3 }[] = [{ vec: tranquility.offset, eun: [0, R_TQ + 1, 0] }];
+  const tqAnchor = (eun: V3): V3 => {
+    const vec: V3 = [0, 0, 0];
+    tqAnchored.push({ vec, eun });
+    return vec;
+  };
+  // Synchronous rotation: spin the moon-fixed system by ψ around the orbit
+  // normal (+Y — the real axis is just 1.5° off it). main.ts drives ψ from
+  // the Moon's MEAN longitude, so the near side faces Earth on average and
+  // the ecliptic-longitude residuals appear as true longitude libration.
+  const orientMoon = (psi: number): void => {
+    const c = Math.cos(psi),
+      s = Math.sin(psi);
+    const rot = (v0: V3, out: V3): void => {
+      out[0] = v0[0] * c + v0[2] * s;
+      out[1] = v0[1];
+      out[2] = -v0[0] * s + v0[2] * c;
+    };
+    rot([1, 0, 0], moonRot[0]);
+    rot([0, 1, 0], moonRot[1]);
+    rot([0, 0, 1], moonRot[2]);
+    rot(tqFixedE, tqEast);
+    rot(tqFixedU, tqUp);
+    rot(tqFixedN, tqNorth);
+    for (const a of tqAnchored) {
+      a.vec[0] = tqEast[0] * a.eun[0] + tqUp[0] * a.eun[1] + tqNorth[0] * a.eun[2];
+      a.vec[1] = tqEast[1] * a.eun[0] + tqUp[1] * a.eun[1] + tqNorth[1] * a.eun[2];
+      a.vec[2] = tqEast[2] * a.eun[0] + tqUp[2] * a.eun[1] + tqNorth[2] * a.eun[2];
+    }
+  };
+  // Street-level Moon: WAC imagery rings curved to the site's datum sphere,
+  // sharing the moon mesh's color (the eclipse tint dims the ground too).
+  // The innermost ring closes its hole — no lawn on the Moon; the center of
+  // the stack is the same imagery, just past the source's native resolution.
+  MOON_RINGS.forEach((S, k) => {
+    const g = ringGeometry(S, null, R_TQ, k < MOON_RINGS.length - 1);
+    patchGeoms.push({ name: `moonring${k}`, verts: g.verts, indices: g.indices });
+    const m: MeshObj = {
+      frame: tranquility,
+      pos: tqAnchor([0, -1, 0]), // back down to the datum from the 1 m frame origin
+      mesh: `moonring${k}`,
+      size: [1, 1, 1],
+      bound: S * 0.71,
+      color: moonMesh.color, // SHARED: the lunar-eclipse multiplier
+      emissive: 0,
+      matId: 11,
+      rim: 0,
+      gridScale: S,
+      rot: tqBasis,
+      prov: 0.5, // real WAC photography, procedural close-up regolith detail
+      tex: `moonring${k}`,
+    };
+    meshes.push(m);
+  });
+  // The Eagle's descent stage stays at Tranquility Base (4.2 m across —
+  // sized right, drawn as a simple gold-foil box: illustrative, prov 1).
+  meshes.push({
+    frame: tranquility,
+    pos: tqAnchor([0, -1 + 1.5, 0]),
+    mesh: 'box',
+    size: [2.1, 1.5, 2.1],
+    bound: 5,
+    color: [0.82, 0.62, 0.25],
+    emissive: 0,
+    matId: 6,
+    rim: 0,
+    gridScale: 0,
+    rot: tqBasis,
+    prov: 1,
+  });
+  const dimpleMoon = (depth: number): void => {
+    const rr = R_MOON - Math.max(0, depth);
+    moonMesh.size[0] = rr;
+    moonMesh.size[1] = rr;
+    moonMesh.size[2] = rr;
+  };
+  // The site sits 1.9 km BELOW the reference sphere (mare plains are low):
+  // sink the globe under the flat rings now; deeper once real heights load.
+  dimpleMoon(-TQ_ELEV + 30);
+  orientMoon(0);
 
   // Sun glare + planet locator sprites (so the system reads at 1e13 m).
   planetSprites.push([0, 0, 0, 2.2e9, 1.0, 0.85, 0.6, 2.2]);
@@ -651,7 +783,6 @@ export function buildUniverse(): Universe {
   // Built flat here; once real elevation streams in (terrain.ts), main.ts
   // rebuilds each ring via ringGeometry(S, heights) — same net, vertices
   // displaced radially by true relative elevation.
-  const patchGeoms: { name: string; verts: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> }[] = [];
   RING_SIZES.forEach((S, k) => {
     const g = ringGeometry(S);
     patchGeoms.push({ name: `ring${k}`, verts: g.verts, indices: g.indices });
@@ -1283,7 +1414,7 @@ export function buildUniverse(): Universe {
     {
       name: 'THE MOON',
       slug: 'moon',
-      source: 'measured orbit & size — stylized surface',
+      source: 'measured — LROC WAC mosaic, true synchronous rotation',
       frame: earthFrame,
       pos: moonPos,
       dist: 8e6,
@@ -1291,7 +1422,24 @@ export function buildUniverse(): Universe {
       sunlit: true,
       parent: 'earth',
       exit: 1.2e8,
-      radius: 1.737e6,
+      child: 'tranquility',
+      enter: 2.8e6,
+      radius: R_MOON,
+    },
+    // Tranquility sits next to the Moon in the bar (8) so the bookmarks read
+    // outward-in without hopping between worlds: moon, its site, then Earth's.
+    {
+      name: 'TRANQUILITY BASE',
+      slug: 'tranquility',
+      source: 'Apollo 11 site, 0.674°N 23.473°E — LRO WAC imagery, LOLA terrain',
+      frame: tranquility,
+      pos: tqAnchor([0, 0.5, 0]),
+      dist: 4e4,
+      pitch: 0.35,
+      sunlit: true,
+      parent: 'moon',
+      exit: 7e6,
+      basis: tqBasis,
     },
     {
       name: 'THE PICNIC · 1 METER',
@@ -1307,7 +1455,7 @@ export function buildUniverse(): Universe {
       enter: 0.35,
       basis: siteBasis,
     },
-    // Hidden targets stay after the visible eight so keys 1-8 remain stable.
+    // Hidden targets stay after the visible nine so keys 1-7 remain stable.
     ...microTargets,
     ...planetTargets,
     ...starTargets,
@@ -1339,7 +1487,9 @@ export function buildUniverse(): Universe {
     planetSpriteGroup,
     webGroup,
     moonMesh,
+    moonFrame,
     orientEarth,
+    orientMoon,
     orientGalaxy,
     scaleWeb,
     patchGeoms,
@@ -1364,6 +1514,17 @@ export function buildUniverse(): Universe {
         const py = d3(p, imgUp);
         if (py <= 0) return null;
         return [(R_EARTH * d3(p, imgEast)) / py, (R_EARTH * d3(p, imgNorth)) / py];
+      },
+      moon: {
+        site: [TQ_LAT_DEG, TQ_LON_DEG],
+        ringSizes: MOON_RINGS,
+        R: R_TQ,
+        dimpleMoon,
+        gnomonicEUN: (p: V3): [number, number] | null => {
+          const py = d3(p, tqUp);
+          if (py <= 0) return null;
+          return [(R_TQ * d3(p, tqEast)) / py, (R_TQ * d3(p, tqNorth)) / py];
+        },
       },
     },
   };

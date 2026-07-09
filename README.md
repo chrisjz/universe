@@ -80,7 +80,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **2×click** | fly to what's under the cursor                                                                                        |
 | **drag**    | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky  |
 | **⇧-drag**  | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                               |
-| **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
+| **1–9, 0**  | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, tranquility base, picnic, weave)                  |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
 | **C**       | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                           |
@@ -172,7 +172,7 @@ src/
   sky.ts       true sky orientation: equatorial/galactic -> scene rotations
   galaxies.ts  the real local universe: 43k 2MASS Redshift Survey galaxies
   cosmo.ts     cosmic time: the ΛCDM scale factor
-  terrain.ts   street-level Earth: Esri imagery + AWS terrain tiles, stitched at runtime
+  terrain.ts   street-level Earth & Moon: Esri/Moon Trek imagery + AWS terrain tiles, stitched at runtime
   shaders.ts   WGSL: lit meshes, additive point sprites, orbit lines
   renderer.ts  thin WebGPU renderer (3 pipelines, 4x MSAA, log depth)
   hud.ts       live scale readout (m → km → AU → ly → Gly) and target buttons
@@ -202,7 +202,7 @@ src/
 - [x] Reverse time: the clock runs backwards too — rewind and watch the web draw together toward the Big Bang
 - [x] Real eclipses: the Moon's inclined, perturbed orbit puts every 2026 eclipse within ~10 minutes of its true time — crescent sun from Reykjavík, blood moon in Earth's umbra
 - [x] Constellations: the 88 IAU figures and names over the true sky — press **C** at the blanket and Scorpius stands over the July Milky Way
-- [ ] Real Moon surface (LRO textures + elevation), with Tranquility Base as a second surface site
+- [x] Real Moon surface: the LROC WAC globe with true synchronous rotation (libration included), LOLA terrain, and Tranquility Base — the Apollo 11 site — as a second surface site
 
 ## Development
 
@@ -236,6 +236,17 @@ The local universe is the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mr
 (Huchra et al. 2012, ApJS 199, 26): 43,533 galaxies with measured positions
 and redshifts — `node scripts/generate-galaxies.mjs <2mrs_1175_done.dat>`
 regenerates `public/galaxies/2mrs.bin`.
+
+The Moon is real too: the globe wears the LROC WAC color mosaic and the
+Tranquility Base terrain comes from the LOLA elevation model, both via NASA
+SVS's [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720) (NASA / GSFC / Arizona
+State University) — `node scripts/generate-moon.mjs <ldem_16_uint.tif>`
+regenerates `public/moon/tranquility.json` (the color map is
+`lroc_color_poles_4k.tif` converted to JPEG). Street-level imagery over the
+Apollo 11 site streams at runtime from the LRO WAC global mosaic on
+[NASA Moon Trek](https://trek.nasa.gov/moon/) (~100 m/px — procedural
+regolith detail carries the last stretch to human scale, honestly amber
+under the seam).
 
 Earth imagery is NASA's [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
 (day, July) and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)

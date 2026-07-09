@@ -472,7 +472,7 @@ export class Renderer {
       const g = this.geoms.get(frame.meshes[i].kind)!;
       const tex = frame.meshes[i].tex;
       pass.setBindGroup(1, this.meshBG, [SLOT * i]);
-      pass.setBindGroup(2, tex === 'earth' ? this.earthTexBG : tex ? this.texBGs.get(tex)! : this.defaultTexBG);
+      pass.setBindGroup(2, tex === 'earth' ? this.earthTexBG : (tex && this.texBGs.get(tex)) || this.defaultTexBG);
       pass.setVertexBuffer(0, g.vbuf);
       pass.setIndexBuffer(g.ibuf, 'uint32');
       pass.drawIndexed(g.indexCount);
