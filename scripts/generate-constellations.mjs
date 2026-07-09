@@ -21,7 +21,11 @@ for (const f of lines.features) {
     }
   }
 }
-const labels = names.features.map((f) => [r(f.geometry.coordinates[0]), r(f.geometry.coordinates[1]), f.properties.name]);
+const labels = names.features.map((f) => [
+  r(f.geometry.coordinates[0]),
+  r(f.geometry.coordinates[1]),
+  f.properties.name,
+]);
 
 writeFileSync(
   'src/data/constellations.ts',
