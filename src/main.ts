@@ -250,6 +250,7 @@ async function start(): Promise<void> {
     const isHome = Math.abs(lat - u.nav.home[0]) < 1e-4 && Math.abs(lon - u.nav.home[1]) < 1e-4;
     const waterLevel = isHome ? u.site.waterLevel : 0; // 0 = sea level (inland lakes may bowl)
     u.nav.dimpleEarth(0);
+    terrainFields = [];
     void (async () => {
       let deepest = 0; // meters below the site datum, across all rings
       for (let k = 0; k < u.site.ringSizes.length; k++) {
@@ -261,10 +262,40 @@ async function start(): Promise<void> {
         // Sink the render sphere below the deepest carved terrain, so a
         // canyon under a rim-top site doesn't fill with smooth Blue Marble.
         u.nav.dimpleEarth(-deepest * exag + 30);
-        const g = ringGeometry(S, exag === 1 ? heights : heights.map((h) => h * exag));
+        const eff = exag === 1 ? heights : heights.map((h) => h * exag);
+        terrainFields.push({ S, h: eff }); // retained for camera ground collision
+        const g = ringGeometry(S, eff);
         renderer.addGeometry(`ring${k}`, g.verts, g.indices);
       }
     })();
+  }
+  // The displaced terrain the camera must not dip below: same grids the
+  // ring geometry uses, sampled bilinearly. Height comes from the smallest
+  // ring containing the point (best resolution); the lift comes from the
+  // ring whose ANNULUS actually renders there — inside a ring's hole the
+  // ground belongs to a smaller ring (or the lawn at datum), so borrowing
+  // the big ring's 80 m lift near the site would raise a phantom floor.
+  let terrainFields: { S: number; h: Float32Array }[] = [];
+  function terrainHeightAt(e: number, n: number): number {
+    const G = RING_GRID;
+    const m = Math.max(Math.abs(e), Math.abs(n));
+    for (let k = terrainFields.length - 1; k >= 0; k--) {
+      const { S, h } = terrainFields[k];
+      if (m >= S * 0.5) continue; // outside this ring — try a larger one
+      const fx = Math.min(G - 1e-4, Math.max(0, (e / S + 0.5) * G));
+      const fz = Math.min(G - 1e-4, Math.max(0, (n / S + 0.5) * G));
+      const i = Math.floor(fx),
+        j = Math.floor(fz);
+      const ax = fx - i,
+        az = fz - j;
+      const at = (ii: number, jj: number) => h[jj * (G + 1) + ii];
+      const t0 = at(i, j) * (1 - ax) + at(i + 1, j) * ax;
+      const t1 = at(i, j + 1) * (1 - ax) + at(i + 1, j + 1) * ax;
+      const height = t0 * (1 - az) + t1 * az;
+      const hole = (S * (G / 8 - 1)) / G; // this ring's hole half-width
+      return height + (m >= hole ? S * 4e-5 : 0);
+    }
+    return 0;
   }
   anchorImagery(u.nav.home[0], u.nav.home[1]);
 
@@ -1011,6 +1042,25 @@ async function start(): Promise<void> {
     if (!flight && !retarget) {
       const t = u.targets[activeTarget];
       cam.focus = [t.pos[0], t.pos[1], t.pos[2]];
+    }
+    // Ground collision: on a surface (picnic or roamed), orbiting toward
+    // the sky must not swing the camera through the planet. If the camera
+    // dips below the local terrain (same grids the rings render), the pitch
+    // floor rises until it is clear — a soft, terrain-aware horizon.
+    {
+      const slug = u.targets[activeTarget].slug;
+      if (!flight && !retarget && (slug === 'surface' || slug === 'roam')) {
+        for (let i = 0; i < 40; i++) {
+          const camPos = add(cam.focus, scale(camDir(), cam.dist));
+          const rel = relPos(cam.frame, camPos, earthFrameRef, [0, 0, 0]);
+          const r = len(rel);
+          if (r > 6.371e6 + 12e3) break; // far above any terrain
+          const en = u.nav.gnomonicEUN(rel);
+          const ground = 6.371e6 + 1.5 + (en ? terrainHeightAt(en[0], en[1]) : 0);
+          if (r >= ground + 1.2 || cam.pitch >= 1.53) break;
+          cam.pitch = Math.min(cam.pitch + 0.02, 1.53);
+        }
+      }
     }
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
