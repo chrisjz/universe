@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/db0eea40-6617-40e0-815d-882b9786ad90
 ![The grand tour: one continuous zoom from the cosmic web through the Chicago picnic into a proton](docs/tour.gif)
 
 _The grand tour, 43 orders of magnitude in one continuous flight — press **T** in
-the [live atlas](https://chrisjz.github.io/universe/?tour=1) to fly it yourself._
+the [live atlas](https://universeatlas.org/?tour=1) to fly it yourself._
 
 ## The zoom
 
@@ -59,7 +59,7 @@ runs its 225-million-year lap around the galactic center, and the cosmic
 web — drawn in comoving coordinates — expands with the real ΛCDM scale
 factor: rewind toward the Big Bang and everything draws close together;
 run it forward 50 billion years and the filaments disperse into the dark.
-[`?years=-13e9`](https://chrisjz.github.io/universe/?goto=universe&years=-13e9)
+[`?years=-13e9`](https://universeatlas.org/?goto=universe&years=-13e9)
 is a shareable link to just after the beginning. The roadmap swaps the
 placeholders for real catalogs — Gaia DR3 stars, SDSS galaxies — without
 touching the engine.
@@ -94,20 +94,20 @@ across the planet**, tap focuses, **double-tap flies**, and the search /
 time / tour controls are on-screen buttons.
 
 Or skip the install: the latest build is live at
-**<https://chrisjz.github.io/universe/>**.
+**<https://universeatlas.org/>**.
 
-Every place is a shareable URL: [`?goto=galaxy`](https://chrisjz.github.io/universe/?goto=galaxy)
-jumps straight to the Milky Way, [`?goto=jupiter`](https://chrisjz.github.io/universe/?goto=jupiter)
+Every place is a shareable URL: [`?goto=galaxy`](https://universeatlas.org/?goto=galaxy)
+jumps straight to the Milky Way, [`?goto=jupiter`](https://universeatlas.org/?goto=jupiter)
 to any planet, `&dist=6e20` sets the camera distance in meters, and
-[`?tour=1`](https://chrisjz.github.io/universe/?tour=1) starts the grand tour on
+[`?tour=1`](https://universeatlas.org/?tour=1) starts the grand tour on
 load, `&years=12000` sets the clock in deep time, and
-[`?lat=48.8584&lon=2.2945`](https://chrisjz.github.io/universe/?lat=48.8584&lon=2.2945&dist=4000)
+[`?lat=48.8584&lon=2.2945`](https://universeatlas.org/?lat=48.8584&lon=2.2945&dist=4000)
 lands you street-level anywhere on Earth, with `&yaw=&pitch=` to aim the
 view — deep links into a 10²⁷-meter, 13.8-billion-year scene. Compose them
 and you can stand in a real eclipse:
-[Reykjavík, Aug 12 2026, 17:45 UTC](https://chrisjz.github.io/universe/?lat=64.147&lon=-21.94&at=2026-08-12T17:45:00Z&dist=25&yaw=71.8&pitch=2)
+[Reykjavík, Aug 12 2026, 17:45 UTC](https://universeatlas.org/?lat=64.147&lon=-21.94&at=2026-08-12T17:45:00Z&dist=25&yaw=71.8&pitch=2)
 faces the crescent of the total solar eclipse, and
-[the Moon on Mar 3 2026](https://chrisjz.github.io/universe/?goto=moon&at=2026-03-03T11:38:00Z)
+[the Moon on Mar 3 2026](https://universeatlas.org/?goto=moon&at=2026-03-03T11:38:00Z)
 hangs blood-red in Earth's umbra — the Moon flies its true inclined,
 perturbed orbit (regressing node, varying distance), so every 2026 eclipse
 lands within ~10 minutes of its real time, annular vs total decided by the
@@ -117,11 +117,11 @@ The sky is real: **854,000 stars** stream in progressively from binary tiles
 built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
 colors from measured B–V indices, brightness from apparent magnitude, 16
 bytes per star. Five of them are destinations —
-[`?goto=sirius`](https://chrisjz.github.io/universe/?goto=sirius),
-[`?goto=alpha-centauri`](https://chrisjz.github.io/universe/?goto=alpha-centauri),
-[`?goto=vega`](https://chrisjz.github.io/universe/?goto=vega),
-[`?goto=betelgeuse`](https://chrisjz.github.io/universe/?goto=betelgeuse), and
-[`?goto=polaris`](https://chrisjz.github.io/universe/?goto=polaris) — rendered
+[`?goto=sirius`](https://universeatlas.org/?goto=sirius),
+[`?goto=alpha-centauri`](https://universeatlas.org/?goto=alpha-centauri),
+[`?goto=vega`](https://universeatlas.org/?goto=vega),
+[`?goto=betelgeuse`](https://universeatlas.org/?goto=betelgeuse), and
+[`?goto=polaris`](https://universeatlas.org/?goto=polaris) — rendered
 at their real radii (Betelgeuse is 764 solar radii and it _feels_ like it).
 And the sky is oriented truly: the ecliptic meets the celestial equator at
 the real equinoxes, Polaris stands over Earth's axis — altitude 41.9°, due

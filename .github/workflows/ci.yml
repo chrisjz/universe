@@ -46,8 +46,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-        env:
-          BASE_PATH: /universe/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/
