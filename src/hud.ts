@@ -112,12 +112,12 @@ export class Hud {
     searchBtn.addEventListener('click', () => this.openSearch());
     bar.appendChild(searchBtn);
     this.seamBtn = document.createElement('button');
-    this.seamBtn.textContent = 'X ◐';
+    this.seamBtn.textContent = '◐';
     this.seamBtn.title = 'the honest seam: what is measured vs imagined ( X )';
     this.seamBtn.addEventListener('click', onSeam);
     bar.appendChild(this.seamBtn);
     this.constBtn = document.createElement('button');
-    this.constBtn.textContent = 'C ✦';
+    this.constBtn.textContent = '✦';
     this.constBtn.title = 'constellations ( C )';
     this.constBtn.addEventListener('click', onConstellations);
     bar.appendChild(this.constBtn);
