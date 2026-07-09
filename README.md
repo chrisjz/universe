@@ -80,7 +80,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **2×click** | fly to what's under the cursor                                                                                        |
 | **drag**    | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky  |
 | **⇧-drag**  | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                               |
-| **1–9, 0**  | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, Tranquility Base, picnic, weave)                  |
+| **1–9, 0**  | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, tranquility base, picnic, weave)                  |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
 | **C**       | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                           |
