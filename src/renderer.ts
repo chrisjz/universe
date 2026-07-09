@@ -2,7 +2,7 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, POINTS_WGSL, LINES_WGSL } from './shaders';
+import { MESH_WGSL, POINTS_WGSL, LINES_WGSL, SKY_WGSL } from './shaders';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
@@ -15,6 +15,7 @@ export interface FrameData {
   meshes: { kind: MeshKind; data: F32; tex?: string }[]; // 28 floats each
   lines: F32[]; // 8 floats each
   groups: { index: number; data: F32 }[]; // 4 floats each
+  sky?: F32 | null; // 8 floats: constellation-dome origin rel camera, radius, color, alpha
 }
 
 const SLOT = 256; // dynamic uniform offset alignment
@@ -48,6 +49,9 @@ export class Renderer {
   private geoms = new Map<MeshKind, Geometry>();
   private pointGroups: { buf: GPUBuffer; count: number }[] = [];
   private circleBuf!: GPUBuffer;
+  private skyPipe!: GPURenderPipeline;
+  private skyBuf: GPUBuffer | null = null;
+  private skyVerts = 0;
   private circleVerts = 0;
 
   private depthTex: GPUTexture | null = null;
@@ -224,8 +228,34 @@ export class Renderer {
       multisample: { count: 4 },
     });
 
+    // Sky lines (constellation figures): free 3D line-list segments on the
+    // celestial sphere, sharing the line shader's uniform slot layout.
+    const skyMod = d.createShaderModule({ code: SKY_WGSL });
+    this.skyPipe = d.createRenderPipeline({
+      layout,
+      vertex: {
+        module: skyMod,
+        entryPoint: 'vs',
+        buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }],
+      },
+      fragment: { module: skyMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
+      primitive: { topology: 'line-list' },
+      depthStencil: depthNoWrite,
+      multisample: { count: 4 },
+    });
+
     this.buildGeometries();
     this.buildCircle();
+  }
+
+  // Upload the constellation line-list (unit directions on the sky).
+  setSkyLines(verts: F32): void {
+    this.skyBuf = this.device.createBuffer({
+      size: verts.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.skyBuf, 0, verts);
+    this.skyVerts = verts.length / 3;
   }
 
   addPointGroup(instances: F32): number {
@@ -405,9 +435,12 @@ export class Renderer {
     for (let i = 0; i < nMesh; i++) this.meshStaging.set(frame.meshes[i].data, (SLOT / 4) * i);
     if (nMesh) q.writeBuffer(this.meshUBO, 0, this.meshStaging, 0, (SLOT / 4) * nMesh);
 
-    const nLine = Math.min(frame.lines.length, MAX_DRAWS);
+    const nLine = Math.min(frame.lines.length, MAX_DRAWS - 1);
     for (let i = 0; i < nLine; i++) this.lineStaging.set(frame.lines[i], (SLOT / 4) * i);
-    if (nLine) q.writeBuffer(this.lineUBO, 0, this.lineStaging, 0, (SLOT / 4) * nLine);
+    // The constellation dome borrows the slot after the last orbit line.
+    const drawSky = frame.sky && this.skyBuf ? 1 : 0;
+    if (drawSky) this.lineStaging.set(frame.sky!, (SLOT / 4) * nLine);
+    if (nLine + drawSky) q.writeBuffer(this.lineUBO, 0, this.lineStaging, 0, (SLOT / 4) * (nLine + drawSky));
 
     const nGrp = Math.min(frame.groups.length, MAX_DRAWS);
     for (let i = 0; i < nGrp; i++) this.groupStaging.set(frame.groups[i].data, (SLOT / 4) * i);
@@ -450,6 +483,13 @@ export class Renderer {
     for (let i = 0; i < nLine; i++) {
       pass.setBindGroup(1, this.lineBG, [SLOT * i]);
       pass.draw(this.circleVerts);
+    }
+
+    if (drawSky) {
+      pass.setPipeline(this.skyPipe);
+      pass.setVertexBuffer(0, this.skyBuf);
+      pass.setBindGroup(1, this.lineBG, [SLOT * nLine]);
+      pass.draw(this.skyVerts);
     }
 
     pass.setPipeline(this.pointPipe);

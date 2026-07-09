@@ -83,6 +83,7 @@ Open the printed URL in a WebGPU browser (Chrome, Edge, or Safari 18+).
 | **1–8**     | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, surface)                                          |
 | **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
 | **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
+| **C**       | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                           |
 | **[ ]**     | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s              |
 | **P**       | pause the simulation clock                                                                                            |
 | **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
@@ -200,7 +201,7 @@ src/
 - [x] Free Earth navigation: pan anywhere on the planet — street-level imagery and terrain follow (`?lat=&lon=`)
 - [x] Reverse time: the clock runs backwards too — rewind and watch the web draw together toward the Big Bang
 - [x] Real eclipses: the Moon's inclined, perturbed orbit puts every 2026 eclipse within ~10 minutes of its true time — crescent sun from Reykjavík, blood moon in Earth's umbra
-- [ ] Constellations: lines and names over the true sky, learnable from the blanket
+- [x] Constellations: the 88 IAU figures and names over the true sky — press **C** at the blanket and Scorpius stands over the July Milky Way
 - [ ] Real Moon surface (LRO textures + elevation), with Tranquility Base as a second surface site
 
 ## Development
@@ -215,6 +216,11 @@ npm run build     # tsc --noEmit && vite build
 ```
 
 ## Data
+
+Constellation figures and label positions come from
+[d3-celestial](https://github.com/ofrohn/d3-celestial) by Olaf Frohn
+(BSD-3-Clause) — `node scripts/generate-constellations.mjs` regenerates
+`src/data/constellations.ts`.
 
 Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
 (both CC BY-SA 4.0):
