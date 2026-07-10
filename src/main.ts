@@ -23,7 +23,7 @@ import {
 import { Frame, relPos, reexpress } from './frames';
 import { Renderer, FrameData } from './renderer';
 import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
-import { streamStars } from './stars';
+import { streamStars, StarChunkMeta } from './stars';
 import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings, streamMoonRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
@@ -349,13 +349,40 @@ async function start(): Promise<void> {
   }
   anchorImagery(u.nav.home[0], u.nav.home[1]);
 
-  // ---- stream the ATHYG star tiles (brightest chunks first) ----
+  // ---- stream the star tiles (brightest chunks first) ----
+  // The full tileset (854k ATHYG brights + 6.3M Gaia DR3 faint stars, ~115 MB)
+  // lives in the chrisjz/universe-data repo on its own GitHub Pages site —
+  // hierarchical LOD tiles, so a session only pulls what it renders. The
+  // small ATHYG set bundled with the app is the offline/dev fallback.
+  // ?data= overrides the tile host; ?stars=athyg skips the deep catalog.
+  const starParams = new URLSearchParams(location.search);
+  const DATA_URL = starParams.get('data') ?? 'https://chrisjz.github.io/universe-data/stars/';
   let starCount = 0;
-  void streamStars(`${import.meta.env.BASE_URL}stars/`, (instances) => {
+  const onStarChunk = (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta): void => {
     groupIndex.push(renderer.addPointGroup(instances));
-    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 6e18, nearFade: true, prov: 0 });
+    u.groups.push({
+      frame: u.sunFrame,
+      pos: [0, 0, 0],
+      data: instances,
+      fadeExtent: meta.fade,
+      nearFade: true,
+      prov: 0,
+      cone: meta.cone ?? undefined,
+    });
     starCount += instances.length / 8;
-  });
+  };
+  // Stars are invisible beyond their fade extents (~200 pc), so the stream
+  // starts only once the camera actually enters the stellar neighborhood —
+  // a visitor who stays at cosmic scale never downloads the deep catalog.
+  let starsStarted = false;
+  function maybeStreamStars(): void {
+    if (starsStarted || cam.dist > 2e19) return;
+    starsStarted = true;
+    void (async () => {
+      const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk) : 0;
+      if (deep === 0) await streamStars(`${import.meta.env.BASE_URL}stars/`, onStarChunk);
+    })();
+  }
 
   // ---- the real local universe: 43k 2MASS Redshift Survey galaxies ----
   // Virgo, Coma, Perseus–Pisces, the Great Wall — measured positions,
@@ -1073,10 +1100,24 @@ async function start(): Promise<void> {
   const surfaceFrame = surfaceTarget.frame;
   const surfaceUp = surfaceTarget.basis![1];
 
+  // ?fps=1: a frame-rate probe in the tab title — the cheap way to check
+  // render cost after a data scale-up (headless verification reads it too).
+  const fpsProbe = starParams.get('fps') !== null;
+  let fpsFrames = 0;
+  let fpsWindow = performance.now();
+
   function frame(now: number): void {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     frameCount++;
+    if (fpsProbe) {
+      fpsFrames++;
+      if (now - fpsWindow >= 2000) {
+        document.title = `fps ${((fpsFrames * 1000) / (now - fpsWindow)).toFixed(0)} · ${Math.round(starCount / 1000)}k stars`;
+        fpsFrames = 0;
+        fpsWindow = now;
+      }
+    }
     if (pendingClick && frameCount > 5) {
       clickFocus(pendingClick[0] * canvas.clientWidth, pendingClick[1] * canvas.clientHeight);
       pendingClick = null;
@@ -1144,12 +1185,13 @@ async function start(): Promise<void> {
       }
     }
     maybeStreamMoonImagery();
+    maybeStreamStars();
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
     const targetUp = activeBasis()?.[1] ?? ([0, 1, 0] as V3);
     viewUp = norm(lerp3(viewUp, targetUp, Math.min(1, dt * 3)));
-    const { view, right, up } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
+    const { view, right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const dir = camDir();
     let camLocal = add(cam.focus, scale(dir, cam.dist));
     if (cam.frame === surfaceFrame && !flight) {
@@ -1270,14 +1312,33 @@ async function start(): Promise<void> {
       data.lines.push(l);
     }
 
+    // Frustum culling for coned star tiles: the deep sky is vertex-bound
+    // (6.8M sprites), and from the ground only ~a fifth of it is on screen.
+    // A tile draws when its bounding cone can intersect the view cone; the
+    // parallax margin widens as the camera leaves the sun (star directions
+    // were measured from there), disabling culling during star flights.
+    const halfDiag = Math.atan(
+      Math.tan(FOV / 2) * Math.hypot(1, canvas.clientWidth / Math.max(1, canvas.clientHeight)),
+    );
     u.groups.forEach((g, i) => {
       if (g.hideBelow !== undefined && cam.dist < g.hideBelow) return;
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
+      const fade = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
+      if (fade < 0.012) return; // beyond the band's reach: invisible, skip the draw
+      if (g.cone) {
+        const camSunDist = len(rel); // star tiles live in the sun frame
+        const margin = Math.atan2(camSunDist, 1e17); // nearest faint stars ~3 pc
+        const limit = halfDiag + g.cone.ang + margin + 0.06;
+        if (limit < Math.PI) {
+          const cos = fwd[0] * g.cone.dir[0] + fwd[1] * g.cone.dir[1] + fwd[2] * g.cone.dir[2];
+          if (cos < Math.cos(limit)) return;
+        }
+      }
       const gd = new Float32Array(8);
       gd[0] = rel[0];
       gd[1] = rel[1];
       gd[2] = rel[2];
-      gd[3] = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
+      gd[3] = fade;
       gd[4] = g.nearFade ? 1.2e12 : 0;
       gd[5] = g.prov ?? 0;
       data.groups.push({ index: groupIndex[i], data: gd });

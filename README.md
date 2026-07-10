@@ -113,10 +113,12 @@ perturbed orbit (regressing node, varying distance), so every 2026 eclipse
 lands within ~10 minutes of its real time, annular vs total decided by the
 Moon's actual distance that day.
 
-The sky is real: **854,000 stars** stream in progressively from binary tiles
-built out of the ATHYG catalog (Tycho-2 + Gaia DR3) — true 3D positions,
-colors from measured B–V indices, brightness from apparent magnitude, 16
-bytes per star. Five of them are destinations —
+The sky is real: **6.8 million stars** stream in progressively from binary
+tiles — 854k ATHYG brights bundled with the app, then a Gaia DR3 faint
+extension (`11 ≤ G < 13`, 5σ parallaxes) served as hierarchical LOD tiles
+from [a companion data repo](https://github.com/chrisjz/universe-data) —
+true 3D positions, colors from measured color indices, brightness from
+apparent magnitude, 16 bytes per star. Five of them are destinations —
 [`?goto=sirius`](https://universeatlas.org/?goto=sirius),
 [`?goto=alpha-centauri`](https://universeatlas.org/?goto=alpha-centauri),
 [`?goto=vega`](https://universeatlas.org/?goto=vega),
@@ -186,7 +188,7 @@ src/
 - [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
 - [x] Click-to-focus: planets, moons, and every named star are clickable destinations
 - [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
-- [ ] Gaia DR3 milestone: millions of stars via hierarchical spatial LOD tiles
+- [x] Gaia DR3 milestone: 6.8M stars via hierarchical LOD tiles (magnitude bands × HEALPix sky tiles), streamed from a separate data repo
 - [x] Real deep-sky structure: 43k 2MASS Redshift Survey galaxies — Virgo, Coma, the Great Wall — out to ~260 Mpc
 - [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
@@ -229,8 +231,19 @@ Star data comes from two catalogs by [astronexus](https://github.com/astronexus)
   powers the 300 brightest stars and the named destinations —
   `node scripts/generate-stars.mjs <hyg.csv>` regenerates `src/data/brightstars.ts`.
 - [ATHYG](https://github.com/astronexus/ATHYG-Database) (Tycho-2 + Gaia DR3)
-  powers the 854k-star deep sky — `node scripts/generate-star-tiles.mjs <athyg.csv>`
-  regenerates the binary tiles in `public/stars/`.
+  powers the bundled 854k-star sky — `node scripts/generate-star-tiles.mjs <athyg.csv>`
+  regenerates the binary tiles in `public/stars/` (the offline fallback).
+
+The deep sky goes further: 6.8M stars (ATHYG brights + a **Gaia DR3**
+faint extension, `11 ≤ G < 13` with 5σ parallaxes) live as hierarchical
+LOD tiles in [chrisjz/universe-data](https://github.com/chrisjz/universe-data),
+served by its own GitHub Pages site and streamed brightest-first at runtime
+(`?stars=athyg` opts out; `?data=` points at another tile host). This work
+has made use of data from the ESA mission
+[Gaia](https://www.cosmos.esa.int/gaia), processed by the Gaia Data
+Processing and Analysis Consortium (credit: **ESA/Gaia/DPAC**) —
+`node scripts/generate-gaia-tiles.mjs` re-downloads (chunked, resumable,
+straight from ESA's TAP archive) and repacks the tiles.
 
 The local universe is the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mrs/)
 (Huchra et al. 2012, ApJS 199, 26): 43,533 galaxies with measured positions

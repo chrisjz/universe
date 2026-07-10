@@ -39,14 +39,71 @@ function isNamedDuplicate(x: number, y: number, z: number): boolean {
   return false;
 }
 
+interface ManifestChunk {
+  file: string;
+  count: number;
+  dir?: number[]; // tile bounding-cone axis (pre-orientation convention)
+  ang?: number; // cone half-angle, radians
+  fade?: number; // far-fade extent override (faint bands fade sooner)
+}
+
 interface Manifest {
   total: number;
-  chunks: { file: string; count: number }[];
+  chunks: ManifestChunk[];
+}
+
+export interface StarChunkMeta {
+  cone: { dir: [number, number, number]; ang: number } | null;
+  fade: number;
+}
+
+function decodeChunk(view: DataView, dedupe: boolean): Float32Array<ArrayBuffer> {
+  const n = Math.floor(view.byteLength / 16);
+  const out = new Float32Array(n * 8);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 16;
+    const rx = view.getFloat32(o, true);
+    const ry = view.getFloat32(o + 4, true);
+    const rz = view.getFloat32(o + 8, true);
+    if (dedupe && isNamedDuplicate(rx, ry, rz)) continue;
+    // Tiles store the pre-orientation convention; rotate into the true sky.
+    const [x, y, z] = orientSky(rx, ry, rz);
+    const absMag = view.getUint8(o + 15) / 8 - 15;
+    const distPc = Math.max(Math.hypot(x, y, z) / PC, 0.1);
+    const appMag = absMag + 5 * (Math.log10(distPc) - 1);
+    const lum = Math.pow(10, (4.83 - absMag) / 2.5);
+    out[j] = x;
+    out[j + 1] = y;
+    out[j + 2] = z;
+    out[j + 3] = Math.min(Math.max(R_SUN * Math.sqrt(lum), 4e8), 2e11);
+    out[j + 4] = view.getUint8(o + 12) / 255;
+    out[j + 5] = view.getUint8(o + 13) / 255;
+    out[j + 6] = view.getUint8(o + 14) / 255;
+    // Sprites are floored at ~3 px, so intensity is the only brightness
+    // control left for faint stars. The 0.02 floor tuned for the 854k
+    // bright set would wash the sky times-eight under the 5.9M-star Gaia
+    // band — below mag 11 the floor decays flux-like instead, so the
+    // faint millions read as the Milky Way's grain, not a gray veil.
+    const floor = appMag <= 11 ? 0.02 : 0.02 * Math.pow(10, -0.32 * (appMag - 11));
+    out[j + 7] = Math.min(Math.max(1.35 - 0.3 * appMag, floor), 2.0);
+    j += 8;
+  }
+  return out.subarray(0, j);
+}
+
+function chunkMeta(chunk: ManifestChunk): StarChunkMeta {
+  let cone: StarChunkMeta['cone'] = null;
+  if (chunk.dir && chunk.ang !== undefined) {
+    const [x, y, z] = orientSky(chunk.dir[0], chunk.dir[1], chunk.dir[2]);
+    cone = { dir: [x, y, z], ang: chunk.ang };
+  }
+  return { cone, fade: chunk.fade ?? 6e18 };
 }
 
 export async function streamStars(
   baseUrl: string,
-  onChunk: (instances: Float32Array<ArrayBuffer>) => void,
+  onChunk: (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta) => void,
 ): Promise<number> {
   let manifest: Manifest;
   try {
@@ -58,39 +115,38 @@ export async function streamStars(
   }
 
   let loaded = 0;
-  let first = true;
-  for (const chunk of manifest.chunks) {
-    const res = await fetch(`${baseUrl}${chunk.file}`);
-    if (!res.ok) break;
-    const view = new DataView(await res.arrayBuffer());
-    const n = Math.floor(view.byteLength / 16);
-    const out = new Float32Array(n * 8);
-    let j = 0;
-    for (let i = 0; i < n; i++) {
-      const o = i * 16;
-      const rx = view.getFloat32(o, true);
-      const ry = view.getFloat32(o + 4, true);
-      const rz = view.getFloat32(o + 8, true);
-      if (first && isNamedDuplicate(rx, ry, rz)) continue;
-      // Tiles store the pre-orientation convention; rotate into the true sky.
-      const [x, y, z] = orientSky(rx, ry, rz);
-      const absMag = view.getUint8(o + 15) / 8 - 15;
-      const distPc = Math.max(Math.hypot(x, y, z) / PC, 0.1);
-      const appMag = absMag + 5 * (Math.log10(distPc) - 1);
-      const lum = Math.pow(10, (4.83 - absMag) / 2.5);
-      out[j] = x;
-      out[j + 1] = y;
-      out[j + 2] = z;
-      out[j + 3] = Math.min(Math.max(R_SUN * Math.sqrt(lum), 4e8), 2e11);
-      out[j + 4] = view.getUint8(o + 12) / 255;
-      out[j + 5] = view.getUint8(o + 13) / 255;
-      out[j + 6] = view.getUint8(o + 14) / 255;
-      out[j + 7] = Math.min(Math.max(1.35 - 0.3 * appMag, 0.02), 2.0);
-      j += 8;
-    }
-    first = false;
-    onChunk(out.subarray(0, j));
-    loaded += j / 8;
+  // First chunk alone (it runs the named-star dedupe and anchors the bright
+  // sky immediately); the rest stream through a small fetch pool.
+  const [head, ...rest] = manifest.chunks;
+  if (!head) return 0;
+  try {
+    const res = await fetch(`${baseUrl}${head.file}`);
+    if (!res.ok) return 0;
+    const inst = decodeChunk(new DataView(await res.arrayBuffer()), true);
+    onChunk(inst, chunkMeta(head));
+    loaded += inst.length / 8;
+  } catch {
+    return 0;
   }
+  const POOL = 6;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: POOL }, async () => {
+      for (;;) {
+        const mine = next++;
+        if (mine >= rest.length) return;
+        const chunk = rest[mine];
+        try {
+          const res = await fetch(`${baseUrl}${chunk.file}`);
+          if (!res.ok) continue;
+          const inst = decodeChunk(new DataView(await res.arrayBuffer()), false);
+          onChunk(inst, chunkMeta(chunk));
+          loaded += inst.length / 8;
+        } catch {
+          // one lost tile shouldn't sink the sky
+        }
+      }
+    }),
+  );
   return loaded;
 }
