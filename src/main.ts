@@ -350,13 +350,14 @@ async function start(): Promise<void> {
   anchorImagery(u.nav.home[0], u.nav.home[1]);
 
   // ---- stream the star tiles (brightest chunks first) ----
-  // The full tileset (854k ATHYG brights + 6.3M Gaia DR3 faint stars, ~115 MB)
-  // lives in the chrisjz/universe-data repo on its own GitHub Pages site —
-  // hierarchical LOD tiles, so a session only pulls what it renders. The
-  // small ATHYG set bundled with the app is the offline/dev fallback.
+  // The full tileset (854k ATHYG brights + 5.9M Gaia DR3 faint stars, 104 MB)
+  // lives in the chrisjz/universe-data repo, served at data.universeatlas.org
+  // by its own GitHub Pages site — hierarchical LOD tiles, so a session only
+  // pulls what it renders. The small ATHYG set bundled with the app is the
+  // offline/dev fallback (it also catches DNS/host failures).
   // ?data= overrides the tile host; ?stars=athyg skips the deep catalog.
   const starParams = new URLSearchParams(location.search);
-  const DATA_URL = starParams.get('data') ?? 'https://chrisjz.github.io/universe-data/stars/';
+  const DATA_URL = starParams.get('data') ?? 'https://data.universeatlas.org/stars/';
   let starCount = 0;
   const onStarChunk = (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta): void => {
     groupIndex.push(renderer.addPointGroup(instances));
