@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Universe Atlas: the powers-of-ten zoom, rings converging on the picnic
+       blanket at the center of it all. -->
+  <defs>
+    <radialGradient id="space" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#141b30"/>
+      <stop offset="60%" stop-color="#0c1122"/>
+      <stop offset="100%" stop-color="#070a15"/>
+    </radialGradient>
+    <clipPath id="blanket">
+      <rect x="-26" y="-26" width="52" height="52" rx="6"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#space)"/>
+  <!-- star field: a deterministic scatter, bright enough to read at 512,
+       vanishing gracefully at favicon sizes -->
+  <g fill="#cdd6ee">
+    <circle cx="112" cy="92" r="3.2" opacity="0.9"/>
+    <circle cx="404" cy="70" r="2.2" opacity="0.7"/>
+    <circle cx="452" cy="180" r="2.8" opacity="0.8"/>
+    <circle cx="74" cy="228" r="2.0" opacity="0.6"/>
+    <circle cx="150" cy="418" r="2.6" opacity="0.7"/>
+    <circle cx="356" cy="440" r="3.0" opacity="0.85"/>
+    <circle cx="446" cy="352" r="1.8" opacity="0.55"/>
+    <circle cx="58" cy="356" r="1.6" opacity="0.5"/>
+    <circle cx="246" cy="58" r="1.8" opacity="0.6"/>
+    <circle cx="330" cy="132" r="1.6" opacity="0.5"/>
+    <circle cx="180" cy="160" r="1.4" opacity="0.45"/>
+    <circle cx="392" cy="256" r="1.5" opacity="0.5"/>
+  </g>
+  <!-- the zoom: three orders of magnitude, fading inward -->
+  <circle cx="256" cy="256" r="188" fill="none" stroke="#5d6f9e" stroke-width="7" opacity="0.55"/>
+  <circle cx="256" cy="256" r="124" fill="none" stroke="#8194c4" stroke-width="7" opacity="0.7"/>
+  <circle cx="256" cy="256" r="64" fill="none" stroke="#b9c6e8" stroke-width="7" opacity="0.85"/>
+  <!-- the blanket: one meter, red and white, where the zoom lands -->
+  <g transform="translate(256 256)">
+    <rect x="-26" y="-26" width="52" height="52" rx="6" fill="#efe8dc"/>
+    <path d="M-26 -26 h26 v26 h-26 z M0 0 h26 v26 h-26 z" fill="#c22820" clip-path="url(#blanket)"/>
+  </g>
+</svg>
