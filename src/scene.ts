@@ -41,6 +41,10 @@ export interface PointGroup {
   hideBelow?: number; // skip entirely below this focus distance (see MeshObj)
   nearFade?: boolean; // fade sprites near the camera (see the Grp.misc shader note)
   prov?: number; // honest-seam provenance (see MeshObj)
+  // Bounding cone of the group's star directions from the sun (world axes).
+  // The frame loop culls whole tile groups outside the view frustum — the
+  // deep sky is vertex-bound, and most tiles are behind you or underfoot.
+  cone?: { dir: V3; ang: number };
 }
 export interface OrbitLine {
   frame: Frame;
