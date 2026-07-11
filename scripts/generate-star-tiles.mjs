@@ -59,8 +59,16 @@ for (let i = 1; i < csv.length; i++) {
   if (eq.some((v) => !Number.isFinite(v))) continue;
   const g = M.map((row) => row[0] * eq[0] + row[1] * eq[1] + row[2] * eq[2]);
   const ci = parseFloat(f[col.ci]);
+  // ATHYG bakes 3D space velocities (km/s, equatorial cartesian) — same
+  // frame as x0/y0/z0, so they transform identically. Missing -> at rest.
+  const vEq = [parseFloat(f[col.vx]), parseFloat(f[col.vy]), parseFloat(f[col.vz])].map((v) =>
+    Number.isFinite(v) ? v : 0,
+  );
+  const vG = M.map((row) => row[0] * vEq[0] + row[1] * vEq[1] + row[2] * vEq[2]);
+  const KMS_TO_M_YR = 3.15576e10;
   stars.push({
     pos: [-g[0] * PC, g[2] * PC, g[1] * PC],
+    vel: [-vG[0] * KMS_TO_M_YR, vG[2] * KMS_TO_M_YR, vG[1] * KMS_TO_M_YR],
     mag,
     s: Math.min(Math.max(Math.round((absmag + 15) * 8), 0), 255),
     rgb: bvToRgb(Number.isFinite(ci) ? ci : 0.6),
@@ -73,10 +81,12 @@ mkdirSync('public/stars', { recursive: true });
 const chunks = [];
 for (let c = 0; c * CHUNK < stars.length; c++) {
   const slice = stars.slice(c * CHUNK, (c + 1) * CHUNK);
-  const buf = new ArrayBuffer(slice.length * 16);
+  // v2 record: 22 bytes — see generate-gaia-tiles.mjs (int16 Gm/yr velocity).
+  const buf = new ArrayBuffer(slice.length * 22);
   const view = new DataView(buf);
+  const q = (v) => Math.max(-32767, Math.min(32767, Math.round(v / 1e9)));
   slice.forEach((st, i) => {
-    const o = i * 16;
+    const o = i * 22;
     view.setFloat32(o, st.pos[0], true);
     view.setFloat32(o + 4, st.pos[1], true);
     view.setFloat32(o + 8, st.pos[2], true);
@@ -84,6 +94,9 @@ for (let c = 0; c * CHUNK < stars.length; c++) {
     view.setUint8(o + 13, Math.round(st.rgb[1] * 255));
     view.setUint8(o + 14, Math.round(st.rgb[2] * 255));
     view.setUint8(o + 15, st.s);
+    view.setInt16(o + 16, q(st.vel[0]), true);
+    view.setInt16(o + 18, q(st.vel[1]), true);
+    view.setInt16(o + 20, q(st.vel[2]), true);
   });
   const file = `chunk-${c}.bin`;
   writeFileSync(`public/stars/${file}`, Buffer.from(buf));
@@ -95,6 +108,8 @@ writeFileSync(
   JSON.stringify(
     {
       source: 'ATHYG v3.2 (Tycho-2 + Gaia DR3), https://github.com/astronexus/ATHYG-Database, CC BY-SA 4.0',
+      format: 2,
+      stride: 22,
       total: stars.length,
       chunks,
     },

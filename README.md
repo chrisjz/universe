@@ -47,7 +47,9 @@ real already is:
   ATHYG brights plus a Gaia DR3 faint extension, streamed as hierarchical
   LOD tiles from [a companion data repo](https://github.com/chrisjz/universe-data)
   at `data.universeatlas.org`. Colors from measured color indices, brightness
-  from apparent magnitude, 16 bytes per star. The sky is oriented truly:
+  from apparent magnitude, 22 bytes per star — including its real 3D space
+  velocity: scrub deep time and the stars actually move (the Big Dipper
+  comes apart over ±100,000 years). The sky is oriented truly:
   Polaris stands over Earth's axis (altitude 41.9°, due north from the
   picnic, like any Chicago scout could tell you), the summer Milky Way climbs
   out of Sagittarius where it should, and the 88 IAU constellations (**C**)
@@ -166,7 +168,7 @@ by theme:
 
 **A deeper sky**
 
-- [ ] Stars that move: Gaia proper motions in the tiles — scrub ±100,000 years and watch the Big Dipper come apart
+- [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
 - [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
 - [ ] Messier destinations: the deep-sky catalog at real positions and sizes — M31, M13, the Orion Nebula, searchable and flyable
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined

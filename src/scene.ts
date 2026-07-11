@@ -45,6 +45,9 @@ export interface PointGroup {
   // The frame loop culls whole tile groups outside the view frustum — the
   // deep sky is vertex-bound, and most tiles are behind you or underfoot.
   cone?: { dir: V3; ang: number };
+  // 11-float instances with a 3D velocity — drawn by the proper-motion
+  // pipeline (stars move through deep time).
+  moving?: boolean;
 }
 export interface OrbitLine {
   frame: Frame;
@@ -110,6 +113,7 @@ export interface Universe {
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
   postSpin: (() => void)[]; // run after each spin update (sites riding a planet)
   marsFrame: Frame; // origin rides Mars's ephemeris; Jezero hangs off it
+  driftStars: (years: number) => void; // named-star targets/meshes ride their proper motions
   orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
   orientMoon: (psi: number) => void; // synchronous spin around the orbit normal
   orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
@@ -1311,8 +1315,20 @@ export function buildUniverse(): Universe {
   // ---- colors from B-V, brightness from apparent magnitude ----
   const starMeshes: MeshObj[] = [];
   const starTargets: Target[] = [];
+  // Named stars are destinations with CPU-side positions (targets, the
+  // famous five's meshes) — they drift with the same real velocities the
+  // GPU applies to their sprites, so a deep-time Sirius stays clickable
+  // exactly where its light is.
+  const starDrifts: { pos: V3; base: V3; vel: V3 }[] = [];
+  const driftStars = (years: number): void => {
+    for (const sd of starDrifts) {
+      sd.pos[0] = sd.base[0] + sd.vel[0] * years;
+      sd.pos[1] = sd.base[1] + sd.vel[1] * years;
+      sd.pos[2] = sd.base[2] + sd.vel[2] * years;
+    }
+  };
   {
-    const d = new Float32Array(BRIGHT_STARS.length * 8);
+    const d = new Float32Array(BRIGHT_STARS.length * 11);
     // Famous destinations: real radii, rendered as star-surface spheres.
     const famous = new Map<string, { slug: string; radius: number }>([
       ['Sirius', { slug: 'sirius', radius: 1.71 * R_SUN }],
@@ -1322,9 +1338,10 @@ export function buildUniverse(): Universe {
       ['Polaris', { slug: 'polaris', radius: 37.5 * R_SUN }],
     ]);
     const usedSlugs = new Set<string>();
-    BRIGHT_STARS.forEach(([x0, y0, z0, mag, ci, lum, name], i) => {
+    BRIGHT_STARS.forEach(([x0, y0, z0, mag, ci, lum, name, vx0, vy0, vz0], i) => {
       const [x, y, z] = orientSky(x0, y0, z0); // into the true sky
-      const o = i * 8;
+      const vel = orientSky(vx0, vy0, vz0); // real 3D space velocity, m/yr
+      const o = i * 11;
       const c = bvToRgb(ci);
       const estRadius = Math.min(Math.max(R_SUN * Math.sqrt(lum), 5e8), 2e11);
       d[o] = x;
@@ -1335,11 +1352,16 @@ export function buildUniverse(): Universe {
       d[o + 5] = c[1];
       d[o + 6] = c[2];
       d[o + 7] = Math.min(Math.max(1.4 - 0.3 * mag, 0.35), 2.0);
+      d[o + 8] = vel[0];
+      d[o + 9] = vel[1];
+      d[o + 10] = vel[2];
       const f = famous.get(name);
       if (f) {
+        const meshPos: V3 = [x, y, z];
+        starDrifts.push({ pos: meshPos, base: [x, y, z], vel });
         starMeshes.push({
           frame: sunFrame,
-          pos: [x, y, z],
+          pos: meshPos,
           mesh: 'sphere',
           size: [f.radius, f.radius, f.radius],
           bound: f.radius,
@@ -1356,11 +1378,13 @@ export function buildUniverse(): Universe {
         if (usedSlugs.has(slug)) slug = `${slug}-${i}`;
         usedSlugs.add(slug);
         const radius = f?.radius ?? estRadius;
+        const targetPos: V3 = [x, y, z];
+        starDrifts.push({ pos: targetPos, base: [x, y, z], vel });
         starTargets.push({
           name: name.toUpperCase(),
           slug,
           frame: sunFrame,
-          pos: [x, y, z],
+          pos: targetPos,
           dist: 40 * radius,
           pitch: 0.1,
           parent: 'galaxy',
@@ -1376,7 +1400,7 @@ export function buildUniverse(): Universe {
         });
       }
     });
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true, prov: 0 });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true, prov: 0, moving: true });
   }
   meshes.push(...starMeshes);
 
@@ -1708,6 +1732,7 @@ export function buildUniverse(): Universe {
     webGroup,
     moonMesh,
     moonFrame,
+    driftStars,
     planetSpins,
     postSpin,
     marsFrame,

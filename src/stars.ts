@@ -49,6 +49,7 @@ interface ManifestChunk {
 
 interface Manifest {
   total: number;
+  stride?: number; // 16 = v1 (static), 22 = v2 (+ int16 Gm/yr 3D velocity)
   chunks: ManifestChunk[];
 }
 
@@ -57,12 +58,12 @@ export interface StarChunkMeta {
   fade: number;
 }
 
-function decodeChunk(view: DataView, dedupe: boolean): Float32Array<ArrayBuffer> {
-  const n = Math.floor(view.byteLength / 16);
-  const out = new Float32Array(n * 8);
+function decodeChunk(view: DataView, dedupe: boolean, stride: number): Float32Array<ArrayBuffer> {
+  const n = Math.floor(view.byteLength / stride);
+  const out = new Float32Array(n * 11);
   let j = 0;
   for (let i = 0; i < n; i++) {
-    const o = i * 16;
+    const o = i * stride;
     const rx = view.getFloat32(o, true);
     const ry = view.getFloat32(o + 4, true);
     const rz = view.getFloat32(o + 8, true);
@@ -87,7 +88,19 @@ function decodeChunk(view: DataView, dedupe: boolean): Float32Array<ArrayBuffer>
     // faint millions read as the Milky Way's grain, not a gray veil.
     const floor = appMag <= 11 ? 0.02 : 0.02 * Math.pow(10, -0.32 * (appMag - 11));
     out[j + 7] = Math.min(Math.max(1.35 - 0.3 * appMag, floor), 2.0);
-    j += 8;
+    // v2 tiles carry the star's real 3D space velocity (int16 Gm/yr),
+    // rotated into the true sky with the position; v1 tiles are at rest.
+    if (stride >= 22) {
+      const [vx, vy, vz] = orientSky(
+        view.getInt16(o + 16, true) * 1e9,
+        view.getInt16(o + 18, true) * 1e9,
+        view.getInt16(o + 20, true) * 1e9,
+      );
+      out[j + 8] = vx;
+      out[j + 9] = vy;
+      out[j + 10] = vz;
+    }
+    j += 11;
   }
   return out.subarray(0, j);
 }
@@ -115,6 +128,7 @@ export async function streamStars(
   }
 
   let loaded = 0;
+  const stride = manifest.stride ?? 16;
   // First chunk alone (it runs the named-star dedupe and anchors the bright
   // sky immediately); the rest stream through a small fetch pool.
   const [head, ...rest] = manifest.chunks;
@@ -122,9 +136,9 @@ export async function streamStars(
   try {
     const res = await fetch(`${baseUrl}${head.file}`);
     if (!res.ok) return 0;
-    const inst = decodeChunk(new DataView(await res.arrayBuffer()), true);
+    const inst = decodeChunk(new DataView(await res.arrayBuffer()), true, stride);
     onChunk(inst, chunkMeta(head));
-    loaded += inst.length / 8;
+    loaded += inst.length / 11;
   } catch {
     return 0;
   }
@@ -139,9 +153,9 @@ export async function streamStars(
         try {
           const res = await fetch(`${baseUrl}${chunk.file}`);
           if (!res.ok) continue;
-          const inst = decodeChunk(new DataView(await res.arrayBuffer()), false);
+          const inst = decodeChunk(new DataView(await res.arrayBuffer()), false, stride);
           onChunk(inst, chunkMeta(chunk));
-          loaded += inst.length / 8;
+          loaded += inst.length / 11;
         } catch {
           // one lost tile shouldn't sink the sky
         }

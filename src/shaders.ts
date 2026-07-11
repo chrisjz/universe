@@ -15,6 +15,8 @@ struct Globals {
   camRight : vec4f,
   camUp    : vec4f,
   params   : vec4f, // x: cap, y: 1/log2(1+far), z: time, w: worldPerPixel@d=1
+  motion   : vec4f, // x: years from J2000 (clamped ±1e6 — proper motion is
+                    // linear on that scale; beyond it stars hold position)
 };
 @group(0) @binding(0) var<uniform> G : Globals;
 
@@ -273,7 +275,13 @@ struct FOut {
 }
 `;
 
-export const POINTS_WGSL =
+// Two variants share this body: static point groups (planet sprites, the
+// web, galaxies) and MOVING star groups, whose instances carry a real 3D
+// space velocity applied in the vertex shader (pos + vel · years). The
+// years uniform is clamped ±1e6 in main.ts — proper motion is linear on
+// that scale; beyond it the stars hold their positions (the galactic-year
+// rotation carries the deep-time story instead).
+export const pointsWgsl = (moving: boolean): string =>
   COMMON +
   /* wgsl */ `
 struct Grp {
@@ -294,11 +302,13 @@ struct VOut {
 
 @vertex fn vs(
   @builtin(vertex_index) vi : u32,
-  @location(0) ppos : vec3f,
+  @location(0) ppos0 : vec3f,
   @location(1) psize : f32,
   @location(2) pcol : vec3f,
   @location(3) pint : f32,
+${moving ? '  @location(4) pvel : vec3f,' : ''}
 ) -> VOut {
+  let ppos = ppos0${moving ? ' + pvel * G.motion.x' : ''};
   let raw = P.origin.xyz + ppos;
   let d0 = max(bigLength(raw), 1e-18);
   let cap = G.params.x;

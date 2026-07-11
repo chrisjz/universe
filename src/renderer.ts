@@ -2,7 +2,7 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, POINTS_WGSL, LINES_WGSL, SKY_WGSL } from './shaders';
+import { MESH_WGSL, pointsWgsl, LINES_WGSL, SKY_WGSL } from './shaders';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
@@ -35,6 +35,7 @@ export class Renderer {
 
   private meshPipe!: GPURenderPipeline;
   private pointPipe!: GPURenderPipeline;
+  private pointMovePipe!: GPURenderPipeline;
   private linePipe!: GPURenderPipeline;
 
   private globalsBuf!: GPUBuffer;
@@ -47,7 +48,7 @@ export class Renderer {
   private groupBG!: GPUBindGroup;
 
   private geoms = new Map<MeshKind, Geometry>();
-  private pointGroups: { buf: GPUBuffer; count: number }[] = [];
+  private pointGroups: { buf: GPUBuffer; count: number; moving: boolean }[] = [];
   private circleBuf!: GPUBuffer;
   private skyPipe!: GPURenderPipeline;
   private skyBuf: GPUBuffer | null = null;
@@ -192,7 +193,7 @@ export class Renderer {
       multisample: { count: 4, alphaToCoverageEnabled: true },
     });
 
-    const pointMod = d.createShaderModule({ code: POINTS_WGSL });
+    const pointMod = d.createShaderModule({ code: pointsWgsl(false) });
     this.pointPipe = d.createRenderPipeline({
       layout,
       vertex: {
@@ -212,6 +213,33 @@ export class Renderer {
         ],
       },
       fragment: { module: pointMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: depthNoWrite,
+      multisample: { count: 4 },
+    });
+    // Moving stars: same sprite, plus a per-instance 3D space velocity
+    // applied in the vertex shader (pos + vel · years-from-J2000).
+    const pointMoveMod = d.createShaderModule({ code: pointsWgsl(true) });
+    this.pointMovePipe = d.createRenderPipeline({
+      layout,
+      vertex: {
+        module: pointMoveMod,
+        entryPoint: 'vs',
+        buffers: [
+          {
+            arrayStride: 44,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32' },
+              { shaderLocation: 2, offset: 16, format: 'float32x3' },
+              { shaderLocation: 3, offset: 28, format: 'float32' },
+              { shaderLocation: 4, offset: 32, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      fragment: { module: pointMoveMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
       primitive: { topology: 'triangle-list' },
       depthStencil: depthNoWrite,
       multisample: { count: 4 },
@@ -261,13 +289,15 @@ export class Renderer {
     this.skyVerts = verts.length / 3;
   }
 
-  addPointGroup(instances: F32): number {
+  // `moving` groups carry 11 floats per instance (…, vel3) and draw through
+  // the proper-motion pipeline; static groups keep the 8-float layout.
+  addPointGroup(instances: F32, moving = false): number {
     const buf = this.device.createBuffer({
       size: instances.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(buf, 0, instances);
-    this.pointGroups.push({ buf, count: instances.length / 8 });
+    this.pointGroups.push({ buf, count: instances.length / (moving ? 11 : 8), moving });
     return this.pointGroups.length - 1;
   }
 
@@ -495,9 +525,13 @@ export class Renderer {
       pass.draw(this.skyVerts);
     }
 
-    pass.setPipeline(this.pointPipe);
+    let curMoving: boolean | null = null;
     for (let i = 0; i < nGrp; i++) {
       const g = this.pointGroups[frame.groups[i].index];
+      if (g.moving !== curMoving) {
+        curMoving = g.moving;
+        pass.setPipeline(g.moving ? this.pointMovePipe : this.pointPipe);
+      }
       pass.setBindGroup(1, this.groupBG, [SLOT * i]);
       pass.setVertexBuffer(0, g.buf);
       pass.draw(6, g.count);

@@ -38,8 +38,24 @@ for (let i = 1; i < csv.length; i++) {
   const g = M.map((row) => row[0] * eq[0] + row[1] * eq[1] + row[2] * eq[2]);
   // scene = (-x_gal, z_gal, y_gal), right-handed, meters
   const pos = [-g[0] * PC, g[2] * PC, g[1] * PC];
+  // 3D space velocity from proper motion (pmrarad/pmdecrad, rad/yr, cos-dec
+  // included) + radial velocity: v_t = d * mu along the equatorial tangent.
+  const ra = (parseFloat(f[col.ra]) || 0) * (Math.PI / 12); // hours -> rad
+  const decl = (parseFloat(f[col.dec]) || 0) * (Math.PI / 180);
+  const mua = parseFloat(f[col.pmrarad]) || 0;
+  const mud = parseFloat(f[col.pmdecrad]) || 0;
+  const rvKms = parseFloat(f[col.rv]) || 0;
+  const east = [-Math.sin(ra), Math.cos(ra), 0];
+  const north = [-Math.sin(decl) * Math.cos(ra), -Math.sin(decl) * Math.sin(ra), Math.cos(decl)];
+  const radial = [Math.cos(decl) * Math.cos(ra), Math.cos(decl) * Math.sin(ra), Math.sin(decl)];
+  const KMS_TO_M_YR = 3.15576e10;
+  const dM = dist * PC;
+  const vEq = [0, 1, 2].map((k) => dM * (mua * east[k] + mud * north[k]) + rvKms * KMS_TO_M_YR * radial[k]);
+  const vG = M.map((row) => row[0] * vEq[0] + row[1] * vEq[1] + row[2] * vEq[2]);
+  const vel = [-vG[0], vG[2], vG[1]];
   stars.push({
     pos,
+    vel,
     mag,
     ci: parseFloat(f[col.ci]) || 0,
     lum: parseFloat(f[col.lum]) || 1,
@@ -53,7 +69,7 @@ const top = stars.slice(0, N);
 const e = (v) => Number(v.toPrecision(5));
 const rows = top.map(
   (s) =>
-    `  [${e(s.pos[0])}, ${e(s.pos[1])}, ${e(s.pos[2])}, ${e(s.mag)}, ${e(s.ci)}, ${e(s.lum)}, ${JSON.stringify(s.name)}],`,
+    `  [${e(s.pos[0])}, ${e(s.pos[1])}, ${e(s.pos[2])}, ${e(s.mag)}, ${e(s.ci)}, ${e(s.lum)}, ${JSON.stringify(s.name)}, ${e(s.vel[0])}, ${e(s.vel[1])}, ${e(s.vel[2])}],`,
 );
 
 writeFileSync(
@@ -62,9 +78,10 @@ writeFileSync(
 // The ${N} brightest stars from the HYG database v4.1
 // (https://github.com/astronexus/HYG-Database, CC BY-SA 4.0).
 // Fields: x, y, z (meters, sun frame, galactic orientation),
-// apparent magnitude, color index (B-V), luminosity (solar), proper name.
+// apparent magnitude, color index (B-V), luminosity (solar), proper name,
+// vx, vy, vz (meters/year — the star's real 3D space velocity).
 
-export type BrightStar = [number, number, number, number, number, number, string];
+export type BrightStar = [number, number, number, number, number, number, string, number, number, number];
 
 export const BRIGHT_STARS: BrightStar[] = [
 ${rows.join('\n')}
