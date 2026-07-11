@@ -120,6 +120,8 @@ async function start(): Promise<void> {
   let seam = false; // the honest seam: recolor by provenance (X)
   let starYears = 0; // clamped years from J2000 driving stellar proper motion
   let captureRequested = false; // photo: save a supersampled frame (S)
+  let snapResolve: ((dataUrl: string) => void) | null = null; // test hook (window.__snap)
+  let snapInFlight = false; // pause frame submission while a readback maps
   let overlayHidden = false; // H: hide the overlay — HUD, labels, orbit lines
   let webA = 1; // last-applied cosmic scale factor
 
@@ -1143,6 +1145,12 @@ async function start(): Promise<void> {
     simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
     updateBodies();
   }
+  // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
+  // scene to one instant, which is what a reproducible screenshot needs.
+  if (params.get('paused') !== null) paused = true;
+  // ?norender=1 — run the whole app but never submit a frame. Keeps the
+  // GPU queue silent so diagnostics (window.__gpuSelfTest) own it.
+  const noRender = params.get('norender') !== null;
   // ?speed=<sim seconds per real second> — snaps to the nearest preset;
   // negative values run the clock backwards (?speed=-3.15576e16 rewinds
   // at a billion years per second).
@@ -1545,7 +1553,42 @@ async function start(): Promise<void> {
       updateSkyLabels(null, [0, 0, 0]);
     }
 
-    renderer.render(data);
+    if (!snapInFlight && !noRender) renderer.render(data);
+    if (snapResolve && !snapInFlight) {
+      // Test hook: render one extra frame into an offscreen texture and
+      // read it back through the WebGPU API, PNG-encoding via a plain 2D
+      // canvas. On the software Vulkan stacks CI runs on, the canvas image
+      // is unreachable (screenshots and toBlob read back black), and the
+      // frame loop stays quiet while the map is in flight — continuous
+      // submissions can wedge a software queue mid-readback.
+      const done = snapResolve;
+      snapResolve = null;
+      snapInFlight = true;
+      renderer
+        .snapshot(() => renderer.render(data))
+        .then((img) => {
+          const cv = new OffscreenCanvas(img.width, img.height);
+          cv.getContext('2d')!.putImageData(img, 0, 0);
+          return cv.convertToBlob({ type: 'image/png' });
+        })
+        .then(
+          (blob) =>
+            new Promise<string>((res) => {
+              const fr = new FileReader();
+              fr.onload = () => res(fr.result as string);
+              fr.readAsDataURL(blob);
+            }),
+        )
+        .then((dataUrl) => {
+          snapInFlight = false;
+          done(dataUrl);
+        })
+        .catch((e: unknown) => {
+          console.error('[snap]', e instanceof Error ? e.message : String(e));
+          snapInFlight = false;
+          done('');
+        });
+    }
     if (captureRequested) {
       captureRequested = false;
       // The WebGPU canvas keeps this frame's pixels until the next
@@ -1580,6 +1623,12 @@ async function start(): Promise<void> {
     requestAnimationFrame(frame);
   }
 
+  const hooks = window as unknown as { __snap: () => Promise<string>; __gpuSelfTest: () => Promise<string> };
+  hooks.__snap = () =>
+    new Promise((resolve) => {
+      snapResolve = resolve;
+    });
+  hooks.__gpuSelfTest = () => renderer.selfTest();
   requestAnimationFrame(frame);
 }
 

@@ -193,8 +193,8 @@ by theme:
 
 **Under the hood**
 
-- [ ] Visual regression CI: the headless WebGPU screenshot rig, promoted to a test suite
-- [ ] Ephemeris tests against JPL Horizons
+- [x] Visual regression CI: eight deterministic views rendered with WebGPU on software Vulkan (Mesa lavapipe) in Actions, pixel-compared against baselines
+- [x] Ephemeris tests against JPL Horizons: every planet within 0.2° at three epochs, on ephemeris changes + weekly
 - [ ] Mobile performance tier: device-aware star budget and texture sizes
 
 <details id="shipped">

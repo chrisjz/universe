@@ -218,6 +218,18 @@ never blocks on the network.
 Verification is headless: real-GPU Chrome (`--headless=new
 --enable-unsafe-webgpu`) drives screenshot regressions for every feature,
 and `?fps=1` puts a frame-rate probe in the tab title for performance work.
+CI runs the same idea without a GPU: `scripts/capture-views.mjs` renders
+eight deterministic views (`?at=` + `?paused=1` pin the scene to one
+instant) with WebGPU on Mesa lavapipe — software Vulkan — and
+`scripts/compare-views.mjs` pixel-diffs them against the baselines in
+`tests/visual/baseline/`. Two hard-won rules make that possible: the app
+must never present a frame (`?norender=1` — the swap chain is the one
+operation surfaceless software Vulkan never completes), and pixels must be
+read back through the WebGPU API itself (`renderer.snapshot()` resolves
+into a private offscreen texture and `copyTextureToBuffer`s it out;
+screenshots and `canvas.toBlob` read black on every software stack). The
+captures are bit-for-bit reproducible across runs. A separate weekly
+workflow re-verifies the planet ephemeris against live JPL Horizons.
 
 ## Data pipelines
 

@@ -80,6 +80,9 @@ export class Renderer {
     this.device.addEventListener('uncapturederror', (e) => {
       console.error('[webgpu]', e.error.message);
     });
+    void this.device.lost.then((info) => {
+      console.error('[webgpu] device lost:', info.reason, info.message);
+    });
     console.log('[webgpu] adapter ok');
     this.ctx = this.canvas.getContext('webgpu') as GPUCanvasContext;
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -357,6 +360,69 @@ export class Renderer {
     this.dayViews.delete(key);
     this.texBGs.delete(key);
   }
+  // Renders one frame into a private offscreen texture and reads it back
+  // through the WebGPU API — never touching the canvas swap chain. On the
+  // software Vulkan stacks CI runs on, the canvas image is unreachable
+  // (screenshots, toBlob and even copies from the canvas texture all fail),
+  // so regression captures must come from a texture the renderer owns.
+  private captureView: GPUTextureView | null = null;
+  snapshot(renderAgain: () => void): Promise<ImageData> {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const tex = this.device.createTexture({
+      size: [w, h],
+      format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    this.captureView = tex.createView();
+    renderAgain();
+    this.captureView = null;
+    const rowBytes = Math.ceil((w * 4) / 256) * 256;
+    const buf = this.device.createBuffer({
+      size: rowBytes * h,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = this.device.createCommandEncoder();
+    enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: rowBytes }, [w, h]);
+    this.device.queue.submit([enc.finish()]);
+    console.log('[snap] submitted');
+    void this.device.queue.onSubmittedWorkDone().then(() => console.log('[snap] work done'));
+    return buf.mapAsync(GPUMapMode.READ).then(() => {
+      console.log('[snap] mapped');
+      const src = new Uint8Array(buf.getMappedRange());
+      const out = new Uint8ClampedArray(w * h * 4);
+      const b = this.format === 'bgra8unorm' ? 2 : 0; // swizzle to RGBA
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const si = y * rowBytes + x * 4;
+          const di = (y * w + x) * 4;
+          out[di] = src[si + b];
+          out[di + 1] = src[si + 1];
+          out[di + 2] = src[si + (2 - b)];
+          out[di + 3] = 255;
+        }
+      }
+      buf.unmap();
+      buf.destroy();
+      tex.destroy();
+      return new ImageData(out, w, h);
+    });
+  }
+
+  // SwiftShader (the CPU rasterizer CI runs on) can't blit an ImageBitmap
+  // straight into a texture — copyExternalImageToTexture wants a GPU-backed
+  // image. Fall back to a 2D-canvas readback and a plain writeTexture.
+  private uploadBitmap(bmp: ImageBitmap, tex: GPUTexture, level: number, w: number, h: number): void {
+    try {
+      this.device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, mipLevel: level }, [w, h]);
+    } catch {
+      const cv = new OffscreenCanvas(w, h);
+      const ctx = cv.getContext('2d')!;
+      ctx.drawImage(bmp, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      this.device.queue.writeTexture({ texture: tex, mipLevel: level }, data, { bytesPerRow: w * 4 }, [w, h]);
+    }
+  }
   async addTexture(key: string, bmp: ImageBitmap): Promise<void> {
     const d = this.device;
     const mips = Math.floor(Math.log2(Math.max(bmp.width, bmp.height))) + 1;
@@ -371,7 +437,7 @@ export class Renderer {
       const h = Math.max(1, bmp.height >> level);
       const m =
         level === 0 ? bmp : await createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-      d.queue.copyExternalImageToTexture({ source: m }, { texture: tex, mipLevel: level }, [w, h]);
+      this.uploadBitmap(m, tex, level, w, h);
       if (level > 0) m.close();
     }
     if (!this.blackView) {
@@ -442,7 +508,7 @@ export class Renderer {
             level === 0
               ? full
               : await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-          this.device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, mipLevel: level }, [w, h]);
+          this.uploadBitmap(bmp, tex, level, w, h);
           if (level > 0) bmp.close();
         }
         full.close();
@@ -512,7 +578,7 @@ export class Renderer {
       colorAttachments: [
         {
           view: this.msaaTex.createView(),
-          resolveTarget: this.ctx.getCurrentTexture().createView(),
+          resolveTarget: this.captureView ?? this.ctx.getCurrentTexture().createView(),
           clearValue: { r: 0.004, g: 0.005, b: 0.01, a: 1 },
           loadOp: 'clear',
           storeOp: 'discard',
@@ -569,6 +635,115 @@ export class Renderer {
 
     pass.end();
     q.submit([enc.finish()]);
+  }
+
+  // Diagnoses which pipeline a software Vulkan driver cannot execute: one
+  // tiny offscreen draw per pipeline, each awaited with a timeout. The
+  // first HANG names the shader whose compiled code the driver never
+  // finishes — exposed as window.__gpuSelfTest for the CI capture rig.
+  async selfTest(): Promise<string> {
+    const results: string[] = [];
+    const run = async (name: string, fn: ((pass: GPURenderPassEncoder) => void) | null): Promise<boolean> => {
+      if (!fn) {
+        results.push(`${name}: skip`);
+        return true;
+      }
+      const mk = (fmt: GPUTextureFormat, samples: number): GPUTexture =>
+        this.device.createTexture({
+          size: [8, 8],
+          sampleCount: samples,
+          format: fmt,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+      const ms = mk(this.format, 4);
+      const target = mk(this.format, 1);
+      const depth = mk('depth32float', 4);
+      const enc = this.device.createCommandEncoder();
+      const pass = enc.beginRenderPass({
+        colorAttachments: [
+          {
+            view: ms.createView(),
+            resolveTarget: target.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'discard',
+          },
+        ],
+        depthStencilAttachment: {
+          view: depth.createView(),
+          depthClearValue: 1,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'discard',
+        },
+      });
+      pass.setBindGroup(0, this.globalsBG);
+      fn(pass);
+      pass.end();
+      this.device.queue.submit([enc.finish()]);
+      const ok = await Promise.race([
+        this.device.queue.onSubmittedWorkDone().then(() => true),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 10000)),
+      ]);
+      results.push(`${name}: ${ok ? 'ok' : 'HANG'}`);
+      ms.destroy();
+      target.destroy();
+      depth.destroy();
+      return ok;
+    };
+    const geom = this.geoms.values().next().value;
+    const pointTest = (mode: PointsMode, pipe: GPURenderPipeline): ((pass: GPURenderPassEncoder) => void) | null => {
+      const g = this.pointGroups.find((pg) => pg.mode === mode);
+      if (!g) return null;
+      return (p) => {
+        p.setPipeline(pipe);
+        p.setBindGroup(1, this.groupBG, [0]);
+        p.setVertexBuffer(0, g.buf);
+        p.draw(6, 1);
+      };
+    };
+    const tests: [string, ((pass: GPURenderPassEncoder) => void) | null][] = [
+      ['clear', () => {}],
+      [
+        'mesh',
+        geom
+          ? (p) => {
+              p.setPipeline(this.meshPipe);
+              p.setBindGroup(1, this.meshBG, [0]);
+              p.setBindGroup(2, this.defaultTexBG);
+              p.setVertexBuffer(0, geom.vbuf);
+              p.setIndexBuffer(geom.ibuf, 'uint32');
+              p.drawIndexed(Math.min(6, geom.indexCount));
+            }
+          : null,
+      ],
+      [
+        'line',
+        (p) => {
+          p.setPipeline(this.linePipe);
+          p.setBindGroup(1, this.lineBG, [0]);
+          p.setVertexBuffer(0, this.circleBuf);
+          p.draw(Math.min(4, this.circleVerts));
+        },
+      ],
+      [
+        'sky',
+        this.skyBuf
+          ? (p) => {
+              p.setPipeline(this.skyPipe);
+              p.setBindGroup(1, this.lineBG, [0]);
+              p.setVertexBuffer(0, this.skyBuf);
+              p.draw(3);
+            }
+          : null,
+      ],
+      ['points-static', pointTest('static', this.pointPipe)],
+      ['points-moving', pointTest('moving', this.pointMovePipe)],
+      ['points-orbital', pointTest('orbital', this.pointOrbitPipe)],
+    ];
+    for (const [name, fn] of tests) {
+      if (!(await run(name, fn))) break; // a hang wedges the queue for good
+    }
+    return results.join(' | ');
   }
 
   private makeGeometry(verts: F32, indices: Uint32Array<ArrayBuffer>): Geometry {

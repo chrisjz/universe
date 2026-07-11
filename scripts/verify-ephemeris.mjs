@@ -69,6 +69,8 @@ const jd = (iso) => new Date(iso).getTime() / 86400000 + 2440587.5;
 const EPOCHS = ['2000-01-01T12:00:00Z', '2026-07-11T00:00:00Z', '2049-01-01T00:00:00Z'];
 
 let worst = { planet: '', epoch: '', angDeg: 0 };
+let compared = 0;
+const expected = Object.keys(ELEMENTS).length * EPOCHS.length;
 for (const [name, el] of Object.entries(ELEMENTS)) {
   for (const iso of EPOCHS) {
     const J = jd(iso);
@@ -83,6 +85,7 @@ for (const [name, el] of Object.entries(ELEMENTS)) {
       console.error(`${name} ${iso}: could not parse Horizons response`);
       continue;
     }
+    compared++;
     const hz = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
     const T = (J - 2451545.0) / 36525;
     const us = keplerEcliptic(el, T);
@@ -97,8 +100,13 @@ for (const [name, el] of Object.entries(ELEMENTS)) {
   }
 }
 console.log(`\nworst: ${worst.planet} at ${worst.epoch}: ${worst.angDeg.toFixed(4)}°`);
+if (compared < expected) {
+  // A quiet Horizons outage must not read as a green check.
+  console.error(`FAIL: only ${compared}/${expected} comparisons ran`);
+  process.exit(1);
+}
 if (worst.angDeg > 0.2) {
   console.error('FAIL: exceeds 0.2° tolerance');
   process.exit(1);
 }
-console.log('PASS: all planets within 0.2° of JPL Horizons');
+console.log(`PASS: all ${compared} planet/epoch checks within 0.2° of JPL Horizons`);
