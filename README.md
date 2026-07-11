@@ -159,7 +159,7 @@ by theme:
 
 **More real worlds**
 
-- [ ] Mars, the third surface site: Moon Trek's sibling serves CTX imagery and MOLA terrain — land at Jezero crater beside Perseverance
+- [x] Mars, the third surface site: Jezero crater beside Perseverance — Viking imagery via NASA Mars Trek, MOLA terrain (the site reads −2563 m against the published −2570 m crater floor)
 - [x] Real planet faces: NASA global mosaics for Mercury, Mars, and Jupiter on spinning, correctly tilted globes (Venus and the ice giants stay honestly stylized — their visible faces are featureless)
 - [x] Saturn's rings at true scale: Cassini's radial scan on the real radii — the Cassini division, and the ring plane riding the real pole (nearly edge-on in 2026, as in the real sky)
 - [ ] The Galilean moons: real mosaics, and orbits fast enough to watch — Io laps Jupiter in 42 hours of clock time
@@ -261,7 +261,11 @@ pipelines (all regenerable from public sources) are documented in
   (MESSENGER MDIS basemap) via [NASA Trek](https://trek.nasa.gov/); Jupiter
   from Cassini's Dec 2000 global map (PIA07782); Saturn's rings from
   Cassini's natural-color radial scan (PIA08389) — all NASA/JPL, public
-  domain.
+  domain. The Jezero site streams Viking imagery from Mars Trek at runtime;
+  its terrain comes from the MGS **MOLA** MEGDR grid
+  ([PDS Geosciences](https://pds-geosciences.wustl.edu/)) — `node
+scripts/generate-mars.mjs <megt90n000eb.img>` regenerates
+  `public/mars/jezero.json`.
 
 ## License
 

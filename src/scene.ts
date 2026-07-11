@@ -108,6 +108,8 @@ export interface Universe {
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
+  postSpin: (() => void)[]; // run after each spin update (sites riding a planet)
+  marsFrame: Frame; // origin rides Mars's ephemeris; Jezero hangs off it
   orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
   orientMoon: (psi: number) => void; // synchronous spin around the orbit normal
   orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
@@ -133,6 +135,14 @@ export interface Universe {
       R: number; // the site's datum radius (LOLA reference + site elevation)
       dimpleMoon: (depth: number) => void;
       gnomonicEUN: (p: V3) => [number, number] | null; // p relative the Moon's center
+    };
+    // Jezero crater (fixed site — baked MOLA terrain, streamed Viking imagery).
+    mars: {
+      site: [number, number];
+      ringSizes: number[];
+      R: number;
+      dimpleMars: (depth: number) => void;
+      gnomonicEUN: (p: V3) => [number, number] | null; // p relative Mars's center
     };
   };
 }
@@ -547,6 +557,11 @@ export function buildUniverse(): Universe {
   };
   // Live bases mutated by main.ts each frame (uniform prograde spin).
   const planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[] = [];
+  // Hooks run after each spin update (surface sites riding a spinning planet).
+  const postSpin: (() => void)[] = [];
+  let marsPos!: V3;
+  let marsMesh!: MeshObj;
+  let marsSpinBasis!: [V3, V3, V3];
   const registerSpin = (pole: [number, number], periodDays: number): [V3, V3, V3] => {
     const [e0, up, n0] = basisFromPole(pole[0], pole[1]);
     const basis: [V3, V3, V3] = [[...e0], [...up], [...n0]];
@@ -607,6 +622,11 @@ export function buildUniverse(): Universe {
       m.tex = face.tex;
       m.rot = registerSpin(face.pole, face.periodDays);
       m.prov = 0; // measured imagery
+      if (name === 'mars') {
+        marsPos = pos;
+        marsMesh = m;
+        marsSpinBasis = m.rot;
+      }
     } else if (name === 'saturn') {
       // The globe stays stylized (its bands are subtle in visible light),
       // but it tilts and spins with the real pole — the rings ride it.
@@ -655,6 +675,7 @@ export function buildUniverse(): Universe {
       exit: Math.max(3 * a, 1e12),
       radius: r,
       hidden: true,
+      ...(name === 'mars' ? { child: 'jezero', enter: 6e6 } : {}),
     });
   });
 
@@ -677,6 +698,91 @@ export function buildUniverse(): Universe {
     }
     patchGeoms.push({ name: 'saturnrings', verts: new Float32Array(verts), indices: new Uint32Array(idx) });
   }
+
+  // ---- Jezero crater: the third surface site (Mars) ----
+  // Octavia E. Butler Landing — where Perseverance touched down in 2021.
+  // Fixed site, so its MOLA ring heightfields are baked at build time
+  // (scripts/generate-mars.mjs); Viking imagery streams from NASA Mars Trek.
+  // Unlike the Moon (which has its own orient call), the site rides Mars's
+  // planetSpins basis via a postSpin hook — one rotation system per world.
+  const JZ_LAT_DEG = 18.4447;
+  const JZ_LON_DEG = 77.4508;
+  const JZ_ELEV = -2563; // MOLA site elevation vs the areoid (crater floors are low)
+  const R_MARS_REF = 3.3895e6;
+  const R_JZ = R_MARS_REF + JZ_ELEV;
+  const MARS_RINGS = [1024e3, 256e3, 64e3, 16e3];
+  const jzFixedE: V3 = [0, 0, 0],
+    jzFixedU: V3 = [0, 0, 0],
+    jzFixedN: V3 = [0, 0, 0];
+  fixedBasis(JZ_LAT_DEG * DEG, JZ_LON_DEG * DEG, jzFixedE, jzFixedU, jzFixedN);
+  const jzEast: V3 = [...jzFixedE],
+    jzUp: V3 = [...jzFixedU],
+    jzNorth: V3 = [...jzFixedN];
+  const jzBasis: [V3, V3, V3] = [jzEast, jzUp, jzNorth];
+  const marsFrame = new Frame('mars', sunFrame, marsPos);
+  const jezero = new Frame('jezero', marsFrame, [0, 0, 0]);
+  const jzAnchored: { vec: V3; eun: V3 }[] = [{ vec: jezero.offset, eun: [0, R_JZ + 1, 0] }];
+  const jzAnchor = (eun: V3): V3 => {
+    const vec: V3 = [0, 0, 0];
+    jzAnchored.push({ vec, eun });
+    return vec;
+  };
+  postSpin.push(() => {
+    const B = marsSpinBasis;
+    const rot = (v: V3, out: V3): void => {
+      for (let k = 0; k < 3; k++) out[k] = B[0][k] * v[0] + B[1][k] * v[1] + B[2][k] * v[2];
+    };
+    rot(jzFixedE, jzEast);
+    rot(jzFixedU, jzUp);
+    rot(jzFixedN, jzNorth);
+    for (const a of jzAnchored) {
+      for (let k = 0; k < 3; k++) a.vec[k] = jzEast[k] * a.eun[0] + jzUp[k] * a.eun[1] + jzNorth[k] * a.eun[2];
+    }
+  });
+  MARS_RINGS.forEach((S, k) => {
+    const g = ringGeometry(S, null, R_JZ, k < MARS_RINGS.length - 1);
+    patchGeoms.push({ name: `marsring${k}`, verts: g.verts, indices: g.indices });
+    meshes.push({
+      frame: jezero,
+      pos: jzAnchor([0, -1, 0]),
+      mesh: `marsring${k}`,
+      size: [1, 1, 1],
+      bound: S * 0.71,
+      color: [1, 1, 1],
+      emissive: 0,
+      matId: 11,
+      rim: 1.0, // exposure gain: Viking color already matches its globe map
+      gridScale: S,
+      rot: jzBasis,
+      prov: 0.5, // real Viking photography, procedural close-up detail
+      tex: `marsring${k}`,
+    });
+  });
+  // Perseverance stays at the site: car-sized (3.0 × 2.2 m), drawn as a
+  // simple white box — illustrative, prov 1.
+  meshes.push({
+    frame: jezero,
+    pos: jzAnchor([0, -1 + 1.1, 0]),
+    mesh: 'box',
+    size: [1.5, 1.1, 1.35],
+    bound: 4,
+    color: [0.86, 0.86, 0.9],
+    emissive: 0,
+    matId: 6,
+    rim: 0,
+    gridScale: 0,
+    rot: jzBasis,
+    prov: 1,
+  });
+  const dimpleMars = (depth: number): void => {
+    const rr = 3.39e6 - Math.max(0, depth); // the render sphere's radius (planets table)
+    marsMesh.size[0] = rr;
+    marsMesh.size[1] = rr;
+    marsMesh.size[2] = rr;
+  };
+  // The crater floor sits ~3.1 km below the render sphere; sink it now,
+  // deeper once the baked heights load.
+  dimpleMars(3.39e6 - R_JZ + 30);
 
   // Moon: real radius, the full inclined, perturbed orbit (5.1°, regressing
   // node, varying distance — see ephemeris.ts), and the real surface: the
@@ -771,7 +877,7 @@ export function buildUniverse(): Universe {
       color: moonMesh.color, // SHARED: the lunar-eclipse multiplier
       emissive: 0,
       matId: 11,
-      rim: 0,
+      rim: 1.6, // exposure gain: raw WAC vs the albedo-normalized globe map
       gridScale: S,
       rot: tqBasis,
       prov: 0.5, // real WAC photography, procedural close-up regolith detail
@@ -1553,6 +1659,21 @@ export function buildUniverse(): Universe {
     },
     // Hidden targets stay after the visible nine so keys 1-7 remain stable.
     ...microTargets,
+    // Jezero rides at the end of the bar (unnumbered) so every existing
+    // number key keeps its meaning; it is also in the zoom chain via Mars.
+    {
+      name: 'JEZERO · MARS',
+      slug: 'jezero',
+      source: 'Perseverance landing site, 18.445°N 77.451°E — Viking imagery, MOLA terrain',
+      frame: jezero,
+      pos: jzAnchor([0, 0.5, 0]),
+      dist: 4e4,
+      pitch: 0.35,
+      sunlit: true,
+      parent: 'mars',
+      exit: 2e7,
+      basis: jzBasis,
+    },
     ...planetTargets,
     ...starTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
@@ -1585,6 +1706,8 @@ export function buildUniverse(): Universe {
     moonMesh,
     moonFrame,
     planetSpins,
+    postSpin,
+    marsFrame,
     orientEarth,
     orientMoon,
     orientGalaxy,
@@ -1621,6 +1744,17 @@ export function buildUniverse(): Universe {
           const py = d3(p, tqUp);
           if (py <= 0) return null;
           return [(R_TQ * d3(p, tqEast)) / py, (R_TQ * d3(p, tqNorth)) / py];
+        },
+      },
+      mars: {
+        site: [JZ_LAT_DEG, JZ_LON_DEG],
+        ringSizes: MARS_RINGS,
+        R: R_JZ,
+        dimpleMars,
+        gnomonicEUN: (p: V3): [number, number] | null => {
+          const py = d3(p, jzUp);
+          if (py <= 0) return null;
+          return [(R_JZ * d3(p, jzEast)) / py, (R_JZ * d3(p, jzNorth)) / py];
         },
       },
     },
