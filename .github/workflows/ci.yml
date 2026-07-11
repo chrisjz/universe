@@ -61,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: visual
-          path: .visual-out/
+          path: visual-out/
           retention-days: 14
 
   deploy:

@@ -4,4 +4,4 @@ dist/
 .DS_Store
 .gaia-cache/
 .gaia-cache-v2/
-.visual-out/
+visual-out/

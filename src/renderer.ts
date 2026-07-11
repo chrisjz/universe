@@ -357,6 +357,20 @@ export class Renderer {
     this.dayViews.delete(key);
     this.texBGs.delete(key);
   }
+  // SwiftShader (the CPU rasterizer CI runs on) can't blit an ImageBitmap
+  // straight into a texture — copyExternalImageToTexture wants a GPU-backed
+  // image. Fall back to a 2D-canvas readback and a plain writeTexture.
+  private uploadBitmap(bmp: ImageBitmap, tex: GPUTexture, level: number, w: number, h: number): void {
+    try {
+      this.device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, mipLevel: level }, [w, h]);
+    } catch {
+      const cv = new OffscreenCanvas(w, h);
+      const ctx = cv.getContext('2d')!;
+      ctx.drawImage(bmp, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      this.device.queue.writeTexture({ texture: tex, mipLevel: level }, data, { bytesPerRow: w * 4 }, [w, h]);
+    }
+  }
   async addTexture(key: string, bmp: ImageBitmap): Promise<void> {
     const d = this.device;
     const mips = Math.floor(Math.log2(Math.max(bmp.width, bmp.height))) + 1;
@@ -371,7 +385,7 @@ export class Renderer {
       const h = Math.max(1, bmp.height >> level);
       const m =
         level === 0 ? bmp : await createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-      d.queue.copyExternalImageToTexture({ source: m }, { texture: tex, mipLevel: level }, [w, h]);
+      this.uploadBitmap(m, tex, level, w, h);
       if (level > 0) m.close();
     }
     if (!this.blackView) {
@@ -442,7 +456,7 @@ export class Renderer {
             level === 0
               ? full
               : await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-          this.device.queue.copyExternalImageToTexture({ source: bmp }, { texture: tex, mipLevel: level }, [w, h]);
+          this.uploadBitmap(bmp, tex, level, w, h);
           if (level > 0) bmp.close();
         }
         full.close();

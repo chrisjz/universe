@@ -7,7 +7,7 @@
 // forces the bundled star catalog (?stars=athyg) so nothing external is
 // fetched — the same commit always draws the same pixels.
 //
-//   node scripts/capture-views.mjs [outDir]        (default .visual-out)
+//   node scripts/capture-views.mjs [outDir]        (default visual-out)
 //   CHROME_PATH=...  chrome binary (default: the macOS app path)
 //   WEBGPU_ADAPTER=swiftshader  adds the CPU-rasterizer flags for CI
 //
@@ -45,7 +45,7 @@ const VIEWS = [
   { name: 'mars', q: 'goto=mars&dist=2.5e7' },
 ];
 
-const outDir = process.argv[2] ?? '.visual-out';
+const outDir = process.argv[2] ?? 'visual-out'; // NOT dot-prefixed: upload-artifact drops hidden paths
 mkdirSync(outDir, { recursive: true });
 
 // ---- serve dist/ ----
@@ -84,6 +84,10 @@ let failed = 0;
 try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.error(`  pageerror: ${e.message}`));
+  // WebGPU validation failures land on the console, not as exceptions.
+  page.on('console', (m) => {
+    if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
+  });
 
   // The spike's verdict, in the log: which adapter Chrome actually handed us.
   await page.goto(`http://localhost:${PORT}/?paused=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -109,10 +113,21 @@ try {
       await new Promise((r) => setTimeout(r, 500));
       title = await page.title();
     }
-    // Let late texture uploads and star chunks land, then grab the canvas.
+    // Let late texture uploads and star chunks land, then read the canvas
+    // back in-page (canvas.toBlob — the same path photo mode uses). The
+    // compositor screenshot route returns a uniform frame under SwiftShader.
     await new Promise((r) => setTimeout(r, 3000));
-    const canvas = await page.$('canvas');
-    const shot = await canvas.screenshot({ type: 'png' });
+    const dataUrl = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          document.querySelector('canvas').toBlob((b) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.readAsDataURL(b);
+          }, 'image/png');
+        }),
+    );
+    const shot = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
 
     const png = PNG.sync.read(Buffer.from(shot));
     const first = png.data.readUInt32BE(0);
@@ -121,6 +136,8 @@ try {
     writeFileSync(`${outDir}/${v.name}.png`, shot);
     if (uniform || !/fps \d/.test(title)) {
       failed++;
+      // Debug evidence: what the compositor sees (vs the canvas readback).
+      writeFileSync(`${outDir}/debug-${v.name}-compositor.png`, await page.screenshot({ type: 'png' }));
       console.error(
         `✗ ${v.name}: ${uniform ? 'uniform canvas (render pass produced nothing)' : `no frames (title "${title}")`}`,
       );

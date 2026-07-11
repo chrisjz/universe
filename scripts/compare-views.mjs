@@ -4,7 +4,7 @@
 // loose enough to absorb rasterizer noise, tight enough that a missing
 // draw call, a broken shader, or an undersized bind group lights up red.
 //
-//   node scripts/compare-views.mjs [candidateDir]   (default .visual-out)
+//   node scripts/compare-views.mjs [candidateDir]   (default visual-out)
 //
 // Baselines are generated ON CI (SwiftShader pixels differ from local
 // Metal/Vulkan ones): download the `visual` artifact from an Actions run,
@@ -16,12 +16,14 @@ import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 
-const candDir = process.argv[2] ?? '.visual-out';
+const candDir = process.argv[2] ?? 'visual-out';
 const baseDir = 'tests/visual/baseline';
 const RATIO_MAX = 0.005; // fraction of pixels allowed to differ
 const THRESHOLD = 0.12; // pixelmatch per-pixel perceptual threshold
 
-const candidates = readdirSync(candDir).filter((f) => f.endsWith('.png') && !f.startsWith('diff-'));
+const candidates = readdirSync(candDir).filter(
+  (f) => f.endsWith('.png') && !f.startsWith('diff-') && !f.startsWith('debug-'),
+);
 if (!candidates.length) {
   console.error(`no candidate PNGs in ${candDir}/ — run capture-views.mjs first`);
   process.exit(1);
