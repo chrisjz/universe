@@ -101,6 +101,7 @@ real already is:
 | **[ ]**       | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                |
 | **P**         | pause the simulation clock                                                                                              |
 | **T**         | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                             |
+| **H / S**     | photo mode: **H** clears every overlay, **S** saves a 2×-supersampled PNG                                               |
 | **Esc**       | cancel the current flight                                                                                               |
 
 On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
@@ -182,7 +183,7 @@ by theme:
 
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
-- [ ] Photo mode: hide the HUD, supersample, save
+- [x] Photo mode: **H** clears every overlay, **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 
 **Under the hood**

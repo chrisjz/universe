@@ -119,6 +119,7 @@ async function start(): Promise<void> {
   let paused = false;
   let seam = false; // the honest seam: recolor by provenance (X)
   let starYears = 0; // clamped years from J2000 driving stellar proper motion
+  let captureRequested = false; // photo mode: save a supersampled frame (S)
   let webA = 1; // last-applied cosmic scale factor
 
   function updateBodies(): void {
@@ -997,6 +998,9 @@ async function start(): Promise<void> {
       return;
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
+    // Photo mode: H clears every overlay; S saves a 2x-supersampled PNG.
+    if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('photo');
+    if (e.key === 's' || e.key === 'S') captureRequested = true;
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
     if (e.key === ']') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
     if (e.key === 'p' || e.key === 'P') paused = !paused;
@@ -1441,6 +1445,26 @@ async function start(): Promise<void> {
     }
 
     renderer.render(data);
+    if (captureRequested) {
+      captureRequested = false;
+      // The WebGPU canvas keeps this frame's pixels until the next
+      // getCurrentTexture, so capture must happen here, same task. For the
+      // supersampled shot, render once more at 2x and restore after.
+      const w = canvas.width,
+        h = canvas.height;
+      renderer.resize(w * 2, h * 2);
+      renderer.render(data);
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `universe-atlas-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        }
+        renderer.resize(w, h);
+      }, 'image/png');
+    }
     hud.update(
       2 * cam.dist * Math.tan(FOV / 2),
       focusName,

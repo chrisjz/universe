@@ -30,6 +30,13 @@
       #gpu.dragging {
         cursor: grabbing;
       }
+      /* Photo mode (H): every overlay yields to the frame itself. */
+      body.photo .hud,
+      body.photo #search,
+      body.photo #sky-labels,
+      body.photo #seam {
+        display: none !important;
+      }
       .hud {
         position: fixed;
         font-family: 'SF Mono', ui-monospace, Menlo, monospace;
@@ -377,7 +384,8 @@
       <div class="name">—</div>
       <div class="src">—</div>
       <div class="hint">
-        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · X seam · C constellations · T tour
+        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · X seam · C constellations · T tour ·
+        H photo
       </div>
     </div>
     <div class="hud" id="seam">
