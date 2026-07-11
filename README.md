@@ -69,8 +69,9 @@ real already is:
 - **The Moon** — the LROC WAC globe with true synchronous rotation (the real
   ±7.9° optical libration falls out of the uniform spin), LOLA terrain, and
   **Tranquility Base** — the Apollo 11 site — as a second walkable surface.
-- **Time** — planets and the Moon sit at their true positions for the
-  simulated date and move as the clock runs, from real time to ±1 Gyr/s. The
+- **Time** — planets (Pluto included) fly their true eccentric, inclined
+  Keplerian orbits — verified against JPL Horizons to a sixth of a degree
+  worst-case — and move as the clock runs, from real time to ±1 Gyr/s. The
   Earth turns at the sidereal rate, phase-locked to UTC: the picnic sees
   sunrise when Chicago does, seasons included. The Moon flies its true
   inclined, perturbed orbit, so **every 2026 eclipse lands within ~10
@@ -176,6 +177,7 @@ by theme:
 
 **A living solar system**
 
+- [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
 - [ ] Small bodies from the Minor Planet Center: the real asteroid belt and Kuiper belt as sampled populations, Halley on its true ellipse
 - [ ] Low Earth orbit is a place: the ISS and the Starlink shells, propagated from live TLEs
 
@@ -183,6 +185,7 @@ by theme:
 
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
+- [ ] Atmospheric scattering: a real single-scatter Rayleigh atmosphere for Earth — the blue limb from orbit, red sunsets from the picnic
 - [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 
@@ -202,7 +205,7 @@ by theme:
 - [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
 - [x] Gaia DR3 milestone: 6.8M stars via hierarchical LOD tiles (magnitude bands × spatial tiles), streamed from a separate data repo
 - [x] Real deep-sky structure: 43k 2MASS Redshift Survey galaxies — Virgo, Coma, the Great Wall — out to ~260 Mpc
-- [x] Time: real orbital motion (mean-longitude ephemeris, adjustable clock, `?speed=`)
+- [x] Time: real orbital motion (adjustable clock, `?speed=`)
 - [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
 - [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
 - [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time

@@ -94,10 +94,13 @@ anchored props, the camera's orbit basis) follows automatically.
 One clock (`simMs`), one signed speed ladder from −1 Gyr/s through real time
 to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
 
-- **Ephemeris** ([`src/ephemeris.ts`](../src/ephemeris.ts)) — planets fly a
-  mean-longitude circular ephemeris; Earth adds its equation of center
-  (upgrading the picnic's solar time from mean to apparent — the sundial
-  kind); the Moon gets a truncated Meeus series (10 longitude / 6 latitude /
+- **Ephemeris** ([`src/ephemeris.ts`](../src/ephemeris.ts)) — the planets
+  (and Pluto) fly full Keplerian orbits: the Standish 1800–2050 elements,
+  Kepler's equation solved by Newton iteration each frame, verified against
+  JPL Horizons to <0.15° worst-case (`scripts/verify-ephemeris.mjs`). The
+  drawn orbit lines are the true inclined ellipses (center + semi-axis
+  vectors in the line shader — a circle is the degenerate case). The Moon
+  gets a truncated Meeus series (10 longitude / 6 latitude /
   4 distance terms): the inclined, perturbed orbit with its regressing node
   and varying distance. That is what makes every 2026 eclipse land within
   ~10 minutes of its true time, annular vs total decided by the Moon's

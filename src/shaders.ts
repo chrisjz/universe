@@ -391,15 +391,19 @@ export const LINES_WGSL =
   COMMON +
   /* wgsl */ `
 struct Line {
-  origin : vec4f, // xyz: circle center rel camera, w: radius
+  origin : vec4f, // xyz: ELLIPSE center rel camera (the sun sits at a focus)
   color  : vec4f, // rgb + alpha
+  axisA  : vec4f, // xyz: semi-major axis vector (scene meters)
+  axisB  : vec4f, // xyz: semi-minor axis vector
 };
 @group(1) @binding(0) var<uniform> L : Line;
 
 struct VOut { @builtin(position) pos : vec4f };
 
 @vertex fn vs(@location(0) c : vec2f) -> VOut {
-  let raw = L.origin.xyz + vec3f(c.x, 0.0, c.y) * L.origin.w;
+  // pos(θ) = center + A·cosθ + B·sinθ: the true inclined Kepler ellipse
+  // (a circle is the special case A = (r,0,0), B = (0,0,r)).
+  let raw = L.origin.xyz + L.axisA.xyz * c.x + L.axisB.xyz * c.y;
   let d0 = max(bigLength(raw), 1e-3);
   let cap = G.params.x;
   var dc = d0;

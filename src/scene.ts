@@ -8,6 +8,7 @@ import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
+import { PLANET_ELEMENTS, keplerEllipse, PlanetElements } from './ephemeris';
 import { MESSIER } from './data/messier';
 
 export interface MeshObj {
@@ -51,6 +52,11 @@ export interface PointGroup {
   moving?: boolean;
 }
 export interface OrbitLine {
+  // True Kepler ellipse: pos(θ) = center + centerOff + axisA·cosθ + axisB·sinθ.
+  // Absent axes mean a circle of `radius` (the Moon's stylized ring).
+  axisA?: V3;
+  axisB?: V3;
+  centerOff?: V3;
   frame: Frame;
   center: V3;
   radius: number;
@@ -83,18 +89,19 @@ export interface Target {
   source?: string; // provenance caption shown in the HUD while focused
 }
 
-// A body on a circular mean-longitude orbit in its frame's XZ plane. Every
+// A body on its real orbit (full Keplerian elements when `el` is set,
+// circular mean-longitude fallback otherwise). Every
 // V3 in `positions` is written in place each tick (mesh/target arrays share
 // references); `frameOffset` moves a whole child frame (Earth carries the
 // Moon, the surface site, and any camera standing on it automatically).
 export interface OrbitalBody {
-  a: number; // orbit radius, meters
+  a: number; // orbit radius (nominal, meters) — sprite/fade scale
   periodDays: number;
-  L0: number; // mean longitude at J2000, degrees
+  L0: number; // mean longitude at J2000, degrees (circular fallback)
   positions: V3[];
   frameOffset?: V3;
   spriteFloatBase?: number; // float offset of its locator sprite in the planet sprite group
-  eqCenter?: boolean; // apply Earth's equation of center (true vs mean longitude)
+  el?: PlanetElements; // full Keplerian elements (planets ride these)
   moon?: boolean; // use the full inclined, perturbed lunar ephemeris (ephemeris.ts)
 }
 
@@ -310,7 +317,7 @@ export function buildUniverse(): Universe {
   };
 
   // Placeholder epoch position; updateBodies() overwrites it (in place) from
-  // the mean-longitude ephemeris before the first frame renders.
+  // the Keplerian ephemeris before the first frame renders.
   const earthPos: V3 = [AU, 0, 0];
   const earthFrame = new Frame('earth', sunFrame, earthPos);
 
@@ -584,6 +591,9 @@ export function buildUniverse(): Universe {
     ['saturn', 9.537 * AU, 5.82e7, [0.86, 0.76, 0.55], 3, 49.94, 10759.22],
     ['uranus', 19.19 * AU, 2.54e7, [0.62, 0.85, 0.89], 3, 313.23, 30688.5],
     ['neptune', 30.07 * AU, 2.46e7, [0.31, 0.48, 0.85], 3, 304.88, 60182],
+    // Pluto earns its place BECAUSE of Kepler: e = 0.249, i = 17° — the
+    // orbit that made circular approximations embarrassing.
+    ['pluto', 39.48 * AU, 1.188e6, [0.68, 0.62, 0.53], 4, 238.93, 90560],
   ];
   const bodies: OrbitalBody[] = [];
   // Named geometries registered with the renderer (Earth + Moon ring nets).
@@ -592,7 +602,17 @@ export function buildUniverse(): Universe {
   const planetTargets: Target[] = [];
   let dimpleEarth: (depth: number) => void = () => {};
   planets.forEach(([name, a, r, color, matId, L0, periodDays]) => {
-    orbits.push({ frame: sunFrame, center: [0, 0, 0], radius: a, color: [0.4, 0.62, 1.0], alpha: 0.2 });
+    const ell = keplerEllipse(PLANET_ELEMENTS[name]);
+    orbits.push({
+      frame: sunFrame,
+      center: [0, 0, 0],
+      radius: a,
+      color: [0.4, 0.62, 1.0],
+      alpha: 0.2,
+      axisA: ell.A,
+      axisB: ell.B,
+      centerOff: ell.center,
+    });
     const spriteFloatBase = planetSprites.length * 8;
     if (name === 'earth') {
       const earthMesh = sphere(earthFrame, [0, 0, 0], r, color, matId, 1.0);
@@ -615,7 +635,15 @@ export function buildUniverse(): Universe {
         earthMesh.size[2] = rr;
       };
       planetSprites.push([...earthPos, r * 4, 0.5, 0.7, 1.0, 0.3]);
-      bodies.push({ a, periodDays, L0, positions: [], frameOffset: earthPos, spriteFloatBase, eqCenter: true });
+      bodies.push({
+        a,
+        periodDays,
+        L0,
+        positions: [],
+        frameOffset: earthPos,
+        spriteFloatBase,
+        el: PLANET_ELEMENTS.earth,
+      });
       return;
     }
     const pos: V3 = [a, 0, 0]; // ephemeris fills this in before first render
@@ -658,7 +686,7 @@ export function buildUniverse(): Universe {
     }
     meshes.push(m);
     planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.28]);
-    bodies.push({ a, periodDays, L0, positions: [pos], spriteFloatBase });
+    bodies.push({ a, periodDays, L0, positions: [pos], spriteFloatBase, el: PLANET_ELEMENTS[name] });
     planetTargets.push({
       name: name.toUpperCase(),
       slug: name,
@@ -1650,7 +1678,7 @@ export function buildUniverse(): Universe {
     {
       name: 'SOLAR SYSTEM',
       slug: 'system',
-      source: 'measured — real orbits & sizes, mean-longitude ephemeris',
+      source: 'measured — full Keplerian orbits, verified against JPL Horizons',
       frame: sunFrame,
       pos: [0, 0, 0],
       dist: 1.15e13,

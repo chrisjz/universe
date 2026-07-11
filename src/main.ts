@@ -27,7 +27,7 @@ import { streamStars, StarChunkMeta } from './stars';
 import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings, streamMoonRings, streamMarsRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
-import { moonEcliptic, earthEqCenterDeg } from './ephemeris';
+import { moonEcliptic, keplerScenePos } from './ephemeris';
 import { raDecToScene } from './sky';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
@@ -123,6 +123,7 @@ async function start(): Promise<void> {
   let overlayHidden = false; // H: hide the overlay — HUD, labels, orbit lines
   let webA = 1; // last-applied cosmic scale factor
 
+  const keplerOut: [number, number, number] = [0, 0, 0];
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -142,15 +143,23 @@ async function start(): Promise<void> {
         x = m.distM * Math.cos(lat) * Math.cos(lon);
         y = m.distM * Math.sin(lat);
         z = -m.distM * Math.cos(lat) * Math.sin(lon);
+      } else if (b.el) {
+        // Full Keplerian elements (Standish 1800–2050): eccentric, inclined
+        // orbits solved per frame — verified against JPL Horizons to <0.15°
+        // (scripts/verify-ephemeris.mjs). Mercury finally swings its 0.206.
+        keplerScenePos(b.el, days / 36525, keplerOut);
+        x = keplerOut[0];
+        y = keplerOut[1];
+        z = keplerOut[2];
       } else {
-        const ec = b.eqCenter ? earthEqCenterDeg(days) : 0;
-        const theta = -2 * Math.PI * ((b.L0 + ec) / 360 + days / b.periodDays);
+        const theta = -2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
         x = b.a * Math.cos(theta);
         y = 0;
         z = b.a * Math.sin(theta);
       }
       if (b.frameOffset) {
         b.frameOffset[0] = x;
+        b.frameOffset[1] = y;
         b.frameOffset[2] = z;
       }
       for (const p of b.positions) {
@@ -161,6 +170,7 @@ async function start(): Promise<void> {
       if (b.spriteFloatBase !== undefined) {
         const d = u.groups[u.planetSpriteGroup].data;
         d[b.spriteFloatBase] = x;
+        d[b.spriteFloatBase + 1] = y;
         d[b.spriteFloatBase + 2] = z;
       }
     }
@@ -214,7 +224,7 @@ async function start(): Promise<void> {
   // through the penumbra and redden it in the umbra (sunlight refracted
   // through Earth's atmosphere — the blood moon). Pure geometry: the cone
   // radii come from the real Sun/Earth sizes and the live positions.
-  const earthBody = u.bodies.find((b) => b.eqCenter)!;
+  const earthBody = u.bodies.find((b) => b.frameOffset)!; // only Earth carries the frame
   function updateMoonShadow(): void {
     const e = earthBody.frameOffset!;
     const m = u.moonMesh.pos;
@@ -1382,15 +1392,23 @@ async function start(): Promise<void> {
       const ratio = len(rel) / orbit.radius;
       const fade = smootherstep((ratio - 0.02) / 0.25) * (1 - smootherstep((ratio - 40) / 360));
       if (fade < 0.01) continue;
-      const l = new Float32Array(8);
-      l[0] = rel[0];
-      l[1] = rel[1];
-      l[2] = rel[2];
-      l[3] = orbit.radius;
+      const l = new Float32Array(16);
+      // Ellipse center = focus (the frame's origin) + the center offset.
+      l[0] = rel[0] + (orbit.centerOff?.[0] ?? 0);
+      l[1] = rel[1] + (orbit.centerOff?.[1] ?? 0);
+      l[2] = rel[2] + (orbit.centerOff?.[2] ?? 0);
       l[4] = orbit.color[0];
       l[5] = orbit.color[1];
       l[6] = orbit.color[2];
       l[7] = orbit.alpha * fade;
+      const A = orbit.axisA ?? [orbit.radius, 0, 0];
+      const B = orbit.axisB ?? [0, 0, orbit.radius];
+      l[8] = A[0];
+      l[9] = A[1];
+      l[10] = A[2];
+      l[12] = B[0];
+      l[13] = B[1];
+      l[14] = B[2];
       data.lines.push(l);
     }
 
