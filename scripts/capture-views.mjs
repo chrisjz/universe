@@ -54,8 +54,12 @@ mkdirSync(outDir, { recursive: true });
 writeFileSync('dist/__probe.html', '<!doctype html><meta charset="utf-8" /><title>probe</title>');
 
 // ---- serve dist/ ----
+// detached: npx wraps vite in a child; killing the process GROUP is the
+// only way the server actually dies (an orphaned vite holding stdout kept
+// the CI step alive forever after a fully successful capture).
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
   stdio: ['ignore', 'pipe', 'inherit'],
+  detached: true,
 });
 await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error('vite preview did not start')), 20000);
@@ -278,8 +282,15 @@ try {
     }
   }
 } finally {
-  await browser.close();
-  server.kill();
+  // A wedged GPU process can make Chrome refuse a graceful close; don't
+  // let cleanup outlive the work it's cleaning up after.
+  await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 10000))]);
+  browser.process()?.kill('SIGKILL');
+  try {
+    process.kill(-server.pid, 'SIGKILL');
+  } catch {
+    server.kill('SIGKILL');
+  }
 }
 
 if (failed) {
@@ -287,3 +298,4 @@ if (failed) {
   process.exit(1);
 }
 console.log(`captured ${VIEWS.length} views → ${outDir}/`);
+process.exit(0); // lingering watchdog timers must not keep the step alive
