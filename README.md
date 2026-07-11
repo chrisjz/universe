@@ -176,18 +176,23 @@ by theme:
 - [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
+- [ ] Sagittarius A*: the real black hole at the galactic center with geodesic gravitational lensing — the background stars bend for real
 
 **A living solar system**
 
 - [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
 - [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
 - [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
+- [ ] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as real destinations — Horizons trajectories compressed with Chebyshev fits, so "where is Voyager right now" has a true answer
+- [ ] The Moon's shadow on the Earth: during a solar eclipse the umbra crawls across the real map — the geometry already exists, drawn where it lands
+- [ ] Comet tails: dust and ion tails as physically derived curves (radiation pressure and solar wind on the true orbits) — Halley grows its tail toward perihelion
 
 **The experience**
 
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
 - [x] Atmospheric scattering: a real single-scatter Rayleigh + Mie atmosphere for Earth — the blue limb from orbit, blue noons and red sunsets from the picnic, stars fading into daylight, all from one ray-marched integral
+- [ ] Mars's sky at Jezero: the same scattering integral with Mars's thin CO₂ and dust — the butterscotch daytime sky and the blue sunsets, which really are backwards from Earth's
 - [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 
@@ -195,7 +200,8 @@ by theme:
 
 - [x] Visual regression CI: eight deterministic views rendered with WebGPU on software Vulkan (Mesa lavapipe) in Actions, pixel-compared against baselines
 - [x] Ephemeris tests against JPL Horizons: every planet within 0.2° at three epochs, on ephemeris changes + weekly
-- [ ] Mobile performance tier: device-aware star budget and texture sizes
+- [ ] Performance, measured first: a headless attribution harness (which system costs what, per view), then targeted fixes — shader-side comoving scaling, adaptive atmosphere sampling, per-instance Kepler, noise-octave LOD — with any visible trade-off decided explicitly
+- [ ] Mobile performance tier: device-aware star budget, DPR and texture sizes
 
 <details id="shipped">
 <summary><b>Shipped</b> — the founding roadmap, complete</summary>
