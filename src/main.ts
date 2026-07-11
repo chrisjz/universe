@@ -981,20 +981,12 @@ async function start(): Promise<void> {
     },
     { passive: false },
   );
-  // Number keys cover every HUD button in bar order (1–9, then 0): the
-  // main chain and the inward-journey stages alike.
-  const keyTargets = u.targets.map((t, i) => ({ t, i })).filter(({ t }) => !t.hidden || t.button);
   window.addEventListener('keydown', (e) => {
     if (hud.isSearchOpen()) return; // the search input owns the keyboard
     if (e.key === '/') {
       e.preventDefault();
       hud.openSearch();
       return;
-    }
-    const n = e.key === '0' ? 10 : parseInt(e.key, 10);
-    if (n >= 1 && n <= Math.min(keyTargets.length, 10)) {
-      touring = false;
-      flyTo(keyTargets[n - 1].i);
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);

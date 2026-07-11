@@ -1598,6 +1598,21 @@ export function buildUniverse(): Universe {
       exit: 5e10,
       radius: 6.957e8,
     },
+    // Bookmarks follow the grand tour's order — Jezero comes between the
+    // Sun and Earth, exactly where the tour flies it.
+    {
+      name: 'JEZERO · MARS',
+      slug: 'jezero',
+      source: 'Perseverance landing site, 18.445°N 77.451°E — Viking imagery, MOLA terrain',
+      frame: jezero,
+      pos: jzAnchor([0, 0.5, 0]),
+      dist: 4e4,
+      pitch: 0.35,
+      sunlit: true,
+      parent: 'mars',
+      exit: 2e7,
+      basis: jzBasis,
+    },
     {
       name: 'EARTH',
       slug: 'earth',
@@ -1657,23 +1672,8 @@ export function buildUniverse(): Universe {
       enter: 0.35,
       basis: siteBasis,
     },
-    // Hidden targets stay after the visible nine so keys 1-7 remain stable.
+    // Hidden targets stay after the visible bookmarks.
     ...microTargets,
-    // Jezero rides at the end of the bar (unnumbered) so every existing
-    // number key keeps its meaning; it is also in the zoom chain via Mars.
-    {
-      name: 'JEZERO · MARS',
-      slug: 'jezero',
-      source: 'Perseverance landing site, 18.445°N 77.451°E — Viking imagery, MOLA terrain',
-      frame: jezero,
-      pos: jzAnchor([0, 0.5, 0]),
-      dist: 4e4,
-      pitch: 0.35,
-      sunlit: true,
-      parent: 'mars',
-      exit: 2e7,
-      basis: jzBasis,
-    },
     ...planetTargets,
     ...starTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
