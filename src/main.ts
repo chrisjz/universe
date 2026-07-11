@@ -74,7 +74,7 @@ async function start(): Promise<void> {
 
   const u = buildUniverse();
   u.patchGeoms.forEach((g) => renderer.addGeometry(g.name, g.verts, g.indices));
-  const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data));
+  const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data, g.moving));
 
   // ---- simulation clock & mean-longitude ephemeris ----
   // Planet/Moon positions are real for the simulated date (circular, coplanar
@@ -118,6 +118,7 @@ async function start(): Promise<void> {
   let speedIndex = REAL_TIME_INDEX;
   let paused = false;
   let seam = false; // the honest seam: recolor by provenance (X)
+  let starYears = 0; // clamped years from J2000 driving stellar proper motion
   let webA = 1; // last-applied cosmic scale factor
 
   function updateBodies(): void {
@@ -179,6 +180,11 @@ async function start(): Promise<void> {
       }
     }
     for (const h of u.postSpin) h(); // surface sites ride their planet's spin
+    // Stars ride their real space velocities. Proper motion is linear on
+    // the ±1 Myr scale; beyond that the drift holds (the galactic-year
+    // rotation carries deep time from there) — see the motion uniform.
+    starYears = Math.max(-1e6, Math.min(1e6, (simMs - J2000) / 3.15576e10));
+    u.driftStars(starYears);
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
@@ -417,7 +423,7 @@ async function start(): Promise<void> {
   const DATA_URL = starParams.get('data') ?? 'https://data.universeatlas.org/stars/';
   let starCount = 0;
   const onStarChunk = (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta): void => {
-    groupIndex.push(renderer.addPointGroup(instances));
+    groupIndex.push(renderer.addPointGroup(instances, true));
     u.groups.push({
       frame: u.sunFrame,
       pos: [0, 0, 0],
@@ -426,8 +432,9 @@ async function start(): Promise<void> {
       nearFade: true,
       prov: 0,
       cone: meta.cone ?? undefined,
+      moving: true,
     });
-    starCount += instances.length / 8;
+    starCount += instances.length / 11;
   };
   // Stars are invisible beyond their fade extents (~200 pc), so the stream
   // starts only once the camera actually enters the stellar neighborhood —
@@ -1142,7 +1149,7 @@ async function start(): Promise<void> {
   }
 
   // ---- render loop ----
-  const globals = new Float32Array(28);
+  const globals = new Float32Array(32);
   let last = performance.now();
   const t0 = last;
 
@@ -1281,6 +1288,7 @@ async function start(): Promise<void> {
     globals[25] = 1 / Math.log2(1 + FAR / nearRef);
     globals[26] = (now - t0) / 1000;
     globals[27] = pxFactor;
+    globals[28] = starYears; // proper-motion years (see shaders.ts Globals.motion)
 
     const data: FrameData = { globals, meshes: [], lines: [], groups: [] };
 
@@ -1389,7 +1397,10 @@ async function start(): Promise<void> {
       if (fade < 0.012) return; // beyond the band's reach: invisible, skip the draw
       if (g.cone) {
         const camSunDist = len(rel); // star tiles live in the sun frame
-        const margin = Math.atan2(camSunDist, 1e17); // nearest faint stars ~3 pc
+        // Two margins: parallax (the camera left the sun) and proper-motion
+        // drift (the stars left their J2000 tiles — over 100k years nearby
+        // stars swing across the sky for real, and culling must let them).
+        const margin = Math.atan2(camSunDist, 1e17) + Math.min(Math.PI, (Math.abs(starYears) * 3.2e12) / 1e17);
         const limit = halfDiag + g.cone.ang + margin + 0.06;
         if (limit < Math.PI) {
           const cos = fwd[0] * g.cone.dir[0] + fwd[1] * g.cone.dir[1] + fwd[2] * g.cone.dir[2];
@@ -1407,8 +1418,11 @@ async function start(): Promise<void> {
     });
 
     // Constellation figures: a dome of line segments around the sun, shown
-    // while the camera is inside the stellar neighborhood.
-    const skyVisible = constellations && cam.dist < 2e19;
+    // while the camera is inside the stellar neighborhood. The figures are
+    // drawn for the PRESENT sky — beyond ±25,000 years the stars have
+    // visibly drifted off them (that's the point of proper motion), so the
+    // lines bow out honestly rather than pointing at empty sky.
+    const skyVisible = constellations && cam.dist < 2e19 && Math.abs(starYears) < 25000;
     if (skyVisible) {
       const rel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
       const s = new Float32Array(8);

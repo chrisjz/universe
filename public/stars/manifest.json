@@ -1,5 +1,7 @@
 {
   "source": "ATHYG v3.2 (Tycho-2 + Gaia DR3), https://github.com/astronexus/ATHYG-Database, CC BY-SA 4.0",
+  "format": 2,
+  "stride": 22,
   "total": 853929,
   "chunks": [
     {

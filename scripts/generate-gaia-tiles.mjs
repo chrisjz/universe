@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, readd
 import { resolve } from 'node:path';
 
 const TAP = 'https://gea.esac.esa.int/tap-server/tap';
-const CACHE = '.gaia-cache';
+const CACHE = '.gaia-cache-v2'; // v2: adds pmra/pmdec/radial_velocity columns
 const OUT = resolve('../universe-data/stars');
 const G_MIN = 11;
 const G_MAX = 13;
@@ -63,7 +63,7 @@ async function tapChunk(i) {
   const lo = BigInt(i) << 59n;
   const hi = (BigInt(i + 1) << 59n) - 1n;
   const query =
-    `SELECT ra, dec, parallax, phot_g_mean_mag, bp_rp FROM gaiadr3.gaia_source ` +
+    `SELECT ra, dec, parallax, phot_g_mean_mag, bp_rp, pmra, pmdec, radial_velocity FROM gaiadr3.gaia_source ` +
     `WHERE phot_g_mean_mag >= ${G_MIN} AND phot_g_mean_mag < ${G_MAX} ` +
     `AND parallax_over_error > 5 AND source_id BETWEEN ${lo} AND ${hi}`;
   const body = new URLSearchParams({
@@ -170,12 +170,30 @@ function build() {
       const plx = parseFloat(f[2]); // mas
       const g = parseFloat(f[3]);
       const bpRp = parseFloat(f[4]);
+      const pmra = parseFloat(f[5]); // mas/yr (already mu_alpha*)
+      const pmdec = parseFloat(f[6]); // mas/yr
+      const rv = parseFloat(f[7]); // km/s (missing for most faint stars)
       if (!Number.isFinite(ra) || !Number.isFinite(dec) || !(plx > 0) || !Number.isFinite(g)) continue;
       const distPc = 1000 / plx;
       if (distPc <= 0 || distPc >= 90000) continue;
       // Equatorial unit vector -> galactic (matches the ATHYG pipeline).
       const eq = [Math.cos(dec) * Math.cos(ra), Math.cos(dec) * Math.sin(ra), Math.sin(dec)];
       const gal = M.map((row) => row[0] * eq[0] + row[1] * eq[1] + row[2] * eq[2]);
+      // 3D velocity from proper motion (+ radial velocity where Gaia has
+      // it): v_t = 4.74047 km/s per (arcsec/yr · pc) along the equatorial
+      // east/north tangent vectors. Missing rv -> transverse motion only.
+      const east = [-Math.sin(ra), Math.cos(ra), 0];
+      const north = [-Math.sin(dec) * Math.cos(ra), -Math.sin(dec) * Math.sin(ra), Math.cos(dec)];
+      const kt = 4.74047e-3 * distPc; // km/s per mas/yr at this distance
+      const vr = Number.isFinite(rv) ? rv : 0;
+      const vEq = [0, 1, 2].map(
+        (k) =>
+          kt * ((Number.isFinite(pmra) ? pmra : 0) * east[k] + (Number.isFinite(pmdec) ? pmdec : 0) * north[k]) +
+          vr * eq[k],
+      );
+      const vGal = M.map((row) => row[0] * vEq[0] + row[1] * vEq[1] + row[2] * vEq[2]);
+      const KMS_TO_M_YR = 3.15576e10;
+      const vel = [-vGal[0] * KMS_TO_M_YR, vGal[2] * KMS_TO_M_YR, vGal[1] * KMS_TO_M_YR];
       const absmag = g + 5 - 5 * Math.log10(distPc);
       // BP-RP -> approximate B-V, only for the blackbody color tint.
       const bv = Number.isFinite(bpRp) ? 0.78 * bpRp - 0.02 : 0.6;
@@ -189,6 +207,7 @@ function build() {
       const pl = Math.hypot(pos[0], pos[1], pos[2]);
       bands[band].push({
         pos,
+        vel,
         // Unit direction in the tile file's (pre-orientation) convention;
         // the runtime culler rotates it into the true sky with the stars.
         dir: [pos[0] / pl, pos[1] / pl, pos[2] / pl],
@@ -217,10 +236,13 @@ function build() {
     const tiles = subSplit(bands[b], 3);
     tiles.forEach((slice, t) => {
       slice.sort((a, z) => a.mag - z.mag);
-      const buf = new ArrayBuffer(slice.length * 16);
+      // v2 record: 22 bytes — v1's 16 plus a quantized 3D velocity
+      // (int16 gigameters/yr: ±33e12 m/yr ≈ ±1040 km/s, 0.03 km/s steps).
+      const buf = new ArrayBuffer(slice.length * 22);
       const view = new DataView(buf);
+      const q = (v) => Math.max(-32767, Math.min(32767, Math.round(v / 1e9)));
       slice.forEach((st, i) => {
-        const o = i * 16;
+        const o = i * 22;
         view.setFloat32(o, st.pos[0], true);
         view.setFloat32(o + 4, st.pos[1], true);
         view.setFloat32(o + 8, st.pos[2], true);
@@ -228,6 +250,9 @@ function build() {
         view.setUint8(o + 13, Math.round(st.rgb[1] * 255));
         view.setUint8(o + 14, Math.round(st.rgb[2] * 255));
         view.setUint8(o + 15, st.s);
+        view.setInt16(o + 16, q(st.vel[0]), true);
+        view.setInt16(o + 18, q(st.vel[1]), true);
+        view.setInt16(o + 20, q(st.vel[2]), true);
       });
       const file = `gaia-b${b}-t${t}.bin`;
       writeFileSync(`${OUT}/${file}`, Buffer.from(buf));
@@ -246,7 +271,10 @@ function build() {
     `${OUT}/manifest.json`,
     JSON.stringify(
       {
-        source: 'ATHYG v3.2 (CC BY-SA 4.0) mag<=11 + Gaia DR3 (ESA/Gaia/DPAC) 11<=G<13 with parallax_over_error>5',
+        source:
+          'ATHYG v3.2 (CC BY-SA 4.0) mag<=11 + Gaia DR3 (ESA/Gaia/DPAC) 11<=G<13 with parallax_over_error>5; 3D space velocities from proper motions + radial velocities',
+        format: 2,
+        stride: 22,
         total,
         chunks,
       },

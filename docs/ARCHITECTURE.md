@@ -147,10 +147,19 @@ top.
 
 ## The deep sky
 
-**6.8 million stars**, every one at its measured 3D position, in a 16-byte
+**6.8 million stars**, every one at its measured 3D position, in a 22-byte
 record: f32 position ×3, u8 color ×3 (blackbody from the measured color
-index), u8 encoded absolute magnitude. Apparent magnitude and physical
-sprite size are reconstructed at load time from absmag + distance.
+index), u8 encoded absolute magnitude, and int16 ×3 quantized 3D space
+velocity (gigameters/year — from Gaia proper motions and radial
+velocities). Apparent magnitude and physical sprite size are reconstructed
+at load time; velocity is applied **in the vertex shader** (pos + vel ×
+years-from-J2000, clamped ±1 Myr where linear proper motion is honest), so
+6.8M stars move through deep time at zero CPU cost. Named-star targets and
+the famous five's meshes drift on the CPU with the same velocities, so a
+deep-time Sirius stays clickable exactly where its light is. Constellation
+figures are drawn for the present sky and retire beyond ±25,000 years —
+past that the stars have visibly left them. The frustum-culling cone
+margin widens with |years| (drifting stars leave their J2000 tiles).
 
 The catalog is **hierarchical LOD tiles** served from
 [chrisjz/universe-data](https://github.com/chrisjz/universe-data)
