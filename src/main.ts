@@ -119,7 +119,8 @@ async function start(): Promise<void> {
   let paused = false;
   let seam = false; // the honest seam: recolor by provenance (X)
   let starYears = 0; // clamped years from J2000 driving stellar proper motion
-  let captureRequested = false; // photo mode: save a supersampled frame (S)
+  let captureRequested = false; // photo: save a supersampled frame (S)
+  let overlayHidden = false; // H: hide the overlay — HUD, labels, orbit lines
   let webA = 1; // last-applied cosmic scale factor
 
   function updateBodies(): void {
@@ -998,8 +999,13 @@ async function start(): Promise<void> {
       return;
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
-    // Photo mode: H clears every overlay; S saves a 2x-supersampled PNG.
-    if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('photo');
+    // H toggles the overlay (HUD, labels, orbit lines); S saves a photo.
+    // The two are independent: the canvas capture never includes the DOM
+    // overlay, so S is clean regardless — H is for what YOU see.
+    if (e.key === 'h' || e.key === 'H') {
+      overlayHidden = !overlayHidden;
+      document.body.classList.toggle('photo', overlayHidden);
+    }
     if (e.key === 's' || e.key === 'S') captureRequested = true;
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
     if (e.key === ']') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
@@ -1369,7 +1375,9 @@ async function start(): Promise<void> {
       data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }
 
-    for (const orbit of u.orbits) {
+    // Orbit rings are GPU overlay too: they yield with the rest when the
+    // overlay is hidden (H) — a clean frame means no scaffolding at all.
+    for (const orbit of overlayHidden ? [] : u.orbits) {
       const rel = relPos(orbit.frame, orbit.center, cam.frame, camLocal);
       const ratio = len(rel) / orbit.radius;
       const fade = smootherstep((ratio - 0.02) / 0.25) * (1 - smootherstep((ratio - 40) / 360));
