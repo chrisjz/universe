@@ -83,7 +83,14 @@ export class Renderer {
     console.log('[webgpu] adapter ok');
     this.ctx = this.canvas.getContext('webgpu') as GPUCanvasContext;
     this.format = navigator.gpu.getPreferredCanvasFormat();
-    this.ctx.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
+    // COPY_SRC: snapshot() reads frames back through the WebGPU API — on
+    // SwiftShader (CI) every canvas-side readback path composites to black.
+    this.ctx.configure({
+      device: this.device,
+      format: this.format,
+      alphaMode: 'opaque',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
 
     const d = this.device;
     this.globalsBuf = d.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -357,6 +364,43 @@ export class Renderer {
     this.dayViews.delete(key);
     this.texBGs.delete(key);
   }
+  // Reads the just-rendered frame back through the WebGPU API. Must be
+  // called in the same task as render() — the copy is encoded against the
+  // current canvas texture before it is presented. This is the only capture
+  // path that works on SwiftShader, where the canvas image itself (CDP
+  // screenshots, toBlob, drawImage) always reads back opaque black.
+  snapshot(): Promise<ImageData> {
+    const tex = this.ctx.getCurrentTexture();
+    const w = tex.width;
+    const h = tex.height;
+    const rowBytes = Math.ceil((w * 4) / 256) * 256;
+    const buf = this.device.createBuffer({
+      size: rowBytes * h,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const enc = this.device.createCommandEncoder();
+    enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: rowBytes }, [w, h]);
+    this.device.queue.submit([enc.finish()]);
+    return buf.mapAsync(GPUMapMode.READ).then(() => {
+      const src = new Uint8Array(buf.getMappedRange());
+      const out = new Uint8ClampedArray(w * h * 4);
+      const b = this.format === 'bgra8unorm' ? 2 : 0; // swizzle to RGBA
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const si = y * rowBytes + x * 4;
+          const di = (y * w + x) * 4;
+          out[di] = src[si + b];
+          out[di + 1] = src[si + 1];
+          out[di + 2] = src[si + (2 - b)];
+          out[di + 3] = 255;
+        }
+      }
+      buf.unmap();
+      buf.destroy();
+      return new ImageData(out, w, h);
+    });
+  }
+
   // SwiftShader (the CPU rasterizer CI runs on) can't blit an ImageBitmap
   // straight into a texture — copyExternalImageToTexture wants a GPU-backed
   // image. Fall back to a 2D-canvas readback and a plain writeTexture.

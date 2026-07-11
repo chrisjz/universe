@@ -84,27 +84,30 @@ const browser = await puppeteer.launch({
 
 let failed = 0;
 try {
-  const page = await browser.newPage();
-  page.on('pageerror', (e) => console.error(`  pageerror: ${e.message}`));
-  // WebGPU validation failures land on the console, not as exceptions.
-  page.on('console', (m) => {
-    if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
-  });
-
-  // The spike's verdict, in the log: which adapter Chrome actually handed us.
-  await page.goto(`http://localhost:${PORT}/?paused=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  const adapter = await page.evaluate(async () => {
-    if (!navigator.gpu) return 'no navigator.gpu';
-    const a = await navigator.gpu.requestAdapter();
-    if (!a) return 'requestAdapter() returned null';
-    const i = a.info ?? {};
-    return `${i.vendor ?? '?'} / ${i.architecture ?? '?'} / ${i.description ?? i.device ?? '?'}`;
-  });
-  console.log(`WebGPU adapter: ${adapter}`);
+  const mkPage = async () => {
+    const p = await browser.newPage();
+    p.on('pageerror', (e) => console.error(`  pageerror: ${e.message}`));
+    // WebGPU validation failures land on the console, not as exceptions.
+    p.on('console', (m) => {
+      if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
+      else if (m.text().startsWith('[webgpu]')) console.log(`  ${m.text()}`);
+    });
+    return p;
+  };
+  let page = await mkPage();
 
   for (const v of VIEWS) {
     const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1`;
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+    // Heavy view loads occasionally wedge a tab on SwiftShader; one retry
+    // on a fresh page absorbs the flake without hiding real failures.
+    try {
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+    } catch (e) {
+      console.error(`  goto ${v.name} failed (${e.message}) — retrying on a fresh page`);
+      await page.close().catch(() => {});
+      page = await mkPage();
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+    }
     // Hide every DOM overlay (HUD, labels): the diff should see only GPU
     // pixels — text rendering varies across runner images and star-count
     // readouts vary with load timing.
@@ -116,10 +119,11 @@ try {
       title = await page.title();
     }
     // Let late texture uploads and star chunks land, then read the frame
-    // back through the app's __snap hook — a same-task canvas.toBlob inside
-    // the render loop. Post-present readback (CDP screenshot, plain toBlob)
-    // returns opaque black under SwiftShader; this is the one path that
-    // sees real pixels. The race guards against a dead frame loop.
+    // back through the app's __snap hook — a WebGPU copyTextureToBuffer in
+    // the render loop, encoded before present. Every canvas-side readback
+    // (CDP screenshot, toBlob, even same-task toBlob) is opaque black under
+    // SwiftShader; the API readback is the one path that sees real pixels.
+    // The race guards against a dead frame loop.
     await new Promise((r) => setTimeout(r, 3000));
     const dataUrl = await page.evaluate(() =>
       Promise.race([window.__snap(), new Promise((r) => setTimeout(() => r(''), 60000))]),

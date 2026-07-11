@@ -1551,21 +1551,29 @@ async function start(): Promise<void> {
 
     renderer.render(data);
     if (snapResolve) {
-      // Test hook: read the frame back in the task that rendered it. The
-      // post-present canvas image never materializes on SwiftShader (the
-      // CPU rasterizer CI runs on), so visual regression captures must
-      // come from here, not from an external screenshot.
+      // Test hook: read the frame back through the WebGPU API in the task
+      // that rendered it, then PNG-encode via a plain 2D canvas. On
+      // SwiftShader (CI) the WebGPU canvas image itself always reads back
+      // black, so neither screenshots nor toBlob on the GPU canvas work.
       const done = snapResolve;
       snapResolve = null;
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          done('');
-          return;
-        }
-        const fr = new FileReader();
-        fr.onload = () => done(fr.result as string);
-        fr.readAsDataURL(blob);
-      }, 'image/png');
+      renderer
+        .snapshot()
+        .then((img) => {
+          const cv = new OffscreenCanvas(img.width, img.height);
+          cv.getContext('2d')!.putImageData(img, 0, 0);
+          return cv.convertToBlob({ type: 'image/png' });
+        })
+        .then(
+          (blob) =>
+            new Promise<string>((res) => {
+              const fr = new FileReader();
+              fr.onload = () => res(fr.result as string);
+              fr.readAsDataURL(blob);
+            }),
+        )
+        .then(done)
+        .catch(() => done(''));
     }
     if (captureRequested) {
       captureRequested = false;
