@@ -225,6 +225,17 @@ uniforms per draw. Textures stream in as they land — the Earth pair, the
 Moon color map, generation-stamped imagery rings — with procedural
 fallbacks so the scene never blocks on the network.
 
+The far field is baked: the faint Gaia bands (5.9M stars, individually
+sub-8-bit — they matter only as the Milky Way's collective grain) render
+once into an fp16 cubemap from the camera's own position, one face per
+frame, and then cost six vertices as an additive dome. Re-bakes trigger on
+~1 px of parallax (8e12 m of camera travel), >25k years of proper-motion
+drift, or new tiles landing; the 854k bright ATHYG stars stay live sprites.
+Measured pixel-identical to live rendering, and the slow views went from
+10–25 fps to 43–60. Past ±1–3 Myr the stellar catalog honestly fades out —
+positions freeze at the ±1 Myr proper-motion clamp, so deep time keeps only
+the comoving web and galaxies.
+
 The atmosphere is one ray-marched single-scatter integral (Rayleigh + Mie,
 measured sea-level coefficients and scale heights) over a 100 km shell,
 drawn last with premultiplied blending: the in-scatter adds and everything

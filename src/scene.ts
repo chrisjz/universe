@@ -49,6 +49,8 @@ export interface PointGroup {
   // deep sky is vertex-bound, and most tiles are behind you or underfoot.
   cone?: { dir: V3; ang: number };
   maxDrift?: number; // fastest star in the group, m/yr (cull margin input)
+  stellar?: boolean; // fades out in deep time (stars freeze at the ±1 Myr clamp)
+  farBand?: boolean; // faint band eligible for the far-field bake
   // Instance layout / pipeline: 'moving' stars carry a 3D velocity (11
   // floats), 'orbital' small bodies carry Kepler elements (10 floats) and
   // a per-group tint; default is the static 8-float layout.
@@ -1566,6 +1568,7 @@ export function buildUniverse(): Universe {
       fadeExtent: 8e18,
       nearFade: true,
       prov: 0,
+      stellar: true,
       mode: 'moving',
     });
   }
