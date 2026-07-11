@@ -170,7 +170,7 @@ by theme:
 
 - [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
 - [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
-- [ ] Messier destinations: the deep-sky catalog at real positions and sizes — M31, M13, the Orion Nebula, searchable and flyable
+- [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
 
 **A living solar system**
@@ -246,8 +246,9 @@ pipelines (all regenerable from public sources) are documented in
   **ESA/Gaia/DPAC**).
 - **Galaxies** — the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mrs/)
   (Huchra et al. 2012, ApJS 199, 26).
-- **Constellations** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
-  by Olaf Frohn (BSD-3-Clause).
+- **Constellations & Messier objects** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
+  by Olaf Frohn (BSD-3-Clause); Messier distances from
+  [Wikidata](https://www.wikidata.org/) (CC0, median of published claims).
 - **Earth** — NASA [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
   and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
   (public domain); street-level imagery © **Esri** — Source: Esri, Maxar,

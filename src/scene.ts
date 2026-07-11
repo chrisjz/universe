@@ -8,6 +8,7 @@ import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
+import { MESSIER } from './data/messier';
 
 export interface MeshObj {
   frame: Frame;
@@ -1308,6 +1309,51 @@ export function buildUniverse(): Universe {
     );
   }
 
+  // ---- The Messier catalog: 110 deep-sky destinations ----
+  // Real positions, distances (Wikidata medians), and physical sizes;
+  // rendered as type-tinted glows (an extended object is not a point, but
+  // a soft sprite at its true size is the honest quick sketch — prov 0.5).
+  const messierTargets: Target[] = [];
+  {
+    const TYPE_COLOR: Record<string, [number, number, number]> = {
+      gc: [1.0, 0.85, 0.6], // globular cluster: old golden stars
+      oc: [0.7, 0.8, 1.0], // open cluster: young blue-white
+      pn: [0.5, 1.0, 0.9], // planetary nebula
+      snr: [1.0, 0.7, 0.5], // supernova remnant
+      sfr: [1.0, 0.6, 0.7], // star-forming nebula (M42 and kin)
+    };
+    const md = new Float32Array(MESSIER.length * 8);
+    MESSIER.forEach(([n, name, ra, dec, distLy, sizeM, type, mag], i) => {
+      const dir = raDecToScene(ra, dec);
+      const dist = distLy * 9.4607e15;
+      const pos: V3 = [dir[0] * dist, dir[1] * dist, dir[2] * dist];
+      const c = TYPE_COLOR[type] ?? [0.92, 0.9, 0.82]; // galaxies & the rest: pale
+      const o = i * 8;
+      md[o] = pos[0];
+      md[o + 1] = pos[1];
+      md[o + 2] = pos[2];
+      md[o + 3] = sizeM / 2;
+      md[o + 4] = c[0];
+      md[o + 5] = c[1];
+      md[o + 6] = c[2];
+      md[o + 7] = Math.min(Math.max(0.9 - 0.08 * mag, 0.08), 0.8);
+      messierTargets.push({
+        name: `M${n}${name ? ' · ' + name.toUpperCase() : ''}`,
+        slug: `m${n}`,
+        frame: sunFrame,
+        pos,
+        dist: Math.max(3 * sizeM, 1e15),
+        pitch: 0.1,
+        parent: 'galaxy',
+        exit: Math.max(6e17, 3 * dist),
+        radius: sizeM / 2,
+        hidden: true,
+        source: 'measured position, size & distance (Wikidata) — stylized glow',
+      });
+    });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: md, fadeExtent: 5e24, prov: 0.5 });
+  }
+
   // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
   // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
 
@@ -1703,6 +1749,7 @@ export function buildUniverse(): Universe {
     ...microTargets,
     ...planetTargets.filter((t) => t.slug !== 'mars'),
     ...starTargets,
+    ...messierTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
     // roams this point anywhere on the planet; the imagery stack follows.
     {
