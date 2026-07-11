@@ -632,6 +632,16 @@ async function start(): Promise<void> {
   // The rendered horizon roll follows the active basis with smoothing, so
   // entering/leaving a tilted site rolls the view instead of snapping it.
   let viewUp: V3 = [0, 1, 0];
+  // The basis viewUp was last expressed in, plus that basis's orientation
+  // from the previous frame. Surface bases rotate with their planet's spin,
+  // and the horizon smoothing must ride that rotation exactly — only
+  // genuine basis hand-offs should ease.
+  let upBasisRef: Basis | undefined;
+  const upBasisPrev: Basis = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
 
   // Arrival yaw for sunlit-side targets, computed live (bodies move now).
   function arrivalYaw(t: Target): number | undefined {
@@ -1350,7 +1360,32 @@ async function start(): Promise<void> {
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
-    const targetUp = activeBasis()?.[1] ?? ([0, 1, 0] as V3);
+    // First, ride the basis's own frame-to-frame rotation exactly: under
+    // accelerated time the site's zenith sweeps its diurnal cone in
+    // seconds, and a merely-chasing up-vector lags into a visible ground
+    // roll. Co-rotating first means the ground holds still and the SKY
+    // wheels overhead — at any time speed; the lerp then only ever eases
+    // genuine hand-offs between bases.
+    const basisNow = activeBasis();
+    if (basisNow && basisNow === upBasisRef) {
+      const l0 = dot(upBasisPrev[0], viewUp);
+      const l1 = dot(upBasisPrev[1], viewUp);
+      const l2 = dot(upBasisPrev[2], viewUp);
+      viewUp = [
+        basisNow[0][0] * l0 + basisNow[1][0] * l1 + basisNow[2][0] * l2,
+        basisNow[0][1] * l0 + basisNow[1][1] * l1 + basisNow[2][1] * l2,
+        basisNow[0][2] * l0 + basisNow[1][2] * l1 + basisNow[2][2] * l2,
+      ];
+    }
+    upBasisRef = basisNow;
+    if (basisNow) {
+      for (let k = 0; k < 3; k++) {
+        upBasisPrev[k][0] = basisNow[k][0];
+        upBasisPrev[k][1] = basisNow[k][1];
+        upBasisPrev[k][2] = basisNow[k][2];
+      }
+    }
+    const targetUp = basisNow?.[1] ?? ([0, 1, 0] as V3);
     viewUp = norm(lerp3(viewUp, targetUp, Math.min(1, dt * 3)));
     const { view, right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const dir = camDir();
