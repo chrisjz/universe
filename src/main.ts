@@ -1347,8 +1347,14 @@ async function start(): Promise<void> {
             cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
           }
           if (r >= ground + 1.2 || cam.pitch >= 1.53) break;
-          cam.pitch = Math.min(cam.pitch + 0.02, 1.53);
-          cam.tilt = Math.min(cam.tilt + 0.02, 1.5); // blocked orbit -> sky gaze
+          // Climb by the angular deficit, not a fixed step: a fixed 0.02 rad
+          // at a 40 km site orbit (Tranquility and Jezero arrive at 4e4 m)
+          // lifted the camera ~800 m clear of the ground — past the 60 m
+          // "zoomed away" threshold above, so the head-tilt decayed every
+          // frame and the sky gaze sagged back to the horizon.
+          const step = Math.min(0.02, Math.max(1e-6, (ground + 1.2 - r) / Math.max(1, cam.dist)));
+          cam.pitch = Math.min(cam.pitch + step, 1.53);
+          cam.tilt = Math.min(cam.tilt + step, 1.5); // blocked orbit -> sky gaze
         }
       } else if (cam.tilt > 0 && !flight) {
         cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
