@@ -109,9 +109,10 @@ try {
   };
   let page = await mkPage();
 
-  // Minimal WebGPU readback probe on a blank page: clear a 4×4 texture,
-  // copy it to a buffer, mapAsync. Its outcome separates "readback is
-  // broken on this driver stack" from "something in the app breaks it".
+  // Staged WebGPU readback probes on a blank page, escalating from a tiny
+  // clear-copy-map to the app's exact render shape (full-size bgra8unorm,
+  // 4×MSAA + depth, resolve into a COPY_SRC texture). The first stage that
+  // hangs or errors names the primitive the runner's driver can't do.
   await page.goto(`http://localhost:${PORT}/__probe.html`, { waitUntil: 'domcontentloaded', timeout: 30000 });
   const probe = await page.evaluate(async () => {
     try {
@@ -119,39 +120,72 @@ try {
       const a = await navigator.gpu.requestAdapter();
       if (!a) return 'no adapter';
       const d = await a.requestDevice();
-      const tex = d.createTexture({
-        size: [4, 4],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-      });
-      const enc = d.createCommandEncoder();
-      enc
-        .beginRenderPass({
-          colorAttachments: [
-            {
-              view: tex.createView(),
-              loadOp: 'clear',
-              storeOp: 'store',
-              clearValue: { r: 1, g: 0.5, b: 0.25, a: 1 },
-            },
-          ],
-        })
-        .end();
-      const buf = d.createBuffer({ size: 256 * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: 256 }, [4, 4]);
-      d.queue.submit([enc.finish()]);
-      return await Promise.race([
-        buf.mapAsync(GPUMapMode.READ).then(() => {
-          const px = new Uint8Array(buf.getMappedRange());
-          return `pixel ${px[0]},${px[1]},${px[2]},${px[3]} (want 255,128,64,255)`;
-        }),
-        new Promise((r) => setTimeout(() => r('mapAsync never resolved'), 15000)),
-      ]);
+      const stages = [
+        { name: 'tiny-rgba', w: 4, h: 4, format: 'rgba8unorm', msaa: false },
+        { name: 'full-rgba', w: 800, h: 500, format: 'rgba8unorm', msaa: false },
+        { name: 'full-bgra', w: 800, h: 500, format: 'bgra8unorm', msaa: false },
+        { name: 'full-bgra-msaa-depth-resolve', w: 800, h: 500, format: 'bgra8unorm', msaa: true },
+      ];
+      const results = [];
+      for (const s of stages) {
+        const target = d.createTexture({
+          size: [s.w, s.h],
+          format: s.format,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        });
+        const att = {
+          loadOp: 'clear',
+          storeOp: s.msaa ? 'discard' : 'store',
+          clearValue: { r: 1, g: 0.5, b: 0.25, a: 1 },
+        };
+        const enc = d.createCommandEncoder();
+        if (s.msaa) {
+          const ms = d.createTexture({
+            size: [s.w, s.h],
+            sampleCount: 4,
+            format: s.format,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          });
+          const depth = d.createTexture({
+            size: [s.w, s.h],
+            sampleCount: 4,
+            format: 'depth32float',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          });
+          enc
+            .beginRenderPass({
+              colorAttachments: [{ ...att, view: ms.createView(), resolveTarget: target.createView() }],
+              depthStencilAttachment: {
+                view: depth.createView(),
+                depthClearValue: 1,
+                depthLoadOp: 'clear',
+                depthStoreOp: 'discard',
+              },
+            })
+            .end();
+        } else {
+          enc.beginRenderPass({ colorAttachments: [{ ...att, view: target.createView() }] }).end();
+        }
+        const rowBytes = Math.ceil((s.w * 4) / 256) * 256;
+        const buf = d.createBuffer({ size: rowBytes * s.h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        enc.copyTextureToBuffer({ texture: target }, { buffer: buf, bytesPerRow: rowBytes }, [s.w, s.h]);
+        d.queue.submit([enc.finish()]);
+        const out = await Promise.race([
+          buf.mapAsync(GPUMapMode.READ).then(() => {
+            const px = new Uint8Array(buf.getMappedRange());
+            return `ok ${px[0]},${px[1]},${px[2]},${px[3]}`;
+          }),
+          new Promise((r) => setTimeout(() => r('HANG'), 15000)),
+        ]).catch((e) => `error: ${e.message}`);
+        results.push(`${s.name}: ${out}`);
+        if (out === 'HANG') break; // the device is wedged; later stages are noise
+      }
+      return results.join(' | ');
     } catch (e) {
       return `error: ${e.message}`;
     }
   });
-  console.log(`WebGPU readback probe: ${probe}`);
+  console.log(`WebGPU readback probes: ${probe}`);
   // Fresh page for the views — software stacks are stingy with adapters.
   await page.close().catch(() => {});
   page = await mkPage();
