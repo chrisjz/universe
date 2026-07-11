@@ -632,6 +632,16 @@ async function start(): Promise<void> {
   // The rendered horizon roll follows the active basis with smoothing, so
   // entering/leaving a tilted site rolls the view instead of snapping it.
   let viewUp: V3 = [0, 1, 0];
+  // The basis viewUp was last expressed in, plus that basis's orientation
+  // from the previous frame. Surface bases rotate with their planet's spin,
+  // and the horizon smoothing must ride that rotation exactly — only
+  // genuine basis hand-offs should ease.
+  let upBasisRef: Basis | undefined;
+  const upBasisPrev: Basis = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
 
   // Arrival yaw for sunlit-side targets, computed live (bodies move now).
   function arrivalYaw(t: Target): number | undefined {
@@ -1108,6 +1118,24 @@ async function start(): Promise<void> {
       if (!touring) toggleTour();
     }, 1200);
   }
+  // ?at=/?years= must be applied BEFORE ?goto: the jump computes its
+  // sunlit-side arrival yaw from where the bodies are NOW, so pinning the
+  // clock afterwards left the camera aimed by the wall clock — every
+  // capture run got a slightly different yaw, drifting ~1°/day of real
+  // time at Earth. Clock first, then jump: the pose is a pure function of
+  // the URL.
+  const atParam = Date.parse(params.get('at') ?? '');
+  if (Number.isFinite(atParam)) {
+    simMs = atParam;
+    updateBodies();
+  }
+  // ?years=<offset from now> — deep-time deep link (e.g. ?years=-13e9 for
+  // just after the Big Bang, ?years=12000 for Vega as the pole star).
+  const yearsParam = parseFloat(params.get('years') ?? '');
+  if (Number.isFinite(yearsParam)) {
+    simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
+    updateBodies();
+  }
   const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
@@ -1132,19 +1160,6 @@ async function start(): Promise<void> {
   if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
   const pitchParam = parseFloat(params.get('pitch') ?? '');
   if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
-  // ?at=<ISO date/time> — start the simulation clock at a chosen moment.
-  const atParam = Date.parse(params.get('at') ?? '');
-  if (Number.isFinite(atParam)) {
-    simMs = atParam;
-    updateBodies();
-  }
-  // ?years=<offset from now> — deep-time deep link (e.g. ?years=-13e9 for
-  // just after the Big Bang, ?years=12000 for Vega as the pole star).
-  const yearsParam = parseFloat(params.get('years') ?? '');
-  if (Number.isFinite(yearsParam)) {
-    simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
-    updateBodies();
-  }
   // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
   // scene to one instant, which is what a reproducible screenshot needs.
   if (params.get('paused') !== null) paused = true;
@@ -1337,8 +1352,14 @@ async function start(): Promise<void> {
             cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
           }
           if (r >= ground + 1.2 || cam.pitch >= 1.53) break;
-          cam.pitch = Math.min(cam.pitch + 0.02, 1.53);
-          cam.tilt = Math.min(cam.tilt + 0.02, 1.5); // blocked orbit -> sky gaze
+          // Climb by the angular deficit, not a fixed step: a fixed 0.02 rad
+          // at a 40 km site orbit (Tranquility and Jezero arrive at 4e4 m)
+          // lifted the camera ~800 m clear of the ground — past the 60 m
+          // "zoomed away" threshold above, so the head-tilt decayed every
+          // frame and the sky gaze sagged back to the horizon.
+          const step = Math.min(0.02, Math.max(1e-6, (ground + 1.2 - r) / Math.max(1, cam.dist)));
+          cam.pitch = Math.min(cam.pitch + step, 1.53);
+          cam.tilt = Math.min(cam.tilt + step, 1.5); // blocked orbit -> sky gaze
         }
       } else if (cam.tilt > 0 && !flight) {
         cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
@@ -1350,7 +1371,32 @@ async function start(): Promise<void> {
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
-    const targetUp = activeBasis()?.[1] ?? ([0, 1, 0] as V3);
+    // First, ride the basis's own frame-to-frame rotation exactly: under
+    // accelerated time the site's zenith sweeps its diurnal cone in
+    // seconds, and a merely-chasing up-vector lags into a visible ground
+    // roll. Co-rotating first means the ground holds still and the SKY
+    // wheels overhead — at any time speed; the lerp then only ever eases
+    // genuine hand-offs between bases.
+    const basisNow = activeBasis();
+    if (basisNow && basisNow === upBasisRef) {
+      const l0 = dot(upBasisPrev[0], viewUp);
+      const l1 = dot(upBasisPrev[1], viewUp);
+      const l2 = dot(upBasisPrev[2], viewUp);
+      viewUp = [
+        basisNow[0][0] * l0 + basisNow[1][0] * l1 + basisNow[2][0] * l2,
+        basisNow[0][1] * l0 + basisNow[1][1] * l1 + basisNow[2][1] * l2,
+        basisNow[0][2] * l0 + basisNow[1][2] * l1 + basisNow[2][2] * l2,
+      ];
+    }
+    upBasisRef = basisNow;
+    if (basisNow) {
+      for (let k = 0; k < 3; k++) {
+        upBasisPrev[k][0] = basisNow[k][0];
+        upBasisPrev[k][1] = basisNow[k][1];
+        upBasisPrev[k][2] = basisNow[k][2];
+      }
+    }
+    const targetUp = basisNow?.[1] ?? ([0, 1, 0] as V3);
     viewUp = norm(lerp3(viewUp, targetUp, Math.min(1, dt * 3)));
     const { view, right, up, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const dir = camDir();

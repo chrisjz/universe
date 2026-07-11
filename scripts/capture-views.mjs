@@ -258,6 +258,19 @@ try {
       await new Promise((r) => setTimeout(r, 500));
       title = await page.title();
     }
+    // Star chunks stream in and every one changes the pixels; on a slow
+    // runner a fixed settle isn't enough (a run snapped earth with 720k of
+    // 854k stars and diffed 0.6% against its fully-loaded baseline). Wait
+    // until the title's star count holds still for two full title updates.
+    let stableFor = 0;
+    let lastCount = '';
+    for (let i = 0; i < 120 && stableFor < 9; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      title = await page.title();
+      const count = /(\d+)k stars/.exec(title)?.[1] ?? '';
+      stableFor = count === lastCount ? stableFor + 1 : 0;
+      lastCount = count;
+    }
     // Let late texture uploads and star chunks land, then read the frame
     // back through the app's __snap hook — a WebGPU copyTextureToBuffer in
     // the render loop, encoded before present. Every canvas-side readback
