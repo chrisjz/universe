@@ -106,6 +106,8 @@ export interface Universe {
   webGroup: number; // index into groups; re-uploaded when the scale factor moves
   moonMesh: MeshObj; // eclipse shading mutates its color as it crosses Earth's shadow
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
+  // Textured planets spin about their real poles; main.ts drives the phase.
+  planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
   orientEarth: (theta: number, phi?: number) => void; // diurnal spin θ + axial precession φ
   orientMoon: (psi: number) => void; // synchronous spin around the orbit normal
   orientGalaxy: (beta: number) => void; // the sun's orbit angle around the galactic center
@@ -522,6 +524,36 @@ export function buildUniverse(): Universe {
 
   meshes.push(sphere(sunFrame, [0, 0, 0], 6.957e8, [1.0, 0.72, 0.35], 2));
 
+  // ---- Real planet faces ----
+  // NASA global mosaics (baked by scripts/generate-planets.mjs) on spinning,
+  // correctly tilted globes. Poles are ecliptic (λ°, β°) from the IAU RA/Dec;
+  // spin PHASE is arbitrary (no sub-planet longitude calibration — honesty:
+  // the face is measured, the moment of its rotation is not). Venus, Uranus,
+  // and Neptune stay stylized: Venus's visible face is featureless cloud (a
+  // radar map would misrepresent what you'd SEE), the ice giants are nearly
+  // featureless in visible light.
+  const PLANET_FACES: Record<string, { tex: string; periodDays: number; pole: [number, number] }> = {
+    mercury: { tex: 'mercury', periodDays: 58.6462, pole: [0, 90] }, // tilt 0.03°: upright
+    mars: { tex: 'mars', periodDays: 1.02595675, pole: [352.9, 63.3] },
+    jupiter: { tex: 'jupiter', periodDays: 0.41354, pole: [247.8, 87.7] },
+  };
+  const SATURN_POLE: [number, number] = [79.5, 61.9]; // ring plane follows it
+  const basisFromPole = (lonDeg: number, latDeg: number): [V3, V3, V3] => {
+    const u0 = fixedDir(latDeg * DEG, lonDeg * DEG);
+    const h = Math.max(Math.hypot(u0[0], u0[2]), 1e-9);
+    const e0: V3 = h < 1e-8 ? [1, 0, 0] : [u0[2] / h, 0, -u0[0] / h];
+    const n0: V3 = [u0[1] * e0[2] - u0[2] * e0[1], u0[2] * e0[0] - u0[0] * e0[2], u0[0] * e0[1] - u0[1] * e0[0]];
+    return [e0, u0, n0];
+  };
+  // Live bases mutated by main.ts each frame (uniform prograde spin).
+  const planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[] = [];
+  const registerSpin = (pole: [number, number], periodDays: number): [V3, V3, V3] => {
+    const [e0, up, n0] = basisFromPole(pole[0], pole[1]);
+    const basis: [V3, V3, V3] = [[...e0], [...up], [...n0]];
+    planetSpins.push({ basis, e0, up, n0, periodDays });
+    return basis;
+  };
+
   // name, a, radius, color, matId, mean longitude at J2000 (deg), period (days)
   const planets: [string, number, number, [number, number, number], number, number, number][] = [
     ['mercury', 0.387 * AU, 2.44e6, [0.62, 0.58, 0.54], 4, 252.25, 87.969],
@@ -567,7 +599,39 @@ export function buildUniverse(): Universe {
       return;
     }
     const pos: V3 = [a, 0, 0]; // ephemeris fills this in before first render
-    meshes.push(sphere(sunFrame, pos, r, color, matId, matId === 3 ? 0.4 : 0));
+    const face = PLANET_FACES[name];
+    const m = face
+      ? sphere(sunFrame, pos, r, [1, 1, 1], 10) // real mosaic (matId 10 multiplies color)
+      : sphere(sunFrame, pos, r, color, matId, matId === 3 ? 0.4 : 0);
+    if (face) {
+      m.tex = face.tex;
+      m.rot = registerSpin(face.pole, face.periodDays);
+      m.prov = 0; // measured imagery
+    } else if (name === 'saturn') {
+      // The globe stays stylized (its bands are subtle in visible light),
+      // but it tilts and spins with the real pole — the rings ride it.
+      m.rot = registerSpin(SATURN_POLE, 0.444);
+      // Saturn's rings: a unit annulus scaled to the outer radius, wearing
+      // Cassini's radial scan (see generate-planets.mjs). Real radii —
+      // 74,500 km to 140,500 km — and in 2026 they hang nearly edge-on to
+      // the sun (the March 2025 ring-plane crossing just passed): honest.
+      meshes.push({
+        frame: sunFrame,
+        pos, // shared ref: the rings ride the ephemeris with the planet
+        mesh: 'saturnrings',
+        size: [1.405e8, 1.405e8, 1.405e8],
+        bound: 1.5e8,
+        color: [1, 1, 1],
+        emissive: 0,
+        matId: 12,
+        rim: 0,
+        gridScale: 0,
+        rot: m.rot,
+        prov: 0.5, // measured radial structure, brightness-derived opacity
+        tex: 'rings',
+      });
+    }
+    meshes.push(m);
     planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.28]);
     bodies.push({ a, periodDays, L0, positions: [pos], spriteFloatBase });
     planetTargets.push({
@@ -578,13 +642,41 @@ export function buildUniverse(): Universe {
       dist: 28 * r,
       pitch: 0.15,
       sunlit: true,
-      source: 'measured orbit & size — stylized surface',
+      source: face
+        ? {
+            mercury: 'measured — MESSENGER MDIS global mosaic',
+            mars: 'measured — Viking MDIM 2.1 color mosaic',
+            jupiter: 'measured — Cassini global map, Dec 2000',
+          }[name]!
+        : name === 'saturn'
+          ? 'measured orbit, size & rings (Cassini) — stylized globe'
+          : 'measured orbit & size — stylized surface',
       parent: 'system',
       exit: Math.max(3 * a, 1e12),
       radius: r,
       hidden: true,
     });
   });
+
+  // The ring annulus net: unit outer radius in the local xz plane; the
+  // shader recovers the radial fraction from |lp.xz| (74,500 km = 0.53025).
+  {
+    const SEG = 128;
+    const RIN = 74500 / 140500;
+    const verts: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= SEG; i++) {
+      const a = (i / SEG) * 2 * Math.PI;
+      const c = Math.cos(a),
+        s = Math.sin(a);
+      verts.push(c * RIN, 0, s * RIN, 0, 1, 0, c, 0, s, 0, 1, 0);
+      if (i < SEG) {
+        const b = i * 2;
+        idx.push(b, b + 1, b + 2, b + 2, b + 1, b + 3);
+      }
+    }
+    patchGeoms.push({ name: 'saturnrings', verts: new Float32Array(verts), indices: new Uint32Array(idx) });
+  }
 
   // Moon: real radius, the full inclined, perturbed orbit (5.1°, regressing
   // node, varying distance — see ephemeris.ts), and the real surface: the
@@ -1492,6 +1584,7 @@ export function buildUniverse(): Universe {
     webGroup,
     moonMesh,
     moonFrame,
+    planetSpins,
     orientEarth,
     orientMoon,
     orientGalaxy,
