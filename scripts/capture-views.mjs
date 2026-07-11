@@ -109,6 +109,16 @@ try {
       if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
       else if (m.text().startsWith('[webgpu]') || m.text().startsWith('[snap]')) console.log(`  ${m.text()}`);
     });
+    // Localhost only: the Moon/Mars views trigger Trek WMTS imagery streams,
+    // and waiting on trek.nasa.gov from a CI runner is both nondeterministic
+    // (tiles must never land in a regression frame) and the source of the
+    // networkidle timeouts that flaked earlier runs.
+    await p.setRequestInterception(true);
+    p.on('request', (r) => {
+      const host = new URL(r.url()).hostname;
+      if (host === 'localhost' || host === '127.0.0.1') void r.continue();
+      else void r.abort();
+    });
     return p;
   };
   let page = await mkPage();
@@ -219,15 +229,24 @@ try {
   const noRender = ci || process.env.NORENDER;
   for (const v of failed ? [] : views) {
     const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1${noRender ? '&norender=1' : ''}`;
-    // Heavy view loads occasionally wedge a tab on SwiftShader; one retry
-    // on a fresh page absorbs the flake without hiding real failures.
+    // Heavy view loads occasionally wedge a tab on a software rasterizer;
+    // one retry on a fresh page absorbs the flake without hiding real
+    // failures — and a view that fails twice fails ALONE, not the whole run.
     try {
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
     } catch (e) {
       console.error(`  goto ${v.name} failed (${e.message}) — retrying on a fresh page`);
       await page.close().catch(() => {});
       page = await mkPage();
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+      try {
+        await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+      } catch (e2) {
+        failed++;
+        console.error(`✗ ${v.name}: navigation failed twice (${e2.message})`);
+        await page.close().catch(() => {});
+        page = await mkPage();
+        continue;
+      }
     }
     // Hide every DOM overlay (HUD, labels): the diff should see only GPU
     // pixels — text rendering varies across runner images and star-count
