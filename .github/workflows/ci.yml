@@ -28,6 +28,42 @@ jobs:
           path: dist/
           retention-days: 7
 
+  # The rendered-pixels safety net: build the real app, run it in headless
+  # Chrome on SwiftShader (CPU-rasterized WebGPU — these runners have no
+  # GPU), screenshot a fixed set of deterministic views, and pixel-compare
+  # against the baselines in tests/visual/baseline/. Catches the class of
+  # bug lint and typecheck never see: a shader edit or bind-group change
+  # that silently blanks a render pass.
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+      - name: Capture views (SwiftShader WebGPU)
+        run: node scripts/capture-views.mjs
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          WEBGPU_ADAPTER: swiftshader
+      - name: Compare against baselines
+        run: node scripts/compare-views.mjs
+      - name: Upload captures & diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual
+          path: .visual-out/
+          retention-days: 14
+
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: checks

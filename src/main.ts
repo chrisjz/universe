@@ -1143,6 +1143,9 @@ async function start(): Promise<void> {
     simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
     updateBodies();
   }
+  // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
+  // scene to one instant, which is what a reproducible screenshot needs.
+  if (params.get('paused') !== null) paused = true;
   // ?speed=<sim seconds per real second> — snaps to the nearest preset;
   // negative values run the clock backwards (?speed=-3.15576e16 rewinds
   // at a billion years per second).
