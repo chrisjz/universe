@@ -241,12 +241,25 @@ struct FOut {
   // our sphere/box winding is CW in framebuffer space, so the outside is
   // rasterized as "back" and flipping would point every normal inward
   // (which made planets render black on their sunlit side).
-  let dif = max(ndl, 0.0);
   var amb = 0.05;
   var ambCol = vec3f(1.0);
   // Sky fill keeps the human-scale picnic scene readable; the imagery rings
   // (matId 8) and the Moon materials are planets and take planetary ambient.
-  if (matId >= 5 && matId != 8 && matId != 9 && matId != 10 && matId != 11) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
+  if (matId >= 5 && matId != 8 && matId != 9 && matId != 10 && matId != 11 && matId != 12) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
+  var alpha = 1.0;
+  var dif = max(ndl, 0.0);
+  if (matId == 12) {
+    // Saturn's rings: Cassini's radial scan (color measured, opacity from
+    // brightness) sampled by distance from the planet's center. The strip
+    // spans 74,500..140,500 km; the mesh is a unit annulus scaled to the
+    // outer radius. Ice sheets scatter from both faces: light the ring by
+    // |n·L| so the unlit-side view shows the rings too (translucency).
+    let rf = (length(lp.xz) - 0.53025) / (1.0 - 0.53025);
+    let tex = textureSample(dayTex, samp, vec2f(clamp(rf, 0.001, 0.999), 0.5));
+    base = tex.rgb * O.color.rgb;
+    alpha = tex.a;
+    dif = abs(ndl) * 0.9 + 0.05;
+  }
   var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 
@@ -255,7 +268,7 @@ struct FOut {
     let rim = pow(1.0 - max(dot(n, v), 0.0), 2.6) * (0.15 + dif);
     col = col + vec3f(0.3, 0.5, 1.0) * rim * O.misc.x;
   }
-  out.col = vec4f(seamTint(col, O.misc.w), 1.0);
+  out.col = vec4f(seamTint(col, O.misc.w), alpha);
   return out;
 }
 `;

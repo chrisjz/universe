@@ -167,6 +167,17 @@ async function start(): Promise<void> {
     // The ecliptic-longitude residuals (equation of the center etc.) then
     // show up as the real ±7.9° optical libration in longitude.
     u.orientMoon(Math.PI + ((218.3164477 + 13.17639648 * days) * Math.PI) / 180);
+    // Textured planets: uniform prograde spin about their real poles (the
+    // phase is arbitrary — the face is measured, its rotational moment isn't).
+    for (const s of u.planetSpins) {
+      const psi = ((days / s.periodDays) % 1) * 2 * Math.PI;
+      const c = Math.cos(psi),
+        sn = Math.sin(psi);
+      for (let k = 0; k < 3; k++) {
+        s.basis[0][k] = s.e0[k] * c - s.n0[k] * sn;
+        s.basis[2][k] = s.n0[k] * c + s.e0[k] * sn;
+      }
+    }
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
@@ -236,6 +247,22 @@ async function start(): Promise<void> {
       await renderer.addTexture('moon', await createImageBitmap(await r.blob()));
     })
     .catch(() => {}); // offline: the procedural regolith stands in
+
+  // ---- real planet faces + Saturn's rings (generate-planets.mjs) ----
+  for (const key of ['mercury', 'mars', 'jupiter']) {
+    void fetch(`${import.meta.env.BASE_URL}planets/${key}.jpg`)
+      .then(async (r) => {
+        if (!r.ok) return;
+        await renderer.addTexture(key, await createImageBitmap(await r.blob()));
+      })
+      .catch(() => {}); // offline: procedural planets stand in
+  }
+  void fetch(`${import.meta.env.BASE_URL}planets/rings.png`)
+    .then(async (r) => {
+      if (!r.ok) return;
+      await renderer.addTexture('rings', await createImageBitmap(await r.blob()));
+    })
+    .catch(() => {}); // offline: no rings (they have no procedural stand-in)
   // Tranquility Base terrain (baked by scripts/generate-moon.mjs): rebuild
   // each moon ring on its real LOLA heights and sink the smooth globe below
   // the deepest carved point (the site itself sits 1.9 km under the
@@ -1249,9 +1276,9 @@ async function start(): Promise<void> {
 
     for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
-      // Imagery rings wait for their texture; the Earth and Moon globes draw
-      // with their procedural fallback until the real maps land.
-      if (m.tex !== undefined && m.tex !== 'earth' && m.tex !== 'moon' && !renderer.hasTexture(m.tex)) continue;
+      // Imagery rings (and Saturn's) wait for their texture; textured globes
+      // (matId 10) draw with their procedural fallback until the map lands.
+      if (m.tex !== undefined && m.tex !== 'earth' && m.matId !== 10 && !renderer.hasTexture(m.tex)) continue;
       const rel = relPos(m.frame, m.pos, cam.frame, camLocal);
       const d = len(rel);
       if (m.bound / Math.max(d, 1e-18) < 2e-8) continue; // sub-pixel
@@ -1291,7 +1318,9 @@ async function start(): Promise<void> {
       o[23] = m.matId;
       o[24] = m.rim;
       o[25] = m.gridScale;
-      o[26] = (m.tex === 'moon' ? renderer.hasTexture('moon') : renderer.earthReady) ? 1 : 0; // textured flag
+      // Textured flag: matId 10 globes check their own map; Earth checks the
+      // Blue/Black Marble pair.
+      o[26] = (m.matId === 10 && m.tex ? renderer.hasTexture(m.tex) : renderer.earthReady) ? 1 : 0;
       o[27] = m.prov ?? 0;
       data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }

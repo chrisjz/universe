@@ -220,3 +220,4 @@ Everything real is regenerable from public sources by the scripts in
 | `generate-galaxies.mjs`       | 2MASS Redshift Survey             | `public/galaxies/2mrs.bin`                        |
 | `generate-constellations.mjs` | d3-celestial                      | `src/data/constellations.ts`                      |
 | `generate-moon.mjs`           | LOLA DEM (CGI Moon Kit)           | `public/moon/tranquility.json`                    |
+| `generate-planets.mjs`        | NASA Trek WMTS + JPL Photojournal | `public/planets/` (globe maps + ring strip)       |

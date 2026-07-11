@@ -160,8 +160,8 @@ by theme:
 **More real worlds**
 
 - [ ] Mars, the third surface site: Moon Trek's sibling serves CTX imagery and MOLA terrain — land at Jezero crater beside Perseverance
-- [ ] Real planet faces: USGS/NASA global mosaics for Mars, Jupiter, Saturn, Venus, and Mercury in place of procedural shading
-- [ ] Saturn's rings at true scale: real radii, the Cassini division, the ring plane tilting through the 29-year seasons
+- [x] Real planet faces: NASA global mosaics for Mercury, Mars, and Jupiter on spinning, correctly tilted globes (Venus and the ice giants stay honestly stylized — their visible faces are featureless)
+- [x] Saturn's rings at true scale: Cassini's radial scan on the real radii — the Cassini division, and the ring plane riding the real pole (nearly edge-on in 2026, as in the real sky)
 - [ ] The Galilean moons: real mosaics, and orbits fast enough to watch — Io laps Jupiter in 42 hours of clock time
 
 **A deeper sky**
@@ -257,6 +257,11 @@ pipelines (all regenerable from public sources) are documented in
   [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720) (NASA / GSFC / Arizona State
   University); street-level WAC imagery from
   [NASA Moon Trek](https://trek.nasa.gov/moon/).
+- **The planets** — Mars (Viking MDIM 2.1 color mosaic) and Mercury
+  (MESSENGER MDIS basemap) via [NASA Trek](https://trek.nasa.gov/); Jupiter
+  from Cassini's Dec 2000 global map (PIA07782); Saturn's rings from
+  Cassini's natural-color radial scan (PIA08389) — all NASA/JPL, public
+  domain.
 
 ## License
 

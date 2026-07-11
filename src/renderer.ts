@@ -186,7 +186,10 @@ export class Renderer {
       fragment: { module: meshMod, entryPoint: 'fs', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil,
-      multisample: { count: 4 },
+      // Alpha-to-coverage: Saturn's translucent rings dither their alpha
+      // into the 4x MSAA mask — order-independent, no blend pipeline needed.
+      // Every other material writes alpha 1 (full coverage), so this is free.
+      multisample: { count: 4, alphaToCoverageEnabled: true },
     });
 
     const pointMod = d.createShaderModule({ code: POINTS_WGSL });
