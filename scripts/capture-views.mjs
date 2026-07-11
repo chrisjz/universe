@@ -207,8 +207,14 @@ try {
     failed = VIEWS.length;
   }
 
-  for (const v of failed ? [] : VIEWS) {
-    const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1`;
+  // ONLY=<name> captures a single view — the fast lane when iterating on a
+  // CI-only failure. In CI mode the app runs with ?norender=1: presenting
+  // to the swap chain is the one operation software Vulkan never finishes,
+  // so the snapshot's offscreen render must be the ONLY work on the queue.
+  const views = process.env.ONLY ? VIEWS.filter((v) => v.name === process.env.ONLY) : VIEWS;
+  const noRender = ci || process.env.NORENDER;
+  for (const v of failed ? [] : views) {
+    const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1${noRender ? '&norender=1' : ''}`;
     // Heavy view loads occasionally wedge a tab on SwiftShader; one retry
     // on a fresh page absorbs the flake without hiding real failures.
     try {
