@@ -126,6 +126,7 @@ async function start(): Promise<void> {
   let webA = 1; // last-applied cosmic scale factor
 
   const keplerOut: [number, number, number] = [0, 0, 0];
+  const atmoData = new Float32Array(8); // atmosphere uniform scratch
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -1581,6 +1582,24 @@ async function start(): Promise<void> {
     // drawn for the PRESENT sky — beyond ±25,000 years the stars have
     // visibly drifted off them (that's the point of proper motion), so the
     // lines bow out honestly rather than pointing at empty sky.
+    // Earth's atmosphere: one ray-marched shell gives the blue limb from
+    // orbit, the blue sky and red sunsets from the ground, and daylight
+    // star-fading. Beyond ~4e8 m (the Moon) the shell is subpixel — skip.
+    const eRel = relPos(earthFrameRef, [0, 0, 0], cam.frame, camLocal);
+    if (len(eRel) < 4e8) {
+      const sRel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
+      const sd = norm(sub(sRel, eRel));
+      atmoData[0] = eRel[0];
+      atmoData[1] = eRel[1];
+      atmoData[2] = eRel[2];
+      atmoData[3] = 6.371e6;
+      atmoData[4] = sd[0];
+      atmoData[5] = sd[1];
+      atmoData[6] = sd[2];
+      atmoData[7] = 6.371e6 + 1e5; // the Kármán-line-ish top of the shell
+      data.atmo = atmoData;
+    }
+
     const skyVisible = constellations && cam.dist < 2e19 && Math.abs(starYears) < 25000;
     if (skyVisible) {
       const rel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);

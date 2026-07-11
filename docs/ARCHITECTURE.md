@@ -208,12 +208,20 @@ photography is amber, the aerial photograph under the picnic is natural.
 
 ## Rendering
 
-A thin WebGPU renderer ([`src/renderer.ts`](../src/renderer.ts)): four
+A thin WebGPU renderer ([`src/renderer.ts`](../src/renderer.ts)): five
 pipelines (lit meshes, additive point sprites, orbit/constellation lines,
-sky dome), 4× MSAA, per-fragment log depth, camera-relative uniforms per
-draw. Textures stream in as they land — the Earth pair, the Moon color map,
-generation-stamped imagery rings — with procedural fallbacks so the scene
-never blocks on the network.
+sky dome, atmosphere), 4× MSAA, per-fragment log depth, camera-relative
+uniforms per draw. Textures stream in as they land — the Earth pair, the
+Moon color map, generation-stamped imagery rings — with procedural
+fallbacks so the scene never blocks on the network.
+
+The atmosphere is one ray-marched single-scatter integral (Rayleigh + Mie,
+measured sea-level coefficients and scale heights) over a 100 km shell,
+drawn last with premultiplied blending: the in-scatter adds and everything
+behind attenuates by transmittance plus a veiling-luminance term. The blue
+limb from orbit, the blue daytime sky, the white horizon band, red sunsets,
+twilight, and stars fading into daylight are not effects — they are the
+same integral evaluated from different places at different times.
 
 Verification is headless: real-GPU Chrome (`--headless=new
 --enable-unsafe-webgpu`) drives screenshot regressions for every feature,

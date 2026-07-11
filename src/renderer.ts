@@ -2,7 +2,7 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL } from './shaders';
+import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL, ATMO_WGSL } from './shaders';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
@@ -16,6 +16,7 @@ export interface FrameData {
   lines: F32[]; // 8 floats each
   groups: { index: number; data: F32 }[]; // 4 floats each
   sky?: F32 | null; // 8 floats: constellation-dome origin rel camera, radius, color, alpha
+  atmo?: F32 | null; // 8 floats: planet center rel camera + ground R, sun dir + top R
 }
 
 const SLOT = 256; // dynamic uniform offset alignment
@@ -52,6 +53,9 @@ export class Renderer {
   private pointGroups: { buf: GPUBuffer; count: number; mode: PointsMode }[] = [];
   private circleBuf!: GPUBuffer;
   private skyPipe!: GPURenderPipeline;
+  private atmoPipe!: GPURenderPipeline;
+  private atmoUBO!: GPUBuffer;
+  private atmoBG!: GPUBindGroup;
   private skyBuf: GPUBuffer | null = null;
   private skyVerts = 0;
   private circleVerts = 0;
@@ -301,6 +305,52 @@ export class Renderer {
       },
       fragment: { module: skyMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
       primitive: { topology: 'line-list' },
+      depthStencil: depthNoWrite,
+      multisample: { count: 4 },
+    });
+
+    // The atmosphere shell: back faces of a unit sphere, ray-marched single
+    // scattering. Premultiplied blend — in-scatter adds, and everything
+    // behind (stars, the sun, the surface) attenuates by transmittance.
+    this.atmoUBO = d.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.atmoBG = d.createBindGroup({
+      layout: globalsBGL,
+      entries: [{ binding: 0, resource: { buffer: this.atmoUBO } }],
+    });
+    const atmoMod = d.createShaderModule({ code: ATMO_WGSL });
+    this.atmoPipe = d.createRenderPipeline({
+      layout: d.createPipelineLayout({ bindGroupLayouts: [globalsBGL, globalsBGL] }),
+      vertex: {
+        module: atmoMod,
+        entryPoint: 'vs',
+        buffers: [
+          {
+            arrayStride: 24,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: atmoMod,
+        entryPoint: 'fs',
+        targets: [
+          {
+            format: this.format,
+            blend: {
+              color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            },
+          },
+        ],
+      },
+      // Cull so exactly ONE shell surface survives per view ray — the near
+      // hemisphere from outside (same disc + limb; the integral only uses
+      // the ray direction) and the whole bowl from inside. The opposite
+      // mode culls the entire shell when the camera stands on the ground.
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: depthNoWrite,
       multisample: { count: 4 },
     });
@@ -572,6 +622,7 @@ export class Renderer {
     const nGrp = Math.min(frame.groups.length, MAX_DRAWS);
     for (let i = 0; i < nGrp; i++) this.groupStaging.set(frame.groups[i].data, (SLOT / 4) * i);
     if (nGrp) q.writeBuffer(this.groupUBO, 0, this.groupStaging, 0, (SLOT / 4) * nGrp);
+    if (frame.atmo) q.writeBuffer(this.atmoUBO, 0, frame.atmo);
 
     const enc = this.device.createCommandEncoder();
     const pass = enc.beginRenderPass({
@@ -631,6 +682,18 @@ export class Renderer {
       pass.setBindGroup(1, this.groupBG, [SLOT * i]);
       pass.setVertexBuffer(0, g.buf);
       pass.draw(6, g.count);
+    }
+
+    // Atmosphere last: its transmittance must attenuate everything already
+    // drawn behind it — stars fade into the day sky, the sun dims and
+    // reddens at the horizon, the surface hazes at the limb.
+    if (frame.atmo) {
+      const g = this.geoms.get('sphere')!;
+      pass.setPipeline(this.atmoPipe);
+      pass.setBindGroup(1, this.atmoBG);
+      pass.setVertexBuffer(0, g.vbuf);
+      pass.setIndexBuffer(g.ibuf, 'uint32');
+      pass.drawIndexed(g.indexCount);
     }
 
     pass.end();
