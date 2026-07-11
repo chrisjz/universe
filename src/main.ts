@@ -120,6 +120,7 @@ async function start(): Promise<void> {
   let seam = false; // the honest seam: recolor by provenance (X)
   let starYears = 0; // clamped years from J2000 driving stellar proper motion
   let captureRequested = false; // photo: save a supersampled frame (S)
+  let snapResolve: ((dataUrl: string) => void) | null = null; // test hook (window.__snap)
   let overlayHidden = false; // H: hide the overlay — HUD, labels, orbit lines
   let webA = 1; // last-applied cosmic scale factor
 
@@ -1549,6 +1550,23 @@ async function start(): Promise<void> {
     }
 
     renderer.render(data);
+    if (snapResolve) {
+      // Test hook: read the frame back in the task that rendered it. The
+      // post-present canvas image never materializes on SwiftShader (the
+      // CPU rasterizer CI runs on), so visual regression captures must
+      // come from here, not from an external screenshot.
+      const done = snapResolve;
+      snapResolve = null;
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          done('');
+          return;
+        }
+        const fr = new FileReader();
+        fr.onload = () => done(fr.result as string);
+        fr.readAsDataURL(blob);
+      }, 'image/png');
+    }
     if (captureRequested) {
       captureRequested = false;
       // The WebGPU canvas keeps this frame's pixels until the next
@@ -1583,6 +1601,10 @@ async function start(): Promise<void> {
     requestAnimationFrame(frame);
   }
 
+  (window as unknown as { __snap: () => Promise<string> }).__snap = () =>
+    new Promise((resolve) => {
+      snapResolve = resolve;
+    });
   requestAnimationFrame(frame);
 }
 

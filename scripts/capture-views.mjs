@@ -72,18 +72,11 @@ const browser = await puppeteer.launch({
     '--enable-unsafe-webgpu',
     '--hide-scrollbars',
     `--window-size=${W},${H}`,
-    // CI runners have no GPU and no user namespace guarantees. The feature
-    // trio puts ANGLE, the compositor, and Dawn on ONE SwiftShader Vulkan
-    // device — without it Dawn renders fine but its swap-chain shared image
-    // never reaches the canvas, and every capture reads back opaque black.
+    // CI runners have no GPU and no user namespace guarantees. (Don't add
+    // the DefaultANGLEVulkan/VulkanFromANGLE trio here: on the GPU-less
+    // runner it kills adapter acquisition entirely.)
     ...(swift
-      ? [
-          '--no-sandbox',
-          `--use-webgpu-adapter=${swift}`,
-          '--use-angle=vulkan',
-          '--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
-          '--disable-vulkan-surface',
-        ]
+      ? ['--no-sandbox', '--enable-features=Vulkan', '--disable-vulkan-surface', `--use-webgpu-adapter=${swift}`]
       : []),
   ],
   defaultViewport: { width: W, height: H },
@@ -122,20 +115,22 @@ try {
       await new Promise((r) => setTimeout(r, 500));
       title = await page.title();
     }
-    // Let late texture uploads and star chunks land, then read the canvas
-    // back in-page (canvas.toBlob — the same path photo mode uses). The
-    // compositor screenshot route returns a uniform frame under SwiftShader.
+    // Let late texture uploads and star chunks land, then read the frame
+    // back through the app's __snap hook — a same-task canvas.toBlob inside
+    // the render loop. Post-present readback (CDP screenshot, plain toBlob)
+    // returns opaque black under SwiftShader; this is the one path that
+    // sees real pixels. The race guards against a dead frame loop.
     await new Promise((r) => setTimeout(r, 3000));
-    const dataUrl = await page.evaluate(
-      () =>
-        new Promise((res) => {
-          document.querySelector('canvas').toBlob((b) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result);
-            r.readAsDataURL(b);
-          }, 'image/png');
-        }),
+    const dataUrl = await page.evaluate(() =>
+      Promise.race([window.__snap(), new Promise((r) => setTimeout(() => r(''), 60000))]),
     );
+    if (!dataUrl) {
+      failed++;
+      writeFileSync(`${outDir}/debug-${v.name}-compositor.png`, await page.screenshot({ type: 'png' }));
+      const fatal = await page.evaluate(() => document.querySelector('#fatal')?.textContent ?? '');
+      console.error(`✗ ${v.name}: __snap never resolved — title "${title}"${fatal ? ` fatal "${fatal}"` : ''}`);
+      continue;
+    }
     const shot = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
 
     const png = PNG.sync.read(Buffer.from(shot));
