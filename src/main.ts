@@ -1558,7 +1558,7 @@ async function start(): Promise<void> {
       const done = snapResolve;
       snapResolve = null;
       renderer
-        .snapshot()
+        .snapshot(() => renderer.render(data))
         .then((img) => {
           const cv = new OffscreenCanvas(img.width, img.height);
           cv.getContext('2d')!.putImageData(img, 0, 0);

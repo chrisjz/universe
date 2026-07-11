@@ -83,14 +83,7 @@ export class Renderer {
     console.log('[webgpu] adapter ok');
     this.ctx = this.canvas.getContext('webgpu') as GPUCanvasContext;
     this.format = navigator.gpu.getPreferredCanvasFormat();
-    // COPY_SRC: snapshot() reads frames back through the WebGPU API — on
-    // SwiftShader (CI) every canvas-side readback path composites to black.
-    this.ctx.configure({
-      device: this.device,
-      format: this.format,
-      alphaMode: 'opaque',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-    });
+    this.ctx.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
 
     const d = this.device;
     this.globalsBuf = d.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -364,15 +357,23 @@ export class Renderer {
     this.dayViews.delete(key);
     this.texBGs.delete(key);
   }
-  // Reads the just-rendered frame back through the WebGPU API. Must be
-  // called in the same task as render() — the copy is encoded against the
-  // current canvas texture before it is presented. This is the only capture
-  // path that works on SwiftShader, where the canvas image itself (CDP
-  // screenshots, toBlob, drawImage) always reads back opaque black.
-  snapshot(): Promise<ImageData> {
-    const tex = this.ctx.getCurrentTexture();
-    const w = tex.width;
-    const h = tex.height;
+  // Renders one frame into a private offscreen texture and reads it back
+  // through the WebGPU API — never touching the canvas swap chain. On the
+  // software Vulkan stacks CI runs on, the canvas image is unreachable
+  // (screenshots, toBlob and even copies from the canvas texture all fail),
+  // so regression captures must come from a texture the renderer owns.
+  private captureView: GPUTextureView | null = null;
+  snapshot(renderAgain: () => void): Promise<ImageData> {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const tex = this.device.createTexture({
+      size: [w, h],
+      format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    this.captureView = tex.createView();
+    renderAgain();
+    this.captureView = null;
     const rowBytes = Math.ceil((w * 4) / 256) * 256;
     const buf = this.device.createBuffer({
       size: rowBytes * h,
@@ -397,6 +398,7 @@ export class Renderer {
       }
       buf.unmap();
       buf.destroy();
+      tex.destroy();
       return new ImageData(out, w, h);
     });
   }
@@ -570,7 +572,7 @@ export class Renderer {
       colorAttachments: [
         {
           view: this.msaaTex.createView(),
-          resolveTarget: this.ctx.getCurrentTexture().createView(),
+          resolveTarget: this.captureView ?? this.ctx.getCurrentTexture().createView(),
           clearValue: { r: 0.004, g: 0.005, b: 0.01, a: 1 },
           loadOp: 'clear',
           storeOp: 'discard',

@@ -49,6 +49,10 @@ const VIEWS = [
 const outDir = process.argv[2] ?? 'visual-out'; // NOT dot-prefixed: upload-artifact drops hidden paths
 mkdirSync(outDir, { recursive: true });
 
+// A blank page served from dist/ for the readback probe — about:blank has
+// no navigator.gpu, and every other path SPA-falls-back to the app.
+writeFileSync('dist/__probe.html', '<!doctype html><meta charset="utf-8" /><title>probe</title>');
+
 // ---- serve dist/ ----
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
   stdio: ['ignore', 'pipe', 'inherit'],
@@ -104,6 +108,53 @@ try {
     return p;
   };
   let page = await mkPage();
+
+  // Minimal WebGPU readback probe on a blank page: clear a 4×4 texture,
+  // copy it to a buffer, mapAsync. Its outcome separates "readback is
+  // broken on this driver stack" from "something in the app breaks it".
+  await page.goto(`http://localhost:${PORT}/__probe.html`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const probe = await page.evaluate(async () => {
+    try {
+      if (!navigator.gpu) return 'no navigator.gpu';
+      const a = await navigator.gpu.requestAdapter();
+      if (!a) return 'no adapter';
+      const d = await a.requestDevice();
+      const tex = d.createTexture({
+        size: [4, 4],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const enc = d.createCommandEncoder();
+      enc
+        .beginRenderPass({
+          colorAttachments: [
+            {
+              view: tex.createView(),
+              loadOp: 'clear',
+              storeOp: 'store',
+              clearValue: { r: 1, g: 0.5, b: 0.25, a: 1 },
+            },
+          ],
+        })
+        .end();
+      const buf = d.createBuffer({ size: 256 * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: 256 }, [4, 4]);
+      d.queue.submit([enc.finish()]);
+      return await Promise.race([
+        buf.mapAsync(GPUMapMode.READ).then(() => {
+          const px = new Uint8Array(buf.getMappedRange());
+          return `pixel ${px[0]},${px[1]},${px[2]},${px[3]} (want 255,128,64,255)`;
+        }),
+        new Promise((r) => setTimeout(() => r('mapAsync never resolved'), 15000)),
+      ]);
+    } catch (e) {
+      return `error: ${e.message}`;
+    }
+  });
+  console.log(`WebGPU readback probe: ${probe}`);
+  // Fresh page for the views — software stacks are stingy with adapters.
+  await page.close().catch(() => {});
+  page = await mkPage();
 
   for (const v of VIEWS) {
     const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1`;
