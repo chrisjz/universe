@@ -85,21 +85,21 @@ real already is:
 
 ## Controls
 
-| Input       | Action                                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| **scroll**  | seamless zoom — all the way down, all the way back up                                                                 |
-| **click**   | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there        |
-| **2×click** | fly to what's under the cursor                                                                                        |
-| **drag**    | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky  |
-| **⇧-drag**  | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                               |
-| **1–9, 0**  | fly to a bookmark (universe, web, galaxy, system, sun, earth, moon, tranquility base, picnic, weave)                  |
-| **/**       | search everything — all 195 named stars, planets, and every stage of the dive                                         |
-| **X**       | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative |
-| **C**       | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                           |
-| **[ ]**     | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s              |
-| **P**       | pause the simulation clock                                                                                            |
-| **T**       | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                           |
-| **Esc**     | cancel the current flight                                                                                             |
+| Input         | Action                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **scroll**    | seamless zoom — all the way down, all the way back up                                                                   |
+| **click**     | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there          |
+| **2×click**   | fly to what's under the cursor                                                                                          |
+| **drag**      | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky    |
+| **⇧-drag**    | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                 |
+| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — universe to the fiber, Jezero and Tranquility included |
+| **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                           |
+| **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative   |
+| **C**         | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                             |
+| **[ ]**       | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                |
+| **P**         | pause the simulation clock                                                                                              |
+| **T**         | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                             |
+| **Esc**       | cancel the current flight                                                                                               |
 
 On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
 across the planet**, tap focuses, **double-tap flies**, and the search /
@@ -159,7 +159,7 @@ by theme:
 
 **More real worlds**
 
-- [ ] Mars, the third surface site: Moon Trek's sibling serves CTX imagery and MOLA terrain — land at Jezero crater beside Perseverance
+- [x] Mars, the third surface site: Jezero crater beside Perseverance — Viking imagery via NASA Mars Trek, MOLA terrain (the site reads −2563 m against the published −2570 m crater floor)
 - [x] Real planet faces: NASA global mosaics for Mercury, Mars, and Jupiter on spinning, correctly tilted globes (Venus and the ice giants stay honestly stylized — their visible faces are featureless)
 - [x] Saturn's rings at true scale: Cassini's radial scan on the real radii — the Cassini division, and the ring plane riding the real pole (nearly edge-on in 2026, as in the real sky)
 - [ ] The Galilean moons: real mosaics, and orbits fast enough to watch — Io laps Jupiter in 42 hours of clock time
@@ -261,7 +261,11 @@ pipelines (all regenerable from public sources) are documented in
   (MESSENGER MDIS basemap) via [NASA Trek](https://trek.nasa.gov/); Jupiter
   from Cassini's Dec 2000 global map (PIA07782); Saturn's rings from
   Cassini's natural-color radial scan (PIA08389) — all NASA/JPL, public
-  domain.
+  domain. The Jezero site streams Viking imagery from Mars Trek at runtime;
+  its terrain comes from the MGS **MOLA** MEGDR grid
+  ([PDS Geosciences](https://pds-geosciences.wustl.edu/)) — `node
+scripts/generate-mars.mjs <megt90n000eb.img>` regenerates
+  `public/mars/jezero.json`.
 
 ## License
 

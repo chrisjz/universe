@@ -193,25 +193,47 @@ export async function streamImageryRings(
   }
 }
 
-// ---- Street-level Moon: LRO WAC mosaic via NASA Moon Trek ----
+// ---- Street-level Moon & Mars: global mosaics via NASA Trek ----
 // Trek serves plain equirectangular WMTS (EPSG:104903): zoom z is a
-// 2·2^z × 2^z grid of 256 px tiles from (-180°, 90°), max z = 8
-// (~83 m/px at the equator — the WAC mosaic's native 100 m class).
-// Imagery: NASA / GSFC / Arizona State University (LROC WAC).
-const MOON_TILE_URL = (z: number, row: number, col: number) =>
-  `https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/${z}/${row}/${col}.jpg`;
-const R_MOON_EQ = 1.7374e6;
+// 2·2^z × 2^z grid of 256 px tiles from (-180°, 90°).
+// Moon: LRO WAC mosaic, max z = 8 (~83 m/px) — NASA/GSFC/ASU.
+// Mars: Viking MDIM 2.1 color mosaic, max z = 7 (~326 m/px) — NASA/JPL/USGS.
+interface TrekBody {
+  url: (z: number, row: number, col: number) => string;
+  radius: number; // equatorial, meters
+  maxZ: number;
+  key: string; // texture key prefix (`${key}${ringIndex}`)
+}
+const TREK_MOON: TrekBody = {
+  url: (z, row, col) =>
+    `https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/${z}/${row}/${col}.jpg`,
+  radius: 1.7374e6,
+  maxZ: 8,
+  key: 'moonring',
+};
+const TREK_MARS: TrekBody = {
+  url: (z, row, col) =>
+    `https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/1.0.0/default/default028mm/${z}/${row}/${col}.jpg`,
+  radius: 3.3895e6,
+  maxZ: 7,
+  key: 'marsring',
+};
 
 // Builds one stitched square texture of `sizeMeters` around lat/lon.
-// Equirectangular is not conformal, but at |lat| < 1° (Tranquility Base)
-// the x-stretch is cos(lat) ≈ 0.9999 — a straight gnomonic-to-plate-carrée
-// mapping is exact to well under a tile pixel across even the 1024 km ring.
-async function buildMoonPatch(lat: number, lon: number, sizeMeters: number): Promise<ImageBitmap | null> {
-  const degPerMeter = 180 / (Math.PI * R_MOON_EQ);
+// Equirectangular is not conformal, but at low site latitudes the x-stretch
+// is cos(lat) — corrected here — and a gnomonic-to-plate-carrée mapping is
+// accurate to well under a tile pixel across even the 1024 km ring.
+async function buildTrekPatch(
+  body: TrekBody,
+  lat: number,
+  lon: number,
+  sizeMeters: number,
+): Promise<ImageBitmap | null> {
+  const degPerMeter = 180 / (Math.PI * body.radius);
   const dLon = (sizeMeters * degPerMeter) / Math.cos((lat * Math.PI) / 180);
   const dLat = sizeMeters * degPerMeter;
   // Zoom so the patch spans ~TEX pixels of source tiles.
-  const z = Math.min(8, Math.max(0, Math.round(Math.log2((TEX * 180) / 256 / dLat))));
+  const z = Math.min(body.maxZ, Math.max(0, Math.round(Math.log2((TEX * 180) / 256 / dLat))));
   const rows = Math.pow(2, z); // tiles per 180° of latitude
   const pxPerDeg = (rows * 256) / 180;
   const left = (lon - dLon / 2 + 180) * pxPerDeg;
@@ -231,7 +253,7 @@ async function buildMoonPatch(lat: number, lon: number, sizeMeters: number): Pro
     for (let tx = tx0; tx <= tx1; tx++) {
       const col = ((tx % (2 * rows)) + 2 * rows) % (2 * rows); // wrap the antimeridian
       jobs.push(
-        loadImage(MOON_TILE_URL(z, ty, col)).then((img) => {
+        loadImage(body.url(z, ty, col)).then((img) => {
           if (!img) return;
           ctx.drawImage(img, tx * 256 - left, ty * 256 - top);
           img.close();
@@ -245,14 +267,29 @@ async function buildMoonPatch(lat: number, lon: number, sizeMeters: number): Pro
   return createImageBitmap(canvas);
 }
 
-export async function streamMoonRings(
+async function streamTrekRings(
+  body: TrekBody,
   lat: number,
   lon: number,
   sizes: number[],
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
 ): Promise<void> {
   for (let k = 0; k < sizes.length; k++) {
-    const bmp = await buildMoonPatch(lat, lon, sizes[k]);
-    if (bmp) await onReady(`moonring${k}`, bmp);
+    const bmp = await buildTrekPatch(body, lat, lon, sizes[k]);
+    if (bmp) await onReady(`${body.key}${k}`, bmp);
   }
 }
+
+export const streamMoonRings = (
+  lat: number,
+  lon: number,
+  sizes: number[],
+  onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
+): Promise<void> => streamTrekRings(TREK_MOON, lat, lon, sizes, onReady);
+
+export const streamMarsRings = (
+  lat: number,
+  lon: number,
+  sizes: number[],
+  onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
+): Promise<void> => streamTrekRings(TREK_MARS, lat, lon, sizes, onReady);

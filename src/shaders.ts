@@ -160,14 +160,14 @@ struct FOut {
       base = vec3f(0.72, 0.7, 0.68) * O.color.rgb * (0.7 + 0.6 * fbm(lp * 9.0));
     }
   } else if (matId == 11) {
-    // Moon imagery ring (LRO WAC via NASA Moon Trek): plain sun-lit imagery
-    // draped on the sphere — no night lights on an airless world. O.color
-    // carries the lunar-eclipse tint so the ground dims and reddens with
-    // the globe when Earth's shadow sweeps over the site. The 1.6 gain
-    // matches the raw WAC mosaic's exposure to the albedo-normalized global
-    // color map so the site patch doesn't sit dark on the globe.
+    // Airless/thin-air imagery ring (Moon WAC, Mars Viking via NASA Trek):
+    // plain sun-lit imagery draped on the sphere — no night lights. O.color
+    // carries a tint (the Moon's rings share the lunar-eclipse multiplier so
+    // the ground dims and reddens with the globe). O.misc.x is an exposure
+    // gain matching the ring mosaic to its globe map (WAC 1.6, Viking 1.0).
     let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
-    base = textureSample(dayTex, samp, uv).rgb * 1.6 * O.color.rgb;
+    let gain = select(1.0, O.misc.x, O.misc.x > 0.0);
+    base = textureSample(dayTex, samp, uv).rgb * gain * O.color.rgb;
     // Up close the source is ~83 m/px: procedural regolith detail carries
     // the last two orders of magnitude, fading out by a few km away.
     let lpm = lp.xz * O.misc.y;

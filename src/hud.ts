@@ -124,15 +124,12 @@ export class Hud {
     const scroller = document.createElement('div');
     scroller.className = 'scroller';
     bar.appendChild(scroller);
-    let visibleIndex = 0;
+    // Plain names, in tour order — the bar has outgrown number-key labels
+    // (the tour keeps adding stops; search (/) reaches everything by name).
     targets.forEach((t, i) => {
       if (t.hidden && !t.button) return;
       const b = document.createElement('button');
-      // Every button carries its number-key label, in bar order: 1–9 then 0
-      // (the main chain and the inward-journey stages alike).
-      const label = visibleIndex < 10 ? `${(visibleIndex + 1) % 10} ` : '';
-      visibleIndex++;
-      b.textContent = label + t.name;
+      b.textContent = t.name;
       b.addEventListener('click', () => onTarget(i));
       scroller.appendChild(b);
       this.buttons.set(i, b);

@@ -25,7 +25,7 @@ import { Renderer, FrameData } from './renderer';
 import { buildUniverse, ringGeometry, RING_GRID, Target } from './scene';
 import { streamStars, StarChunkMeta } from './stars';
 import { loadGalaxies } from './galaxies';
-import { fetchRingHeights, streamImageryRings, streamMoonRings } from './terrain';
+import { fetchRingHeights, streamImageryRings, streamMoonRings, streamMarsRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { moonEcliptic, earthEqCenterDeg } from './ephemeris';
 import { raDecToScene } from './sky';
@@ -178,6 +178,7 @@ async function start(): Promise<void> {
         s.basis[2][k] = s.n0[k] * c + s.e0[k] * sn;
       }
     }
+    for (const h of u.postSpin) h(); // surface sites ride their planet's spin
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
@@ -291,6 +292,35 @@ async function start(): Promise<void> {
     if (moonImageryStarted || (slug !== 'moon' && slug !== 'tranquility')) return;
     moonImageryStarted = true;
     void streamMoonRings(u.nav.moon.site[0], u.nav.moon.site[1], u.nav.moon.ringSizes, async (key, bmp) => {
+      await renderer.addTexture(key, bmp);
+    });
+  }
+
+  // ---- Jezero crater: baked MOLA terrain + lazily streamed Viking rings ----
+  const marsTerrainFields: { S: number; h: Float32Array }[] = [];
+  void fetch(`${import.meta.env.BASE_URL}mars/jezero.json`)
+    .then(async (r) => {
+      if (!r.ok) return;
+      const jz = (await r.json()) as { siteElev: number; rings: { S: number; heights: number[] }[] };
+      let deepest = 0;
+      jz.rings.forEach((ring, k) => {
+        const h = new Float32Array(ring.heights);
+        for (const v of h) deepest = Math.min(deepest, v);
+        marsTerrainFields.push({ S: ring.S, h });
+        const g = ringGeometry(ring.S, h, u.nav.mars.R, k < jz.rings.length - 1);
+        renderer.addGeometry(`marsring${k}`, g.verts, g.indices);
+      });
+      // The render sphere is 3.39e6; the site datum and the deepest carved
+      // point both sit below it.
+      u.nav.mars.dimpleMars(3.39e6 - u.nav.mars.R - deepest + 30);
+    })
+    .catch(() => {});
+  let marsImageryStarted = false;
+  function maybeStreamMarsImagery(): void {
+    const slug = u.targets[activeTarget].slug;
+    if (marsImageryStarted || (slug !== 'mars' && slug !== 'jezero')) return;
+    marsImageryStarted = true;
+    void streamMarsRings(u.nav.mars.site[0], u.nav.mars.site[1], u.nav.mars.ringSizes, async (key, bmp) => {
       await renderer.addTexture(key, bmp);
     });
   }
@@ -699,9 +729,11 @@ async function start(): Promise<void> {
     'galaxy',
     'system',
     'sun',
-    'earth',
+    'mars',
+    'jezero',
     'moon',
     'tranquility',
+    'earth',
     'surface',
     'weave',
     'fiber',
@@ -950,20 +982,12 @@ async function start(): Promise<void> {
     },
     { passive: false },
   );
-  // Number keys cover every HUD button in bar order (1–9, then 0): the
-  // main chain and the inward-journey stages alike.
-  const keyTargets = u.targets.map((t, i) => ({ t, i })).filter(({ t }) => !t.hidden || t.button);
   window.addEventListener('keydown', (e) => {
     if (hud.isSearchOpen()) return; // the search input owns the keyboard
     if (e.key === '/') {
       e.preventDefault();
       hud.openSearch();
       return;
-    }
-    const n = e.key === '0' ? 10 : parseInt(e.key, 10);
-    if (n >= 1 && n <= Math.min(keyTargets.length, 10)) {
-      touring = false;
-      flyTo(keyTargets[n - 1].i);
     }
     if (e.key === 't' || e.key === 'T') toggleTour();
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
@@ -1186,12 +1210,19 @@ async function start(): Promise<void> {
     // toward the zenith while the camera body rests on the ground.
     {
       const slug = u.targets[activeTarget].slug;
-      const onMoon = slug === 'tranquility';
-      if (!flight && !retarget && (slug === 'surface' || slug === 'roam' || onMoon)) {
-        const R = onMoon ? u.nav.moon.R : 6.371e6;
-        const bodyFrame = onMoon ? u.moonFrame : earthFrameRef;
-        const gnomonic = onMoon ? u.nav.moon.gnomonicEUN : u.nav.gnomonicEUN;
-        const fields = onMoon ? moonTerrainFields : terrainFields;
+      const site =
+        slug === 'surface' || slug === 'roam'
+          ? { R: 6.371e6, frame: earthFrameRef, gn: u.nav.gnomonicEUN, fields: terrainFields }
+          : slug === 'tranquility'
+            ? { R: u.nav.moon.R, frame: u.moonFrame, gn: u.nav.moon.gnomonicEUN, fields: moonTerrainFields }
+            : slug === 'jezero'
+              ? { R: u.nav.mars.R, frame: u.marsFrame, gn: u.nav.mars.gnomonicEUN, fields: marsTerrainFields }
+              : null;
+      if (!flight && !retarget && site) {
+        const R = site.R;
+        const bodyFrame = site.frame;
+        const gnomonic = site.gn;
+        const fields = site.fields;
         for (let i = 0; i < 40; i++) {
           const camPos = add(cam.focus, scale(camDir(), cam.dist));
           const rel = relPos(cam.frame, camPos, bodyFrame, [0, 0, 0]);
@@ -1213,6 +1244,7 @@ async function start(): Promise<void> {
       }
     }
     maybeStreamMoonImagery();
+    maybeStreamMarsImagery();
     maybeStreamStars();
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
