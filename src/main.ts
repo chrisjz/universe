@@ -1001,8 +1001,25 @@ async function start(): Promise<void> {
     },
     { passive: false },
   );
+  // Arrow keys drive smooth navigation from the frame loop (held-state, not
+  // key auto-repeat): up/down zoom like scroll, left/right orbit like drag.
+  const heldArrows = new Set<string>();
+  window.addEventListener('keyup', (e) => heldArrows.delete(e.key));
+  window.addEventListener('blur', () => heldArrows.clear());
   window.addEventListener('keydown', (e) => {
     if (hud.isSearchOpen()) return; // the search input owns the keyboard
+    if (e.key.startsWith('Arrow')) {
+      heldArrows.add(e.key);
+      e.preventDefault();
+      return;
+    }
+    // Enter flies to whatever holds focus — the keyboard's double-click
+    // (single-click focuses; Enter goes there).
+    if (e.key === 'Enter') {
+      touring = false;
+      flyTo(activeTarget);
+      return;
+    }
     if (e.key === '/') {
       e.preventDefault();
       hud.openSearch();
@@ -1204,6 +1221,20 @@ async function start(): Promise<void> {
     if (!paused) {
       simMs = clamp(simMs + dt * SPEEDS[speedIndex] * 1000, SIM_MIN_MS, SIM_MAX_MS);
       updateBodies();
+    }
+    // Keyboard navigation: held arrows glide instead of stepping. Up/down
+    // is the trackpad-friendly zoom (same exponential feel as scroll);
+    // left/right orbit the focus like a horizontal drag.
+    if (heldArrows.size) {
+      if (heldArrows.has('ArrowUp') || heldArrows.has('ArrowDown')) {
+        flight = null;
+        touring = false;
+        const dir = heldArrows.has('ArrowUp') ? -1 : 1;
+        const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+        cam.dist = clamp(cam.dist * Math.exp(dir * 1.8 * dt), minD, MAX_DIST);
+      }
+      if (heldArrows.has('ArrowLeft')) cam.yaw += 1.1 * dt;
+      if (heldArrows.has('ArrowRight')) cam.yaw -= 1.1 * dt;
     }
     updateFlight(dt);
     updateRetarget(dt);
