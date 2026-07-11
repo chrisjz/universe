@@ -286,6 +286,11 @@
       }
       /* Small screens: tighter type, no hint line, scrolling button bar. */
       @media (max-width: 760px) {
+        /* At least 16px or iOS zooms the whole page in on focus — and the
+           zoom outlives the keyboard, stranding the bottom bar off-screen. */
+        #search input {
+          font-size: 16px;
+        }
         #title {
           top: calc(10px + env(safe-area-inset-top, 0px));
           left: 14px;
