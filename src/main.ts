@@ -1118,6 +1118,24 @@ async function start(): Promise<void> {
       if (!touring) toggleTour();
     }, 1200);
   }
+  // ?at=/?years= must be applied BEFORE ?goto: the jump computes its
+  // sunlit-side arrival yaw from where the bodies are NOW, so pinning the
+  // clock afterwards left the camera aimed by the wall clock — every
+  // capture run got a slightly different yaw, drifting ~1°/day of real
+  // time at Earth. Clock first, then jump: the pose is a pure function of
+  // the URL.
+  const atParam = Date.parse(params.get('at') ?? '');
+  if (Number.isFinite(atParam)) {
+    simMs = atParam;
+    updateBodies();
+  }
+  // ?years=<offset from now> — deep-time deep link (e.g. ?years=-13e9 for
+  // just after the Big Bang, ?years=12000 for Vega as the pole star).
+  const yearsParam = parseFloat(params.get('years') ?? '');
+  if (Number.isFinite(yearsParam)) {
+    simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
+    updateBodies();
+  }
   const goto = params.get('goto');
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
@@ -1142,19 +1160,6 @@ async function start(): Promise<void> {
   if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
   const pitchParam = parseFloat(params.get('pitch') ?? '');
   if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
-  // ?at=<ISO date/time> — start the simulation clock at a chosen moment.
-  const atParam = Date.parse(params.get('at') ?? '');
-  if (Number.isFinite(atParam)) {
-    simMs = atParam;
-    updateBodies();
-  }
-  // ?years=<offset from now> — deep-time deep link (e.g. ?years=-13e9 for
-  // just after the Big Bang, ?years=12000 for Vega as the pole star).
-  const yearsParam = parseFloat(params.get('years') ?? '');
-  if (Number.isFinite(yearsParam)) {
-    simMs = clamp(Date.now() + yearsParam * YEAR_MS, SIM_MIN_MS, SIM_MAX_MS);
-    updateBodies();
-  }
   // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
   // scene to one instant, which is what a reproducible screenshot needs.
   if (params.get('paused') !== null) paused = true;
