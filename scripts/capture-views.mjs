@@ -72,9 +72,18 @@ const browser = await puppeteer.launch({
     '--enable-unsafe-webgpu',
     '--hide-scrollbars',
     `--window-size=${W},${H}`,
-    // CI runners have no GPU and no user namespace guarantees.
+    // CI runners have no GPU and no user namespace guarantees. The feature
+    // trio puts ANGLE, the compositor, and Dawn on ONE SwiftShader Vulkan
+    // device — without it Dawn renders fine but its swap-chain shared image
+    // never reaches the canvas, and every capture reads back opaque black.
     ...(swift
-      ? ['--no-sandbox', '--enable-features=Vulkan', '--disable-vulkan-surface', `--use-webgpu-adapter=${swift}`]
+      ? [
+          '--no-sandbox',
+          `--use-webgpu-adapter=${swift}`,
+          '--use-angle=vulkan',
+          '--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
+          '--disable-vulkan-surface',
+        ]
       : []),
   ],
   defaultViewport: { width: W, height: H },
@@ -138,8 +147,10 @@ try {
       failed++;
       // Debug evidence: what the compositor sees (vs the canvas readback).
       writeFileSync(`${outDir}/debug-${v.name}-compositor.png`, await page.screenshot({ type: 'png' }));
+      const px = [png.data[0], png.data[1], png.data[2], png.data[3]].join(',');
+      const fatal = await page.evaluate(() => document.querySelector('#fatal')?.textContent ?? '');
       console.error(
-        `✗ ${v.name}: ${uniform ? 'uniform canvas (render pass produced nothing)' : `no frames (title "${title}")`}`,
+        `✗ ${v.name}: ${uniform ? `uniform canvas rgba(${px})` : 'no frames'} — title "${title}"${fatal ? ` fatal "${fatal}"` : ''}`,
       );
     } else {
       console.log(`✓ ${v.name}  (${title})`);
