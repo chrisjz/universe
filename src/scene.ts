@@ -1537,6 +1537,10 @@ export function buildUniverse(): Universe {
 
   // The main zoom chain is universe → galaxy → system → earth → surface;
   // sun / moon / web are leaves you visit explicitly and scroll back out of.
+  // Mars graduates from hidden planet target to a bar bookmark: the tour
+  // stops in front of it (like the Moon and Earth) on its way to Jezero.
+  const marsTarget = planetTargets.find((t) => t.slug === 'mars')!;
+  marsTarget.hidden = false;
   const targets: Target[] = [
     {
       name: 'OBSERVABLE UNIVERSE',
@@ -1598,10 +1602,11 @@ export function buildUniverse(): Universe {
       exit: 5e10,
       radius: 6.957e8,
     },
-    // Bookmarks follow the grand tour's order — Jezero comes between the
-    // Sun and Earth, exactly where the tour flies it.
+    // Bookmarks follow the grand tour's order exactly: sun → Mars → Jezero →
+    // Moon → Tranquility → Earth → the picnic — each world, then its surface.
+    marsTarget,
     {
-      name: 'JEZERO · MARS',
+      name: 'JEZERO CRATER',
       slug: 'jezero',
       source: 'Perseverance landing site, 18.445°N 77.451°E — Viking imagery, MOLA terrain',
       frame: jezero,
@@ -1612,6 +1617,34 @@ export function buildUniverse(): Universe {
       parent: 'mars',
       exit: 2e7,
       basis: jzBasis,
+    },
+    {
+      name: 'THE MOON',
+      slug: 'moon',
+      source: 'measured — LROC WAC mosaic, true synchronous rotation',
+      frame: earthFrame,
+      pos: moonPos,
+      dist: 8e6,
+      pitch: 0.1,
+      sunlit: true,
+      parent: 'earth',
+      exit: 1.2e8,
+      child: 'tranquility',
+      enter: 2.8e6,
+      radius: R_MOON,
+    },
+    {
+      name: 'TRANQUILITY BASE',
+      slug: 'tranquility',
+      source: 'Apollo 11 site, 0.674°N 23.473°E — LRO WAC imagery, LOLA terrain',
+      frame: tranquility,
+      pos: tqAnchor([0, 0.5, 0]),
+      dist: 4e4,
+      pitch: 0.35,
+      sunlit: true,
+      parent: 'moon',
+      exit: 7e6,
+      basis: tqBasis,
     },
     {
       name: 'EARTH',
@@ -1629,36 +1662,6 @@ export function buildUniverse(): Universe {
       radius: R_EARTH,
     },
     {
-      name: 'THE MOON',
-      slug: 'moon',
-      source: 'measured — LROC WAC mosaic, true synchronous rotation',
-      frame: earthFrame,
-      pos: moonPos,
-      dist: 8e6,
-      pitch: 0.1,
-      sunlit: true,
-      parent: 'earth',
-      exit: 1.2e8,
-      child: 'tranquility',
-      enter: 2.8e6,
-      radius: R_MOON,
-    },
-    // Tranquility sits next to the Moon in the bar (8) so the bookmarks read
-    // outward-in without hopping between worlds: moon, its site, then Earth's.
-    {
-      name: 'TRANQUILITY BASE',
-      slug: 'tranquility',
-      source: 'Apollo 11 site, 0.674°N 23.473°E — LRO WAC imagery, LOLA terrain',
-      frame: tranquility,
-      pos: tqAnchor([0, 0.5, 0]),
-      dist: 4e4,
-      pitch: 0.35,
-      sunlit: true,
-      parent: 'moon',
-      exit: 7e6,
-      basis: tqBasis,
-    },
-    {
       name: 'THE PICNIC · 1 METER',
       slug: 'surface',
       source: 'real place, 41.869°N 87.618°W — imagery © Esri/Maxar',
@@ -1674,7 +1677,7 @@ export function buildUniverse(): Universe {
     },
     // Hidden targets stay after the visible bookmarks.
     ...microTargets,
-    ...planetTargets,
+    ...planetTargets.filter((t) => t.slug !== 'mars'),
     ...starTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
     // roams this point anywhere on the planet; the imagery stack follows.
