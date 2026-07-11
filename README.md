@@ -87,21 +87,22 @@ real already is:
 
 ## Controls
 
-| Input         | Action                                                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **scroll**    | seamless zoom — all the way down, all the way back up                                                                   |
-| **click**     | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there          |
-| **2×click**   | fly to what's under the cursor                                                                                          |
-| **drag**      | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky    |
-| **⇧-drag**    | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                 |
-| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — universe to the fiber, Jezero and Tranquility included |
-| **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                           |
-| **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative   |
-| **C**         | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                             |
-| **[ ]**       | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                |
-| **P**         | pause the simulation clock                                                                                              |
-| **T**         | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                             |
-| **Esc**       | cancel the current flight                                                                                               |
+| Input         | Action                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **scroll**    | seamless zoom — all the way down, all the way back up                                                                          |
+| **click**     | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there                 |
+| **2×click**   | fly to what's under the cursor                                                                                                 |
+| **drag**      | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky           |
+| **⇧-drag**    | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                        |
+| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — universe to the fiber, Jezero and Tranquility included        |
+| **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
+| **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
+| **C**         | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                    |
+| **[ ]**       | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                       |
+| **P**         | pause the simulation clock                                                                                                     |
+| **T**         | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                                    |
+| **H / S**     | **H** toggles the overlay (HUD, labels, orbit lines) · **S** saves a 2×-supersampled PNG — independent: saves are always clean |
+| **Esc**       | cancel the current flight                                                                                                      |
 
 On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
 across the planet**, tap focuses, **double-tap flies**, and the search /
@@ -170,7 +171,7 @@ by theme:
 
 - [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
 - [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
-- [ ] Messier destinations: the deep-sky catalog at real positions and sizes — M31, M13, the Orion Nebula, searchable and flyable
+- [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
 
 **A living solar system**
@@ -182,7 +183,7 @@ by theme:
 
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
-- [ ] Photo mode: hide the HUD, supersample, save
+- [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 
 **Under the hood**
@@ -246,8 +247,9 @@ pipelines (all regenerable from public sources) are documented in
   **ESA/Gaia/DPAC**).
 - **Galaxies** — the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mrs/)
   (Huchra et al. 2012, ApJS 199, 26).
-- **Constellations** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
-  by Olaf Frohn (BSD-3-Clause).
+- **Constellations & Messier objects** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
+  by Olaf Frohn (BSD-3-Clause); Messier distances from
+  [Wikidata](https://www.wikidata.org/) (CC0, median of published claims).
 - **Earth** — NASA [Blue Marble](https://visibleearth.nasa.gov/collection/1484/blue-marble)
   and [Black Marble](https://earthobservatory.nasa.gov/features/NightLights)
   (public domain); street-level imagery © **Esri** — Source: Esri, Maxar,
