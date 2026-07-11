@@ -1,7 +1,8 @@
 // Captures the visual-regression view set as PNGs from a real headless
 // Chrome running the built app (dist/ via `vite preview`). Works on
-// GPU-less CI runners: set WEBGPU_ADAPTER=swiftshader and Dawn rasterizes
-// WebGPU on the CPU (SwiftShader Vulkan).
+// GPU-less CI runners: set WEBGPU_CI=1 and Chrome runs its normal Vulkan
+// path on Mesa lavapipe (CPU-rasterized Vulkan; install
+// mesa-vulkan-drivers first).
 //
 // Every view pins the whole scene to one instant (?at= + ?paused=1) and
 // forces the bundled star catalog (?stars=athyg) so nothing external is
@@ -9,7 +10,7 @@
 //
 //   node scripts/capture-views.mjs [outDir]        (default visual-out)
 //   CHROME_PATH=...  chrome binary (default: the macOS app path)
-//   WEBGPU_ADAPTER=swiftshader  adds the CPU-rasterizer flags for CI
+//   WEBGPU_CI=1  adds the GPU-less-runner flags (Vulkan/lavapipe)
 //
 // A capture fails loudly if the canvas never varies (a dead render pass
 // composites as uniform black — the exact failure this net exists to catch).
@@ -64,7 +65,13 @@ await new Promise((resolve, reject) => {
 });
 
 // ---- launch chrome ----
-const swift = process.env.WEBGPU_ADAPTER;
+// WEBGPU_CI=1 targets GPU-less runners with Mesa lavapipe (a real, software
+// Vulkan driver — `apt-get install mesa-vulkan-drivers`). Chrome's fallback
+// `--use-webgpu-adapter=swiftshader` is a dead end in stable: the canvas
+// never composites AND mapAsync rejects ("valid external Instance reference
+// no longer exists"), so no readback path exists. With lavapipe, Dawn,
+// ANGLE, and the compositor share one ordinary Vulkan device.
+const ci = process.env.WEBGPU_CI;
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: true,
@@ -72,11 +79,13 @@ const browser = await puppeteer.launch({
     '--enable-unsafe-webgpu',
     '--hide-scrollbars',
     `--window-size=${W},${H}`,
-    // CI runners have no GPU and no user namespace guarantees. (Don't add
-    // the DefaultANGLEVulkan/VulkanFromANGLE trio here: on the GPU-less
-    // runner it kills adapter acquisition entirely.)
-    ...(swift
-      ? ['--no-sandbox', '--enable-features=Vulkan', '--disable-vulkan-surface', `--use-webgpu-adapter=${swift}`]
+    ...(ci
+      ? [
+          '--no-sandbox',
+          '--use-angle=vulkan',
+          '--enable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
+          '--disable-vulkan-surface',
+        ]
       : []),
   ],
   defaultViewport: { width: W, height: H },
@@ -125,14 +134,19 @@ try {
     // SwiftShader; the API readback is the one path that sees real pixels.
     // The race guards against a dead frame loop.
     await new Promise((r) => setTimeout(r, 3000));
-    const dataUrl = await page.evaluate(() =>
-      Promise.race([window.__snap(), new Promise((r) => setTimeout(() => r(''), 60000))]),
-    );
+    let dataUrl = '';
+    try {
+      dataUrl = await page.evaluate(() =>
+        Promise.race([window.__snap(), new Promise((r) => setTimeout(() => r(''), 60000))]),
+      );
+    } catch (e) {
+      console.error(`  __snap evaluate threw: ${e.message}`); // tab crash/reload
+    }
     if (!dataUrl) {
       failed++;
       writeFileSync(`${outDir}/debug-${v.name}-compositor.png`, await page.screenshot({ type: 'png' }));
       const fatal = await page.evaluate(() => document.querySelector('#fatal')?.textContent ?? '');
-      console.error(`✗ ${v.name}: __snap never resolved — title "${title}"${fatal ? ` fatal "${fatal}"` : ''}`);
+      console.error(`✗ ${v.name}: empty snapshot — title "${title}"${fatal ? ` fatal "${fatal}"` : ''}`);
       continue;
     }
     const shot = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');

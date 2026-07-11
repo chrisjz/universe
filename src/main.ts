@@ -1573,7 +1573,10 @@ async function start(): Promise<void> {
             }),
         )
         .then(done)
-        .catch(() => done(''));
+        .catch((e: unknown) => {
+          console.error('[snap]', e instanceof Error ? e.message : String(e));
+          done('');
+        });
     }
     if (captureRequested) {
       captureRequested = false;
