@@ -80,6 +80,9 @@ export class Renderer {
     this.device.addEventListener('uncapturederror', (e) => {
       console.error('[webgpu]', e.error.message);
     });
+    void this.device.lost.then((info) => {
+      console.error('[webgpu] device lost:', info.reason, info.message);
+    });
     console.log('[webgpu] adapter ok');
     this.ctx = this.canvas.getContext('webgpu') as GPUCanvasContext;
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -382,7 +385,10 @@ export class Renderer {
     const enc = this.device.createCommandEncoder();
     enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: rowBytes }, [w, h]);
     this.device.queue.submit([enc.finish()]);
+    console.log('[snap] submitted');
+    void this.device.queue.onSubmittedWorkDone().then(() => console.log('[snap] work done'));
     return buf.mapAsync(GPUMapMode.READ).then(() => {
+      console.log('[snap] mapped');
       const src = new Uint8Array(buf.getMappedRange());
       const out = new Uint8ClampedArray(w * h * 4);
       const b = this.format === 'bgra8unorm' ? 2 : 0; // swizzle to RGBA

@@ -103,7 +103,7 @@ try {
     // WebGPU validation failures land on the console, not as exceptions.
     p.on('console', (m) => {
       if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
-      else if (m.text().startsWith('[webgpu]')) console.log(`  ${m.text()}`);
+      else if (m.text().startsWith('[webgpu]') || m.text().startsWith('[snap]')) console.log(`  ${m.text()}`);
     });
     return p;
   };

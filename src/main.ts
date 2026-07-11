@@ -121,6 +121,7 @@ async function start(): Promise<void> {
   let starYears = 0; // clamped years from J2000 driving stellar proper motion
   let captureRequested = false; // photo: save a supersampled frame (S)
   let snapResolve: ((dataUrl: string) => void) | null = null; // test hook (window.__snap)
+  let snapInFlight = false; // pause frame submission while a readback maps
   let overlayHidden = false; // H: hide the overlay — HUD, labels, orbit lines
   let webA = 1; // last-applied cosmic scale factor
 
@@ -1549,14 +1550,17 @@ async function start(): Promise<void> {
       updateSkyLabels(null, [0, 0, 0]);
     }
 
-    renderer.render(data);
-    if (snapResolve) {
-      // Test hook: read the frame back through the WebGPU API in the task
-      // that rendered it, then PNG-encode via a plain 2D canvas. On
-      // SwiftShader (CI) the WebGPU canvas image itself always reads back
-      // black, so neither screenshots nor toBlob on the GPU canvas work.
+    if (!snapInFlight) renderer.render(data);
+    if (snapResolve && !snapInFlight) {
+      // Test hook: render one extra frame into an offscreen texture and
+      // read it back through the WebGPU API, PNG-encoding via a plain 2D
+      // canvas. On the software Vulkan stacks CI runs on, the canvas image
+      // is unreachable (screenshots and toBlob read back black), and the
+      // frame loop stays quiet while the map is in flight — continuous
+      // submissions can wedge a software queue mid-readback.
       const done = snapResolve;
       snapResolve = null;
+      snapInFlight = true;
       renderer
         .snapshot(() => renderer.render(data))
         .then((img) => {
@@ -1572,9 +1576,13 @@ async function start(): Promise<void> {
               fr.readAsDataURL(blob);
             }),
         )
-        .then(done)
+        .then((dataUrl) => {
+          snapInFlight = false;
+          done(dataUrl);
+        })
         .catch((e: unknown) => {
           console.error('[snap]', e instanceof Error ? e.message : String(e));
+          snapInFlight = false;
           done('');
         });
     }
