@@ -166,6 +166,9 @@ export class Hud {
   closeSearch(): void {
     this.searchEl.style.display = 'none';
     this.searchInput.blur();
+    // Mobile keyboards can scroll the layout viewport while the input is
+    // focused; put the page back so the fixed bottom bar stays on screen.
+    window.scrollTo(0, 0);
   }
 
   private renderResults(q: string): void {
@@ -197,6 +200,11 @@ export class Hud {
   }
 
   private wireSearch(): void {
+    // Tap/click anywhere outside the panel dismisses it — on touch screens
+    // there is no Escape key.
+    document.addEventListener('pointerdown', (e) => {
+      if (this.isSearchOpen() && !this.searchEl.contains(e.target as Node)) this.closeSearch();
+    });
     this.searchInput.addEventListener('input', () => this.renderResults(this.searchInput.value));
     this.searchInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
