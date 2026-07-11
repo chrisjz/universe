@@ -74,7 +74,7 @@ async function start(): Promise<void> {
 
   const u = buildUniverse();
   u.patchGeoms.forEach((g) => renderer.addGeometry(g.name, g.verts, g.indices));
-  const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data, g.moving));
+  const groupIndex = u.groups.map((g) => renderer.addPointGroup(g.data, g.mode));
 
   // ---- simulation clock & mean-longitude ephemeris ----
   // Planet/Moon positions are real for the simulated date (circular, coplanar
@@ -424,6 +424,41 @@ async function start(): Promise<void> {
   }
   anchorImagery(u.nav.home[0], u.nav.home[1]);
 
+  // ---- the real small bodies: MPC orbits, Kepler solved on the GPU ----
+  // 40k of the largest real minor planets (belt, Trojans, Hildas, Kuiper),
+  // each instance carrying its ellipse basis + mean anomaly; the vertex
+  // shader integrates them every frame. Colors tint by population.
+  void fetch(`${import.meta.env.BASE_URL}smallbodies.bin`)
+    .then(async (r) => {
+      if (!r.ok) return;
+      const buf = await r.arrayBuffer();
+      const dv = new DataView(buf);
+      const POPS: { tint: [number, number, number, number]; fade: number }[] = [
+        { tint: [0.78, 0.74, 0.68, 0.55], fade: 6e13 }, // main belt: rocky gray
+        { tint: [0.72, 0.7, 0.79, 0.55], fade: 8e13 }, // Trojans: slate
+        { tint: [0.8, 0.72, 0.6, 0.55], fade: 8e13 }, // Hildas: warm
+        { tint: [0.62, 0.72, 0.86, 0.7], fade: 4e14 }, // Kuiper: icy blue
+      ];
+      let off = 4 * (1 + POPS.length);
+      POPS.forEach((p, i) => {
+        const count = dv.getUint32(4 + i * 4, true);
+        const inst = new Float32Array(buf, off, count * 10);
+        off += count * 40;
+        groupIndex.push(renderer.addPointGroup(inst, 'orbital'));
+        u.groups.push({
+          frame: u.sunFrame,
+          pos: [0, 0, 0],
+          data: inst,
+          fadeExtent: p.fade,
+          nearFade: true,
+          prov: 0.5, // measured orbits, stylized points
+          mode: 'orbital',
+          tint: p.tint,
+        });
+      });
+    })
+    .catch(() => {}); // offline: no belt
+
   // ---- stream the star tiles (brightest chunks first) ----
   // The full tileset (854k ATHYG brights + 5.9M Gaia DR3 faint stars, 104 MB)
   // lives in the chrisjz/universe-data repo, served at data.universeatlas.org
@@ -435,7 +470,7 @@ async function start(): Promise<void> {
   const DATA_URL = starParams.get('data') ?? 'https://data.universeatlas.org/stars/';
   let starCount = 0;
   const onStarChunk = (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta): void => {
-    groupIndex.push(renderer.addPointGroup(instances, true));
+    groupIndex.push(renderer.addPointGroup(instances, 'moving'));
     u.groups.push({
       frame: u.sunFrame,
       pos: [0, 0, 0],
@@ -444,7 +479,7 @@ async function start(): Promise<void> {
       nearFade: true,
       prov: 0,
       cone: meta.cone ?? undefined,
-      moving: true,
+      mode: 'moving',
     });
     starCount += instances.length / 11;
   };
@@ -1340,6 +1375,9 @@ async function start(): Promise<void> {
     globals[26] = (now - t0) / 1000;
     globals[27] = pxFactor;
     globals[28] = starYears; // proper-motion years (see shaders.ts Globals.motion)
+    // Small-body clock: days from J2000, clamped to ±100 years — osculating
+    // elements are honest on that scale; beyond it the belt holds its pose.
+    globals[29] = Math.max(-36525, Math.min(36525, (simMs - J2000) / 86400000));
 
     const data: FrameData = { globals, meshes: [], lines: [], groups: [] };
 
@@ -1468,13 +1506,19 @@ async function start(): Promise<void> {
           if (cos < Math.cos(limit)) return;
         }
       }
-      const gd = new Float32Array(8);
+      const gd = new Float32Array(12);
       gd[0] = rel[0];
       gd[1] = rel[1];
       gd[2] = rel[2];
       gd[3] = fade;
       gd[4] = g.nearFade ? 1.2e12 : 0;
       gd[5] = g.prov ?? 0;
+      if (g.tint) {
+        gd[8] = g.tint[0];
+        gd[9] = g.tint[1];
+        gd[10] = g.tint[2];
+        gd[11] = g.tint[3];
+      }
       data.groups.push({ index: groupIndex[i], data: gd });
     });
 

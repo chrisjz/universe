@@ -47,9 +47,11 @@ export interface PointGroup {
   // The frame loop culls whole tile groups outside the view frustum — the
   // deep sky is vertex-bound, and most tiles are behind you or underfoot.
   cone?: { dir: V3; ang: number };
-  // 11-float instances with a 3D velocity — drawn by the proper-motion
-  // pipeline (stars move through deep time).
-  moving?: boolean;
+  // Instance layout / pipeline: 'moving' stars carry a 3D velocity (11
+  // floats), 'orbital' small bodies carry Kepler elements (10 floats) and
+  // a per-group tint; default is the static 8-float layout.
+  mode?: 'static' | 'moving' | 'orbital';
+  tint?: [number, number, number, number]; // orbital: rgb + base intensity
 }
 export interface OrbitLine {
   // True Kepler ellipse: pos(θ) = center + centerOff + axisA·cosθ + axisB·sinθ.
@@ -711,6 +713,87 @@ export function buildUniverse(): Universe {
       ...(name === 'mars' ? { child: 'jezero', enter: 6e6 } : {}),
     });
   });
+
+  // ---- Small-body destinations: Ceres and Halley ----
+  // Both ride the same Kepler path as the planets, with elements derived
+  // from the MPC catalogs (Ceres: MPCORB epoch 2026-06-09 rebased to J2000;
+  // Halley: CometEls, 2061 return — its mean anomaly self-checks to 0.07°
+  // at the real 1986 perihelion). The 40k-body belt around them is GPU-side.
+  const mpEl = (
+    a: number,
+    e: number,
+    i: number,
+    L: number,
+    peri: number,
+    node: number,
+    LDot: number,
+  ): PlanetElements => ({
+    a,
+    aDot: 0,
+    e,
+    eDot: 0,
+    i,
+    iDot: 0,
+    L,
+    LDot,
+    peri,
+    periDot: 0,
+    node,
+    nodeDot: 0,
+  });
+  const CERES_EL = mpEl(2.7655526, 0.0796923, 10.58803, 158.74556, 153.54283, 80.24863, 7827.47);
+  const HALLEY_EL = mpEl(17.85848, 0.968018, 162.1825, 237.76256, 171.5633, 59.3317, 477.019);
+  for (const sb of [
+    {
+      name: 'CERES',
+      slug: 'ceres',
+      el: CERES_EL,
+      r: 4.7e5,
+      color: [0.62, 0.6, 0.56] as [number, number, number],
+      orbitColor: [0.4, 0.62, 1.0] as [number, number, number],
+      alpha: 0.14,
+      source: 'measured orbit (MPC) & size — stylized surface',
+    },
+    {
+      name: "HALLEY'S COMET",
+      slug: 'halley',
+      el: HALLEY_EL,
+      r: 5.5e3,
+      color: [0.34, 0.33, 0.36] as [number, number, number],
+      orbitColor: [0.55, 0.72, 0.88] as [number, number, number],
+      alpha: 0.22,
+      source: 'measured orbit (MPC, 1P/Halley) & size — stylized nucleus',
+    },
+  ]) {
+    const pos: V3 = [sb.el.a * AU, 0, 0];
+    meshes.push(sphere(sunFrame, pos, sb.r, sb.color, 4));
+    const ell = keplerEllipse(sb.el);
+    orbits.push({
+      frame: sunFrame,
+      center: [0, 0, 0],
+      radius: sb.el.a * AU,
+      color: sb.orbitColor,
+      alpha: sb.alpha,
+      axisA: ell.A,
+      axisB: ell.B,
+      centerOff: ell.center,
+    });
+    bodies.push({ a: sb.el.a * AU, periodDays: 36525 / (sb.el.LDot / 360), L0: 0, positions: [pos], el: sb.el });
+    planetTargets.push({
+      name: sb.name,
+      slug: sb.slug,
+      frame: sunFrame,
+      pos,
+      dist: 40 * sb.r,
+      pitch: 0.15,
+      sunlit: true,
+      source: sb.source,
+      parent: 'system',
+      exit: Math.max(3 * sb.el.a * AU, 1e12),
+      radius: sb.r,
+      hidden: true,
+    });
+  }
 
   // The ring annulus net: unit outer radius in the local xz plane; the
   // shader recovers the radial fraction from |lp.xz| (74,500 km = 0.53025).
@@ -1474,7 +1557,15 @@ export function buildUniverse(): Universe {
         });
       }
     });
-    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 8e18, nearFade: true, prov: 0, moving: true });
+    groups.push({
+      frame: sunFrame,
+      pos: [0, 0, 0],
+      data: d,
+      fadeExtent: 8e18,
+      nearFade: true,
+      prov: 0,
+      mode: 'moving',
+    });
   }
   meshes.push(...starMeshes);
 

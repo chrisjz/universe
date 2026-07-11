@@ -2,7 +2,7 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, pointsWgsl, LINES_WGSL, SKY_WGSL } from './shaders';
+import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL } from './shaders';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
@@ -36,6 +36,7 @@ export class Renderer {
   private meshPipe!: GPURenderPipeline;
   private pointPipe!: GPURenderPipeline;
   private pointMovePipe!: GPURenderPipeline;
+  private pointOrbitPipe!: GPURenderPipeline;
   private linePipe!: GPURenderPipeline;
 
   private globalsBuf!: GPUBuffer;
@@ -48,7 +49,7 @@ export class Renderer {
   private groupBG!: GPUBindGroup;
 
   private geoms = new Map<MeshKind, Geometry>();
-  private pointGroups: { buf: GPUBuffer; count: number; moving: boolean }[] = [];
+  private pointGroups: { buf: GPUBuffer; count: number; mode: PointsMode }[] = [];
   private circleBuf!: GPUBuffer;
   private skyPipe!: GPURenderPipeline;
   private skyBuf: GPUBuffer | null = null;
@@ -123,7 +124,7 @@ export class Renderer {
       d.createBindGroup({ layout: dynBGL, entries: [{ binding: 0, resource: { buffer: buf, size } }] });
     this.meshBG = mkDyn(this.meshUBO, 112);
     this.lineBG = mkDyn(this.lineUBO, 64);
-    this.groupBG = mkDyn(this.groupUBO, 32);
+    this.groupBG = mkDyn(this.groupUBO, 48); // Grp: origin + misc + tint
 
     const depthStencil: GPUDepthStencilState = {
       format: 'depth32float',
@@ -193,7 +194,7 @@ export class Renderer {
       multisample: { count: 4, alphaToCoverageEnabled: true },
     });
 
-    const pointMod = d.createShaderModule({ code: pointsWgsl(false) });
+    const pointMod = d.createShaderModule({ code: pointsWgsl('static') });
     this.pointPipe = d.createRenderPipeline({
       layout,
       vertex: {
@@ -219,7 +220,7 @@ export class Renderer {
     });
     // Moving stars: same sprite, plus a per-instance 3D space velocity
     // applied in the vertex shader (pos + vel · years-from-J2000).
-    const pointMoveMod = d.createShaderModule({ code: pointsWgsl(true) });
+    const pointMoveMod = d.createShaderModule({ code: pointsWgsl('moving') });
     this.pointMovePipe = d.createRenderPipeline({
       layout,
       vertex: {
@@ -240,6 +241,32 @@ export class Renderer {
         ],
       },
       fragment: { module: pointMoveMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: depthNoWrite,
+      multisample: { count: 4 },
+    });
+
+    // Small bodies: Kepler's equation solved per instance in the vertex
+    // shader — the whole asteroid belt orbits with zero CPU involvement.
+    const pointOrbitMod = d.createShaderModule({ code: pointsWgsl('orbital') });
+    this.pointOrbitPipe = d.createRenderPipeline({
+      layout,
+      vertex: {
+        module: pointOrbitMod,
+        entryPoint: 'vs',
+        buffers: [
+          {
+            arrayStride: 40,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: { module: pointOrbitMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
       primitive: { topology: 'triangle-list' },
       depthStencil: depthNoWrite,
       multisample: { count: 4 },
@@ -289,15 +316,16 @@ export class Renderer {
     this.skyVerts = verts.length / 3;
   }
 
-  // `moving` groups carry 11 floats per instance (…, vel3) and draw through
-  // the proper-motion pipeline; static groups keep the 8-float layout.
-  addPointGroup(instances: F32, moving = false): number {
+  // 'static' groups carry 8 floats per instance, 'moving' 11 (…, vel3),
+  // 'orbital' 10 (ellipse axes A/B + e, M0, n, H — Kepler solved in-shader).
+  addPointGroup(instances: F32, mode: PointsMode = 'static'): number {
     const buf = this.device.createBuffer({
       size: instances.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(buf, 0, instances);
-    this.pointGroups.push({ buf, count: instances.length / (moving ? 11 : 8), moving });
+    const stride = mode === 'moving' ? 11 : mode === 'orbital' ? 10 : 8;
+    this.pointGroups.push({ buf, count: instances.length / stride, mode });
     return this.pointGroups.length - 1;
   }
 
@@ -525,12 +553,14 @@ export class Renderer {
       pass.draw(this.skyVerts);
     }
 
-    let curMoving: boolean | null = null;
+    let curMode: PointsMode | null = null;
     for (let i = 0; i < nGrp; i++) {
       const g = this.pointGroups[frame.groups[i].index];
-      if (g.moving !== curMoving) {
-        curMoving = g.moving;
-        pass.setPipeline(g.moving ? this.pointMovePipe : this.pointPipe);
+      if (g.mode !== curMode) {
+        curMode = g.mode;
+        pass.setPipeline(
+          g.mode === 'moving' ? this.pointMovePipe : g.mode === 'orbital' ? this.pointOrbitPipe : this.pointPipe,
+        );
       }
       pass.setBindGroup(1, this.groupBG, [SLOT * i]);
       pass.setVertexBuffer(0, g.buf);

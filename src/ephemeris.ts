@@ -122,10 +122,13 @@ export const PLANET_ELEMENTS: Record<string, PlanetElements> = {
 
 const AU_M = 1.496e11; // matches the scene's AU
 
-// Solve Kepler's equation E − e·sin E = M by Newton's method.
+// Solve Kepler's equation E − e·sin E = M by Newton's method. For planets
+// (e < 0.3) the M-based seed converges in a few steps; for comets like
+// Halley (e = 0.968) Newton from that seed can overshoot near perihelion,
+// so high-e orbits seed at π, where the iteration is globally stable.
 function solveKepler(M: number, e: number): number {
-  let E = M + e * Math.sin(M); // good seed for e < 0.3
-  for (let k = 0; k < 8; k++) {
+  let E = e < 0.8 ? M + e * Math.sin(M) : Math.PI * Math.sign(M || 1);
+  for (let k = 0; k < 24; k++) {
     const dE = (M - (E - e * Math.sin(E))) / (1 - e * Math.cos(E));
     E += dE;
     if (Math.abs(dE) < 1e-9) break;

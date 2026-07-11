@@ -180,7 +180,7 @@ by theme:
 **A living solar system**
 
 - [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
-- [ ] Small bodies from the Minor Planet Center: the real asteroid belt and Kuiper belt as sampled populations, Halley on its true ellipse
+- [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
 - [ ] Low Earth orbit is a place: the ISS and the Starlink shells, propagated from live TLEs
 
 **The experience**
@@ -266,6 +266,10 @@ pipelines (all regenerable from public sources) are documented in
   [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720) (NASA / GSFC / Arizona State
   University); street-level WAC imagery from
   [NASA Moon Trek](https://trek.nasa.gov/moon/).
+- **Small bodies** — orbital elements from the
+  [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
+  CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
+  resamples `public/smallbodies.bin`.
 - **The planets** — Mars (Viking MDIM 2.1 color mosaic) and Mercury
   (MESSENGER MDIS basemap) via [NASA Trek](https://trek.nasa.gov/); Jupiter
   from Cassini's Dec 2000 global map (PIA07782); Saturn's rings from
