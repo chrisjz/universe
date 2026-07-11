@@ -51,7 +51,10 @@ mkdirSync(outDir, { recursive: true });
 
 // A blank page served from dist/ for the readback probe — about:blank has
 // no navigator.gpu, and every other path SPA-falls-back to the app.
-writeFileSync('dist/__probe.html', '<!doctype html><meta charset="utf-8" /><title>probe</title>');
+writeFileSync(
+  'dist/__probe.html',
+  '<!doctype html><meta charset="utf-8" /><link rel="icon" href="data:," /><title>probe</title>',
+);
 
 // ---- serve dist/ ----
 // detached: npx wraps vite in a child; killing the process GROUP is the
@@ -100,14 +103,20 @@ const browser = await puppeteer.launch({
 });
 
 let failed = 0;
+const blocked = new Map(); // hostname -> aborted request count
 try {
   const mkPage = async () => {
     const p = await browser.newPage();
     p.on('pageerror', (e) => console.error(`  pageerror: ${e.message}`));
     // WebGPU validation failures land on the console, not as exceptions.
     p.on('console', (m) => {
-      if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${m.text()}`);
-      else if (m.text().startsWith('[webgpu]') || m.text().startsWith('[snap]')) console.log(`  ${m.text()}`);
+      const text = m.text();
+      // Our own localhost-only aborts surface as ERR_FAILED resource
+      // errors — the summary line at the end replaces that wall of red.
+      // Anything else (a localhost 404, a real error) still prints.
+      if (text === 'Failed to load resource: net::ERR_FAILED') return;
+      if (m.type() === 'error' || m.type() === 'warning') console.error(`  console.${m.type()}: ${text}`);
+      else if (text.startsWith('[webgpu]') || text.startsWith('[snap]')) console.log(`  ${text}`);
     });
     // Localhost only: the Moon/Mars views trigger Trek WMTS imagery streams,
     // and waiting on trek.nasa.gov from a CI runner is both nondeterministic
@@ -116,8 +125,12 @@ try {
     await p.setRequestInterception(true);
     p.on('request', (r) => {
       const host = new URL(r.url()).hostname;
-      if (host === 'localhost' || host === '127.0.0.1') void r.continue();
-      else void r.abort();
+      if (host === 'localhost' || host === '127.0.0.1') {
+        void r.continue();
+      } else {
+        blocked.set(host, (blocked.get(host) ?? 0) + 1);
+        void r.abort();
+      }
     });
     return p;
   };
@@ -324,6 +337,11 @@ try {
     server.kill('SIGKILL');
   }
 }
+
+// The localhost-only policy, accounted for: which hosts the app reached
+// for, and how often. New entries here mean new external dependencies.
+for (const [host, n] of [...blocked.entries()].sort((a, b) => b[1] - a[1]))
+  console.log(`blocked ${String(n).padStart(3)} request(s) → ${host}`);
 
 if (failed) {
   console.error(`${failed} view(s) failed to render`);
