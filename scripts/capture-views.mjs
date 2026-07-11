@@ -38,7 +38,7 @@ const VIEWS = [
   { name: 'outer', q: 'goto=sun&dist=1.1e13&pitch=-40' },
   // alpha-to-coverage rings, near-edge-on 2026 geometry
   { name: 'saturn', q: 'goto=saturn&dist=6e8' },
-  // textured Earth globe + atmosphere-less limb + axis line
+  // textured Earth globe + the ray-marched atmosphere limb + axis line
   { name: 'earth', q: 'goto=earth&dist=5e7' },
   // LROC WAC global texture (matId 10)
   { name: 'moon', q: 'goto=moon&dist=1.2e7' },

@@ -187,7 +187,7 @@ by theme:
 
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
-- [ ] Atmospheric scattering: a real single-scatter Rayleigh atmosphere for Earth — the blue limb from orbit, red sunsets from the picnic
+- [x] Atmospheric scattering: a real single-scatter Rayleigh + Mie atmosphere for Earth — the blue limb from orbit, blue noons and red sunsets from the picnic, stars fading into daylight, all from one ray-marched integral
 - [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 

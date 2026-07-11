@@ -415,6 +415,148 @@ struct VOut { @builtin(position) pos : vec4f };
 }
 `;
 
+// The real sky, from one integral: single-scatter Rayleigh + Mie through an
+// exponential atmosphere, ray-marched per fragment. The same shell drawn the
+// same way gives the blue limb from orbit, the blue daytime dome from the
+// ground, the white horizon band (long tangent air paths), red sunsets
+// (Rayleigh strips blue from low-sun light paths), twilight, and aerial
+// star-fading — none are coded as effects; they are the integral.
+//
+// Marching happens in TRUE camera-relative meters from the uniform (the
+// scaled-space compression preserves ray directions, so only the vertex
+// position and frag depth are compressed). Blending is src=one,
+// dst=one-minus-src-alpha: the in-scatter adds, and everything behind is
+// attenuated by mean transmittance — stars fade at noon, the sun dims at
+// the horizon. Fragment depth is the ray's LAST scattering point, so
+// foreground objects (a tree against the horizon, the Moon crossing the
+// limb) occlude the sky behind them instead of glowing through it.
+export const ATMO_WGSL =
+  COMMON +
+  /* wgsl */ `
+struct Atmo {
+  center : vec4f, // xyz: planet center rel camera (true meters), w: ground radius
+  sun    : vec4f, // xyz: unit direction to the sun, w: atmosphere top radius
+};
+@group(1) @binding(0) var<uniform> A : Atmo;
+
+struct VOut {
+  @builtin(position) pos : vec4f,
+  @location(0) dir : vec3f,
+};
+
+fn compDist(d : f32) -> f32 {
+  let cap = G.params.x;
+  if (d > cap) { return cap * (1.0 + log(d / cap)); }
+  return d;
+}
+
+@vertex fn vs(@location(0) p : vec3f, @location(1) n : vec3f) -> VOut {
+  // The unit sphere scaled to the shell top; back faces are drawn so the
+  // shell reads from outside (the limb) and from inside (the sky) alike.
+  let raw = A.center.xyz + p * A.sun.w;
+  let d0 = max(bigLength(raw), 1e-3);
+  let dc = compDist(d0);
+  var clip = G.viewProj * vec4f(raw * (dc / d0), 1.0);
+  clip.z = logDepth(dc) * clip.w;
+  var o : VOut;
+  o.pos = clip;
+  o.dir = raw;
+  return o;
+}
+
+// Ray from the camera (origin) against a sphere at c: entry/exit distances,
+// or (1e30, -1e30) on a miss.
+fn raySphere(v : vec3f, c : vec3f, r : f32) -> vec2f {
+  let b = dot(v, c);
+  let disc = b * b - dot(c, c) + r * r;
+  if (disc < 0.0) { return vec2f(1e30, -1e30); }
+  let s = sqrt(disc);
+  return vec2f(b - s, b + s);
+}
+
+const PI_A = 3.14159265;
+// Sea-level scattering coefficients (per meter) and scale heights: the
+// measured Earth values (Bruneton & Neyret 2008; Preetham Mie).
+const BETA_R = vec3f(5.802e-6, 13.558e-6, 33.1e-6);
+const H_R = 8500.0;
+const BETA_M = 3.996e-6;
+const H_M = 1200.0;
+const MIE_G = 0.76;
+const MIE_ABS = 1.11; // Mie extinction = scattering x 1.11
+const SUN_I = 20.0;   // display radiance scale
+
+struct FOut {
+  @location(0) col : vec4f,
+  @builtin(frag_depth) depth : f32,
+};
+
+@fragment fn fs(in : VOut) -> FOut {
+  let v = normalize(in.dir);
+  let c = A.center.xyz;
+  let Rg = A.center.w;
+  let Rt = A.sun.w;
+  let shell = raySphere(v, c, Rt);
+  if (shell.x > shell.y) { discard; }
+  let t0 = max(shell.x, 0.0);
+  var t1 = shell.y;
+  let gnd = raySphere(v, c, Rg);
+  if (gnd.x < gnd.y && gnd.x > 0.0) { t1 = min(t1, gnd.x); }
+  if (t1 <= t0) { discard; }
+
+  let sd = A.sun.xyz;
+  let dt = (t1 - t0) / 16.0;
+  var odR = 0.0;
+  var odM = 0.0;
+  var accR = vec3f(0.0);
+  var accM = vec3f(0.0);
+  for (var i = 0; i < 16; i = i + 1) {
+    let t = t0 + (f32(i) + 0.5) * dt;
+    let pos = v * t - c; // planet-centric sample
+    let h = max(length(pos) - Rg, 0.0);
+    let sR = exp(-h / H_R) * dt;
+    let sM = exp(-h / H_M) * dt;
+    odR = odR + sR;
+    odM = odM + sM;
+    // Night side: the sun ray from this sample hits the planet.
+    let lg = raySphere(sd, -pos, Rg);
+    if (lg.x < lg.y && lg.x > 0.0) { continue; }
+    // Optical depth along the light path to the top of the shell.
+    let dl = raySphere(sd, -pos, Rt).y / 6.0;
+    var lodR = 0.0;
+    var lodM = 0.0;
+    for (var j = 0; j < 6; j = j + 1) {
+      let lh = max(length(pos + sd * ((f32(j) + 0.5) * dl)) - Rg, 0.0);
+      lodR = lodR + exp(-lh / H_R) * dl;
+      lodM = lodM + exp(-lh / H_M) * dl;
+    }
+    let T = exp(-(BETA_R * (odR + lodR) + vec3f(BETA_M * MIE_ABS * (odM + lodM))));
+    accR = accR + T * sR;
+    accM = accM + T * sM;
+  }
+  let mu = dot(v, sd);
+  let phR = 3.0 / (16.0 * PI_A) * (1.0 + mu * mu);
+  let gg = MIE_G * MIE_G;
+  let phM = 3.0 / (8.0 * PI_A) * ((1.0 - gg) * (1.0 + mu * mu)) /
+            ((2.0 + gg) * pow(1.0 + gg - 2.0 * MIE_G * mu, 1.5));
+  var L = SUN_I * (BETA_R * phR * accR + vec3f(BETA_M) * phM * accM);
+  L = vec3f(1.0) - exp(-L); // soft shoulder: the zenith stays blue, not white
+  let Tv = exp(-(BETA_R * odR + vec3f(BETA_M * MIE_ABS * odM)));
+  // Transmittance dims what's behind — and bright air also MASKS it. Stars
+  // sit above the atmosphere, so daylight hides them by contrast, not
+  // extinction; a veiling-luminance term folds that into the blend.
+  let veil = clamp(dot(L, vec3f(0.299, 0.587, 0.114)) * 5.0, 0.0, 1.0);
+  let Tbar = clamp(dot(Tv, vec3f(0.299, 0.587, 0.114)), 0.0, 1.0);
+  let alpha = 1.0 - Tbar * (1.0 - veil);
+  var o : FOut;
+  // Real physics, real constants, but still a model: stylized-on-real.
+  o.col = vec4f(seamTint(L, 0.5), alpha);
+  // Depth at the last scattering point (nudged past coincident surfaces):
+  // geometry nearer than the ray's air column occludes the sky behind it.
+  o.depth = logDepth(compDist(t1 * 1.0001));
+  return o;
+}
+`;
+
 export const LINES_WGSL =
   COMMON +
   /* wgsl */ `
