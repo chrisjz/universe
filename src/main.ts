@@ -128,6 +128,11 @@ async function start(): Promise<void> {
 
   const keplerOut: [number, number, number] = [0, 0, 0];
   const atmoData = new Float32Array(8); // atmosphere uniform scratch
+  // ?skip=atmo,belt,sats,stars,web,galaxies,imagery,rescale — the perf
+  // attribution knife: knock one system out per run and the fps delta is
+  // its cost (scripts/perf-attrib.mjs sweeps these). Not a user feature.
+  const skipSet = new Set((new URLSearchParams(location.search).get('skip') ?? '').split(',').filter(Boolean));
+  if (skipSet.has('web')) u.groups[u.webGroup].disabled = true;
   // Live satellites: SGP4-propagated TLEs, re-integrated every frame.
   let satSats: Sat[] = [];
   let satInst = new Float32Array(0);
@@ -273,7 +278,7 @@ async function start(): Promise<void> {
     u.orientGalaxy((-2 * Math.PI * sinceJ2000) / GALACTIC_YEAR_MS);
     // Cosmic expansion: rescale the comoving web when a(t) moves ≥ 0.3%.
     const a = scaleFactor(sinceJ2000);
-    if (Math.abs(a - webA) > 0.003 * webA) {
+    if (!skipSet.has('rescale') && Math.abs(a - webA) > 0.003 * webA) {
       webA = a;
       renderer.updatePointGroup(groupIndex[u.webGroup], u.scaleWeb(a));
       rescaleGalaxies();
@@ -411,6 +416,7 @@ async function start(): Promise<void> {
   let imageryGen = 0;
   let imageryKeys = u.nav.imageryKeys();
   function anchorImagery(lat: number, lon: number): void {
+    if (skipSet.has('imagery')) return;
     imageryGen++;
     const gen = imageryGen;
     const stale = imageryKeys;
@@ -487,95 +493,97 @@ async function start(): Promise<void> {
   // 40k of the largest real minor planets (belt, Trojans, Hildas, Kuiper),
   // each instance carrying its ellipse basis + mean anomaly; the vertex
   // shader integrates them every frame. Colors tint by population.
-  void fetch(`${import.meta.env.BASE_URL}smallbodies.bin`)
-    .then(async (r) => {
-      if (!r.ok) return;
-      const buf = await r.arrayBuffer();
-      const dv = new DataView(buf);
-      const POPS: { tint: [number, number, number, number]; fade: number }[] = [
-        { tint: [0.78, 0.74, 0.68, 0.55], fade: 6e13 }, // main belt: rocky gray
-        { tint: [0.72, 0.7, 0.79, 0.55], fade: 8e13 }, // Trojans: slate
-        { tint: [0.8, 0.72, 0.6, 0.55], fade: 8e13 }, // Hildas: warm
-        { tint: [0.62, 0.72, 0.86, 0.7], fade: 4e14 }, // Kuiper: icy blue
-      ];
-      let off = 4 * (1 + POPS.length);
-      POPS.forEach((p, i) => {
-        const count = dv.getUint32(4 + i * 4, true);
-        const inst = new Float32Array(buf, off, count * 10);
-        off += count * 40;
-        groupIndex.push(renderer.addPointGroup(inst, 'orbital'));
-        u.groups.push({
-          frame: u.sunFrame,
-          pos: [0, 0, 0],
-          data: inst,
-          fadeExtent: p.fade,
-          nearFade: true,
-          prov: 0.5, // measured orbits, stylized points
-          mode: 'orbital',
-          tint: p.tint,
+  if (!skipSet.has('belt'))
+    void fetch(`${import.meta.env.BASE_URL}smallbodies.bin`)
+      .then(async (r) => {
+        if (!r.ok) return;
+        const buf = await r.arrayBuffer();
+        const dv = new DataView(buf);
+        const POPS: { tint: [number, number, number, number]; fade: number }[] = [
+          { tint: [0.78, 0.74, 0.68, 0.55], fade: 6e13 }, // main belt: rocky gray
+          { tint: [0.72, 0.7, 0.79, 0.55], fade: 8e13 }, // Trojans: slate
+          { tint: [0.8, 0.72, 0.6, 0.55], fade: 8e13 }, // Hildas: warm
+          { tint: [0.62, 0.72, 0.86, 0.7], fade: 4e14 }, // Kuiper: icy blue
+        ];
+        let off = 4 * (1 + POPS.length);
+        POPS.forEach((p, i) => {
+          const count = dv.getUint32(4 + i * 4, true);
+          const inst = new Float32Array(buf, off, count * 10);
+          off += count * 40;
+          groupIndex.push(renderer.addPointGroup(inst, 'orbital'));
+          u.groups.push({
+            frame: u.sunFrame,
+            pos: [0, 0, 0],
+            data: inst,
+            fadeExtent: p.fade,
+            nearFade: true,
+            prov: 0.5, // measured orbits, stylized points
+            mode: 'orbital',
+            tint: p.tint,
+          });
         });
-      });
-    })
-    .catch(() => {}); // offline: no belt
+      })
+      .catch(() => {}); // offline: no belt
 
   // ---- live satellites: CelesTrak TLEs, SGP4-propagated every frame ----
   // The ~170 naked-eye-brightest satellites plus the stations, verified
   // against JPL Horizons' ISS ephemeris to sub-km (scripts/verify-sgp4.mjs).
   // ISS, Hubble and Tiangong become searchable fly-to targets — the camera
   // tracks them around the planet at 7.7 km/s.
-  void fetch(`${import.meta.env.BASE_URL}satellites.json`)
-    .then((r) => (r.ok ? (r.json() as Promise<{ n: string; l1: string; l2: string }[]>) : []))
-    .then((list) => {
-      if (!list.length) return;
-      satSats = list.map((s) => sgp4Init(parseTle(s.n, s.l1, s.l2)));
-      satInst = new Float32Array(satSats.length * 8);
-      for (let i = 0; i < satSats.length; i++) {
-        const o = i * 8;
-        satInst[o + 3] = 40; // sprite radius (m) — a locator dot at truthful scale
-        satInst[o + 4] = 0.8;
-        satInst[o + 5] = 0.88;
-        satInst[o + 6] = 1.0;
-      }
-      satGroup = renderer.addPointGroup(satInst, 'static');
-      groupIndex.push(satGroup);
-      u.groups.push({
-        frame: earthFrameRef,
-        pos: [0, 0, 0],
-        data: satInst,
-        fadeExtent: 2.5e8,
-        prov: 0, // measured elements, live positions
-      });
-      const NAMED: [string, string, string][] = [
-        ['ISS (ZARYA)', 'iss', 'THE ISS'],
-        ['HST', 'hubble', 'HUBBLE'],
-        ['CSS (TIANHE)', 'tiangong', 'TIANGONG'],
-      ];
-      for (const [tleName, slug, display] of NAMED) {
-        const idx = satSats.findIndex((s) => s.tle.name === tleName);
-        if (idx < 0) continue;
-        const pos: V3 = [0, 0, 0];
-        satTargets.push({ idx, pos });
-        u.targets.push({
-          name: display,
-          slug,
-          source: 'live TLE (CelesTrak), SGP4-propagated — valid near the TLE epoch',
+  if (!skipSet.has('sats'))
+    void fetch(`${import.meta.env.BASE_URL}satellites.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ n: string; l1: string; l2: string }[]>) : []))
+      .then((list) => {
+        if (!list.length) return;
+        satSats = list.map((s) => sgp4Init(parseTle(s.n, s.l1, s.l2)));
+        satInst = new Float32Array(satSats.length * 8);
+        for (let i = 0; i < satSats.length; i++) {
+          const o = i * 8;
+          satInst[o + 3] = 40; // sprite radius (m) — a locator dot at truthful scale
+          satInst[o + 4] = 0.8;
+          satInst[o + 5] = 0.88;
+          satInst[o + 6] = 1.0;
+        }
+        satGroup = renderer.addPointGroup(satInst, 'static');
+        groupIndex.push(satGroup);
+        u.groups.push({
           frame: earthFrameRef,
-          pos,
-          dist: 1500,
-          pitch: 0.25,
-          hidden: true,
-          parent: 'earth',
-          exit: 2e7,
+          pos: [0, 0, 0],
+          data: satInst,
+          fadeExtent: 2.5e8,
+          prov: 0, // measured elements, live positions
         });
-        bySlug.set(slug, u.targets.length - 1);
-      }
-      updateBodies(); // place them before any pending ?goto jump lands
-      if (pendingGoto && bySlug.has(pendingGoto)) {
-        jumpTo(bySlug.get(pendingGoto)!);
-        pendingGoto = null;
-      }
-    })
-    .catch(() => {}); // offline: an empty sky of machines
+        const NAMED: [string, string, string][] = [
+          ['ISS (ZARYA)', 'iss', 'THE ISS'],
+          ['HST', 'hubble', 'HUBBLE'],
+          ['CSS (TIANHE)', 'tiangong', 'TIANGONG'],
+        ];
+        for (const [tleName, slug, display] of NAMED) {
+          const idx = satSats.findIndex((s) => s.tle.name === tleName);
+          if (idx < 0) continue;
+          const pos: V3 = [0, 0, 0];
+          satTargets.push({ idx, pos });
+          u.targets.push({
+            name: display,
+            slug,
+            source: 'live TLE (CelesTrak), SGP4-propagated — valid near the TLE epoch',
+            frame: earthFrameRef,
+            pos,
+            dist: 1500,
+            pitch: 0.25,
+            hidden: true,
+            parent: 'earth',
+            exit: 2e7,
+          });
+          bySlug.set(slug, u.targets.length - 1);
+        }
+        updateBodies(); // place them before any pending ?goto jump lands
+        if (pendingGoto && bySlug.has(pendingGoto)) {
+          jumpTo(bySlug.get(pendingGoto)!);
+          pendingGoto = null;
+        }
+      })
+      .catch(() => {}); // offline: an empty sky of machines
 
   // ---- stream the star tiles (brightest chunks first) ----
   // The full tileset (854k ATHYG brights + 5.9M Gaia DR3 faint stars, 104 MB)
@@ -597,6 +605,7 @@ async function start(): Promise<void> {
       nearFade: true,
       prov: 0,
       cone: meta.cone ?? undefined,
+      maxDrift: meta.maxDrift,
       mode: 'moving',
     });
     starCount += instances.length / 11;
@@ -606,7 +615,7 @@ async function start(): Promise<void> {
   // a visitor who stays at cosmic scale never downloads the deep catalog.
   let starsStarted = false;
   function maybeStreamStars(): void {
-    if (starsStarted || cam.dist > 2e19) return;
+    if (skipSet.has('stars') || starsStarted || cam.dist > 2e19) return;
     starsStarted = true;
     void (async () => {
       const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk) : 0;
@@ -620,7 +629,7 @@ async function start(): Promise<void> {
   let galaxyBase: Float32Array | null = null;
   let galaxyGroup = -1;
   void loadGalaxies(`${import.meta.env.BASE_URL}galaxies/2mrs.bin`).then((instances) => {
-    if (!instances) return;
+    if (!instances || skipSet.has('galaxies')) return;
     galaxyBase = Float32Array.from(instances);
     galaxyGroup = u.groups.length;
     groupIndex.push(renderer.addPointGroup(instances));
@@ -1661,6 +1670,7 @@ async function start(): Promise<void> {
       Math.tan(FOV / 2) * Math.hypot(1, canvas.clientWidth / Math.max(1, canvas.clientHeight)),
     );
     u.groups.forEach((g, i) => {
+      if (g.disabled) return;
       if (g.hideBelow !== undefined && cam.dist < g.hideBelow) return;
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
       const fade = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
@@ -1670,7 +1680,11 @@ async function start(): Promise<void> {
         // Two margins: parallax (the camera left the sun) and proper-motion
         // drift (the stars left their J2000 tiles — over 100k years nearby
         // stars swing across the sky for real, and culling must let them).
-        const margin = Math.atan2(camSunDist, 1e17) + Math.min(Math.PI, (Math.abs(starYears) * 3.2e12) / 1e17);
+        // Drift margin from the tile's own fastest star — the old global
+        // worst case (3.2e12 m/yr everywhere) saturated to π in deep time
+        // and silently turned culling off for the whole 6.8M-star sky.
+        const margin =
+          Math.atan2(camSunDist, 1e17) + Math.min(Math.PI, (Math.abs(starYears) * (g.maxDrift ?? 3.2e12)) / 1e17);
         const limit = halfDiag + g.cone.ang + margin + 0.06;
         if (limit < Math.PI) {
           const cos = fwd[0] * g.cone.dir[0] + fwd[1] * g.cone.dir[1] + fwd[2] * g.cone.dir[2];
@@ -1702,7 +1716,7 @@ async function start(): Promise<void> {
     // orbit, the blue sky and red sunsets from the ground, and daylight
     // star-fading. Beyond ~4e8 m (the Moon) the shell is subpixel — skip.
     const eRel = relPos(earthFrameRef, [0, 0, 0], cam.frame, camLocal);
-    if (len(eRel) < 4e8) {
+    if (len(eRel) < 4e8 && !skipSet.has('atmo')) {
       const sRel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
       const sd = norm(sub(sRel, eRel));
       atmoData[0] = eRel[0];

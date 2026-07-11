@@ -36,6 +36,7 @@ export interface PointGroup {
   frame: Frame;
   pos: V3;
   data: Float32Array<ArrayBuffer>;
+  disabled?: boolean; // perf attribution (?skip=): never drawn
   // Star fields fade out as the camera pulls beyond this extent, so a million
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
@@ -47,6 +48,7 @@ export interface PointGroup {
   // The frame loop culls whole tile groups outside the view frustum — the
   // deep sky is vertex-bound, and most tiles are behind you or underfoot.
   cone?: { dir: V3; ang: number };
+  maxDrift?: number; // fastest star in the group, m/yr (cull margin input)
   // Instance layout / pipeline: 'moving' stars carry a 3D velocity (11
   // floats), 'orbital' small bodies carry Kepler elements (10 floats) and
   // a per-group tint; default is the static 8-float layout.

@@ -56,9 +56,16 @@ interface Manifest {
 export interface StarChunkMeta {
   cone: { dir: [number, number, number]; ang: number } | null;
   fade: number;
+  // Fastest star in the tile (m/yr): its cull margin needs to cover only
+  // where ITS stars can drift, not a global worst case that saturates to
+  // "never cull" in deep time.
+  maxDrift: number;
 }
 
+let lastMaxDrift = 0; // per-chunk fastest |v|, published by decodeChunk
+
 function decodeChunk(view: DataView, dedupe: boolean, stride: number): Float32Array<ArrayBuffer> {
+  lastMaxDrift = 0;
   const n = Math.floor(view.byteLength / stride);
   const out = new Float32Array(n * 11);
   let j = 0;
@@ -99,6 +106,8 @@ function decodeChunk(view: DataView, dedupe: boolean, stride: number): Float32Ar
       out[j + 8] = vx;
       out[j + 9] = vy;
       out[j + 10] = vz;
+      const v2 = vx * vx + vy * vy + vz * vz;
+      if (v2 > lastMaxDrift * lastMaxDrift) lastMaxDrift = Math.sqrt(v2);
     }
     j += 11;
   }
@@ -111,7 +120,7 @@ function chunkMeta(chunk: ManifestChunk): StarChunkMeta {
     const [x, y, z] = orientSky(chunk.dir[0], chunk.dir[1], chunk.dir[2]);
     cone = { dir: [x, y, z], ang: chunk.ang };
   }
-  return { cone, fade: chunk.fade ?? 6e18 };
+  return { cone, fade: chunk.fade ?? 6e18, maxDrift: lastMaxDrift };
 }
 
 export async function streamStars(
