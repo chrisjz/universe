@@ -105,6 +105,16 @@ to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
   and varying distance. That is what makes every 2026 eclipse land within
   ~10 minutes of its true time, annular vs total decided by the Moon's
   actual distance that day.
+- **Satellites** ([`src/sgp4.ts`](../src/sgp4.ts)) — the ~170 brightest
+  satellites plus the stations, propagated per frame with the near-Earth
+  SGP4 (Vallado's formulation, WGS-72) from bundled CelesTrak TLEs, then
+  IAU-1976-precessed from TEME into the J2000 scene frame. Verified against
+  JPL Horizons' geocentric ISS ephemeris to sub-km
+  (`scripts/verify-sgp4.mjs` — mind TDB−UTC = 69.184 s, worth 530 km at
+  orbital speed). Satellites go dark in Earth's umbra (that is why the real
+  ISS is a twilight sight) and honestly vanish beyond ±30 days of their TLE
+  epoch, where drag makes the elements fiction. ISS, Hubble and Tiangong
+  are trackable fly-to targets.
 - **Eclipse shading** — pure geometry from the real Sun/Earth/Moon sizes and
   live positions: the Moon's mesh color is a multiplier that dims through
   the penumbra and reddens in the umbra; the Tranquility ground rings share

@@ -181,7 +181,7 @@ by theme:
 
 - [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
 - [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
-- [ ] Low Earth orbit is a place: the ISS and the Starlink shells, propagated from live TLEs
+- [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
 
 **The experience**
 
@@ -270,6 +270,11 @@ pipelines (all regenerable from public sources) are documented in
   [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
   CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
   resamples `public/smallbodies.bin`.
+- **Satellites** — two-line elements from
+  [CelesTrak](https://celestrak.org/) (visual + stations groups), propagated
+  with SGP4 (`src/sgp4.ts`, verified against JPL Horizons' ISS ephemeris by
+  `scripts/verify-sgp4.mjs`) — `node scripts/generate-satellites.mjs`
+  refreshes `public/satellites.json`.
 - **The planets** — Mars (Viking MDIM 2.1 color mosaic) and Mercury
   (MESSENGER MDIS basemap) via [NASA Trek](https://trek.nasa.gov/); Jupiter
   from Cassini's Dec 2000 global map (PIA07782); Saturn's rings from
