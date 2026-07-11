@@ -281,7 +281,17 @@ struct FOut {
 // years uniform is clamped ±1e6 in main.ts — proper motion is linear on
 // that scale; beyond it the stars hold their positions (the galactic-year
 // rotation carries the deep-time story instead).
-export const pointsWgsl = (moving: boolean): string =>
+// Three variants share this sprite body:
+//   'static'  — planet locators, the web, galaxies (8-float instances)
+//   'moving'  — stars with a 3D space velocity (11 floats; pos + vel·years)
+//   'orbital' — small bodies on full Kepler orbits (10 floats: ellipse
+//               semi-axis vectors A/B + e, M0, n, H). The vertex shader
+//               solves Kepler's equation E − e·sinE = M by Newton iteration
+//               EVERY FRAME for every asteroid — 40k real orbits at zero
+//               CPU cost. Radius and brightness derive from H (albedo 0.1:
+//               D ≈ 1329 km · 10^(−H/5) / √0.1).
+export type PointsMode = 'static' | 'moving' | 'orbital';
+export const pointsWgsl = (mode: PointsMode): string =>
   COMMON +
   /* wgsl */ `
 struct Grp {
@@ -290,6 +300,7 @@ struct Grp {
                 // (f32 cancellation jitters near sprites at 1e16 m coords;
                 // a double-precision star mesh takes over up close)
                 // y: provenance (see seamTint)
+  tint : vec4f, // orbital groups: rgb population color, w base intensity
 };
 @group(1) @binding(0) var<uniform> P : Grp;
 
@@ -302,13 +313,30 @@ struct VOut {
 
 @vertex fn vs(
   @builtin(vertex_index) vi : u32,
-  @location(0) ppos0 : vec3f,
+${
+  mode === 'orbital'
+    ? `  @location(0) axA : vec3f,
+  @location(1) axB : vec3f,
+  @location(2) prm : vec4f, // e, M0 (rad @J2000), n (rad/day), H`
+    : `  @location(0) ppos0 : vec3f,
   @location(1) psize : f32,
   @location(2) pcol : vec3f,
-  @location(3) pint : f32,
-${moving ? '  @location(4) pvel : vec3f,' : ''}
+  @location(3) pint : f32,${mode === 'moving' ? '\n  @location(4) pvel : vec3f,' : ''}`
+}
 ) -> VOut {
-  let ppos = ppos0${moving ? ' + pvel * G.motion.x' : ''};
+${
+  mode === 'orbital'
+    ? `  let e = prm.x;
+  var M = prm.y + prm.z * G.motion.y; // days from J2000, clamped ±100 yr
+  M = M - 6.2831853 * floor(M / 6.2831853);
+  var E = M + e * sin(M);
+  for (var k = 0; k < 5; k++) { E = E - (E - e * sin(E) - M) / (1.0 - e * cos(E)); }
+  let ppos = axA * (cos(E) - e) + axB * sin(E);
+  let psize = 2.1e6 * pow(10.0, -prm.w * 0.2); // radius from H, albedo 0.1
+  let pcol = P.tint.rgb;
+  let pint = P.tint.w * clamp(1.3 - 0.09 * prm.w, 0.15, 1.0);`
+    : `  let ppos = ppos0${mode === 'moving' ? ' + pvel * G.motion.x' : ''};`
+}
   let raw = P.origin.xyz + ppos;
   let d0 = max(bigLength(raw), 1e-18);
   let cap = G.params.x;
