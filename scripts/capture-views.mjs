@@ -190,7 +190,24 @@ try {
   await page.close().catch(() => {});
   page = await mkPage();
 
-  for (const v of VIEWS) {
+  // Pipeline self-test: the app boots with ?norender=1 (nothing touches the
+  // queue), then draws one tiny primitive per pipeline. The first HANG
+  // names the shader the driver can't execute.
+  await page.goto(`http://localhost:${PORT}/?goto=sun&dist=1.4e12&at=${AT}&paused=1&norender=1&stars=athyg`, {
+    waitUntil: 'networkidle0',
+    timeout: 90000,
+  });
+  await new Promise((r) => setTimeout(r, 3000)); // let point groups upload
+  const selfTest = await page.evaluate(() => window.__gpuSelfTest());
+  console.log(`Pipeline self-test: ${selfTest}`);
+  await page.close().catch(() => {});
+  page = await mkPage();
+  if (selfTest.includes('HANG')) {
+    console.error('a pipeline hangs this driver — skipping view captures');
+    failed = VIEWS.length;
+  }
+
+  for (const v of failed ? [] : VIEWS) {
     const url = `http://localhost:${PORT}/?${v.q}&at=${AT}&paused=1&stars=athyg&fps=1`;
     // Heavy view loads occasionally wedge a tab on SwiftShader; one retry
     // on a fresh page absorbs the flake without hiding real failures.

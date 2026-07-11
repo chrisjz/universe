@@ -1148,6 +1148,9 @@ async function start(): Promise<void> {
   // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
   // scene to one instant, which is what a reproducible screenshot needs.
   if (params.get('paused') !== null) paused = true;
+  // ?norender=1 — run the whole app but never submit a frame. Keeps the
+  // GPU queue silent so diagnostics (window.__gpuSelfTest) own it.
+  const noRender = params.get('norender') !== null;
   // ?speed=<sim seconds per real second> — snaps to the nearest preset;
   // negative values run the clock backwards (?speed=-3.15576e16 rewinds
   // at a billion years per second).
@@ -1550,7 +1553,7 @@ async function start(): Promise<void> {
       updateSkyLabels(null, [0, 0, 0]);
     }
 
-    if (!snapInFlight) renderer.render(data);
+    if (!snapInFlight && !noRender) renderer.render(data);
     if (snapResolve && !snapInFlight) {
       // Test hook: render one extra frame into an offscreen texture and
       // read it back through the WebGPU API, PNG-encoding via a plain 2D
@@ -1620,10 +1623,12 @@ async function start(): Promise<void> {
     requestAnimationFrame(frame);
   }
 
-  (window as unknown as { __snap: () => Promise<string> }).__snap = () =>
+  const hooks = window as unknown as { __snap: () => Promise<string>; __gpuSelfTest: () => Promise<string> };
+  hooks.__snap = () =>
     new Promise((resolve) => {
       snapResolve = resolve;
     });
+  hooks.__gpuSelfTest = () => renderer.selfTest();
   requestAnimationFrame(frame);
 }
 

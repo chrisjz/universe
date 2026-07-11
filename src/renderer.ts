@@ -637,6 +637,115 @@ export class Renderer {
     q.submit([enc.finish()]);
   }
 
+  // Diagnoses which pipeline a software Vulkan driver cannot execute: one
+  // tiny offscreen draw per pipeline, each awaited with a timeout. The
+  // first HANG names the shader whose compiled code the driver never
+  // finishes — exposed as window.__gpuSelfTest for the CI capture rig.
+  async selfTest(): Promise<string> {
+    const results: string[] = [];
+    const run = async (name: string, fn: ((pass: GPURenderPassEncoder) => void) | null): Promise<boolean> => {
+      if (!fn) {
+        results.push(`${name}: skip`);
+        return true;
+      }
+      const mk = (fmt: GPUTextureFormat, samples: number): GPUTexture =>
+        this.device.createTexture({
+          size: [8, 8],
+          sampleCount: samples,
+          format: fmt,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+      const ms = mk(this.format, 4);
+      const target = mk(this.format, 1);
+      const depth = mk('depth32float', 4);
+      const enc = this.device.createCommandEncoder();
+      const pass = enc.beginRenderPass({
+        colorAttachments: [
+          {
+            view: ms.createView(),
+            resolveTarget: target.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'discard',
+          },
+        ],
+        depthStencilAttachment: {
+          view: depth.createView(),
+          depthClearValue: 1,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'discard',
+        },
+      });
+      pass.setBindGroup(0, this.globalsBG);
+      fn(pass);
+      pass.end();
+      this.device.queue.submit([enc.finish()]);
+      const ok = await Promise.race([
+        this.device.queue.onSubmittedWorkDone().then(() => true),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 10000)),
+      ]);
+      results.push(`${name}: ${ok ? 'ok' : 'HANG'}`);
+      ms.destroy();
+      target.destroy();
+      depth.destroy();
+      return ok;
+    };
+    const geom = this.geoms.values().next().value;
+    const pointTest = (mode: PointsMode, pipe: GPURenderPipeline): ((pass: GPURenderPassEncoder) => void) | null => {
+      const g = this.pointGroups.find((pg) => pg.mode === mode);
+      if (!g) return null;
+      return (p) => {
+        p.setPipeline(pipe);
+        p.setBindGroup(1, this.groupBG, [0]);
+        p.setVertexBuffer(0, g.buf);
+        p.draw(6, 1);
+      };
+    };
+    const tests: [string, ((pass: GPURenderPassEncoder) => void) | null][] = [
+      ['clear', () => {}],
+      [
+        'mesh',
+        geom
+          ? (p) => {
+              p.setPipeline(this.meshPipe);
+              p.setBindGroup(1, this.meshBG, [0]);
+              p.setBindGroup(2, this.defaultTexBG);
+              p.setVertexBuffer(0, geom.vbuf);
+              p.setIndexBuffer(geom.ibuf, 'uint32');
+              p.drawIndexed(Math.min(6, geom.indexCount));
+            }
+          : null,
+      ],
+      [
+        'line',
+        (p) => {
+          p.setPipeline(this.linePipe);
+          p.setBindGroup(1, this.lineBG, [0]);
+          p.setVertexBuffer(0, this.circleBuf);
+          p.draw(Math.min(4, this.circleVerts));
+        },
+      ],
+      [
+        'sky',
+        this.skyBuf
+          ? (p) => {
+              p.setPipeline(this.skyPipe);
+              p.setBindGroup(1, this.lineBG, [0]);
+              p.setVertexBuffer(0, this.skyBuf);
+              p.draw(3);
+            }
+          : null,
+      ],
+      ['points-static', pointTest('static', this.pointPipe)],
+      ['points-moving', pointTest('moving', this.pointMovePipe)],
+      ['points-orbital', pointTest('orbital', this.pointOrbitPipe)],
+    ];
+    for (const [name, fn] of tests) {
+      if (!(await run(name, fn))) break; // a hang wedges the queue for good
+    }
+    return results.join(' | ');
+  }
+
   private makeGeometry(verts: F32, indices: Uint32Array<ArrayBuffer>): Geometry {
     const vbuf = this.device.createBuffer({
       size: verts.byteLength,
