@@ -66,6 +66,12 @@ export function orientSky(x: number, y: number, z: number): V3 {
   ];
 }
 
+// Scene image of a J2000 equatorial VECTOR (satellite states, catalog
+// positions with distance).
+export function eqVecToScene(x: number, y: number, z: number): V3 {
+  return [x, -SE * y + CE * z, -CE * y - SE * z];
+}
+
 // Scene direction of a J2000 equatorial position (for verification and
 // future real-catalog placements).
 export function raDecToScene(raDeg: number, decDeg: number): V3 {

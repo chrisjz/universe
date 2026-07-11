@@ -28,7 +28,8 @@ import { loadGalaxies } from './galaxies';
 import { fetchRingHeights, streamImageryRings, streamMoonRings, streamMarsRings } from './terrain';
 import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { moonEcliptic, keplerScenePos } from './ephemeris';
-import { raDecToScene } from './sky';
+import { raDecToScene, eqVecToScene } from './sky';
+import { parseTle, sgp4Init, sgp4, temeToJ2000, Sat } from './sgp4';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -127,6 +128,14 @@ async function start(): Promise<void> {
 
   const keplerOut: [number, number, number] = [0, 0, 0];
   const atmoData = new Float32Array(8); // atmosphere uniform scratch
+  // Live satellites: SGP4-propagated TLEs, re-integrated every frame.
+  let satSats: Sat[] = [];
+  let satInst = new Float32Array(0);
+  let satGroup = -1;
+  const satTeme: V3 = [0, 0, 0];
+  const satTargets: { idx: number; pos: V3 }[] = [];
+  const SAT_VALID_MS = 30 * 86400000; // TLEs are honest for ~weeks, not months
+  let pendingGoto: string | null = null; // ?goto= slug awaiting an async target
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -201,6 +210,53 @@ async function start(): Promise<void> {
     starYears = Math.max(-1e6, Math.min(1e6, (simMs - J2000) / 3.15576e10));
     u.driftStars(starYears);
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+    // Satellites: SGP4 in TEME, precessed to J2000, mapped into the scene.
+    // Beyond ±30 days of a TLE's epoch the elements are stale (drag makes
+    // them diverge irrecoverably), so each bird honestly vanishes instead
+    // of tracing a confident wrong orbit through deep time.
+    if (satGroup >= 0) {
+      const P = temeToJ2000(simMs);
+      // Antisolar direction at Earth, for the umbra test: a satellite in
+      // Earth's shadow goes dark — which is WHY the real ISS is a twilight
+      // sight. (Cylindrical shadow; the cone correction is ~2 km at LEO.)
+      const es = earthBody.frameOffset!;
+      const dSun = len(es);
+      const ax = es[0] / dSun,
+        ay = es[1] / dSun,
+        az = es[2] / dSun;
+      for (let i = 0; i < satSats.length; i++) {
+        const s = satSats[i];
+        const o = i * 8;
+        const dtMs = simMs - s.tle.epochMs;
+        if (Math.abs(dtMs) > SAT_VALID_MS || !sgp4(s, dtMs / 60000, satTeme)) {
+          satInst[o + 7] = 0;
+          continue;
+        }
+        const xj = P[0][0] * satTeme[0] + P[0][1] * satTeme[1] + P[0][2] * satTeme[2];
+        const yj = P[1][0] * satTeme[0] + P[1][1] * satTeme[1] + P[1][2] * satTeme[2];
+        const zj = P[2][0] * satTeme[0] + P[2][1] * satTeme[1] + P[2][2] * satTeme[2];
+        const sv = eqVecToScene(xj, yj, zj);
+        satInst[o] = sv[0] * 1000;
+        satInst[o + 1] = sv[1] * 1000;
+        satInst[o + 2] = sv[2] * 1000;
+        const along = satInst[o] * ax + satInst[o + 1] * ay + satInst[o + 2] * az;
+        let lit = 0.55;
+        if (along > 0) {
+          const px = satInst[o] - along * ax;
+          const py = satInst[o + 1] - along * ay;
+          const pz = satInst[o + 2] - along * az;
+          if (px * px + py * py + pz * pz < 6.371e6 * 6.371e6) lit = 0.1; // in the umbra
+        }
+        satInst[o + 7] = lit;
+      }
+      renderer.updatePointGroup(satGroup, satInst);
+      for (const t of satTargets) {
+        const o = t.idx * 8;
+        t.pos[0] = satInst[o];
+        t.pos[1] = satInst[o + 1];
+        t.pos[2] = satInst[o + 2];
+      }
+    }
     // Diurnal rotation: sidereal rate, with the phase calibrated so the
     // sub-solar longitude is 0° at the J2000 epoch (noon at Greenwich) —
     // Chicago's picnic gets real local time. -78.63° is the longitude of
@@ -461,6 +517,65 @@ async function start(): Promise<void> {
       });
     })
     .catch(() => {}); // offline: no belt
+
+  // ---- live satellites: CelesTrak TLEs, SGP4-propagated every frame ----
+  // The ~170 naked-eye-brightest satellites plus the stations, verified
+  // against JPL Horizons' ISS ephemeris to sub-km (scripts/verify-sgp4.mjs).
+  // ISS, Hubble and Tiangong become searchable fly-to targets — the camera
+  // tracks them around the planet at 7.7 km/s.
+  void fetch(`${import.meta.env.BASE_URL}satellites.json`)
+    .then((r) => (r.ok ? (r.json() as Promise<{ n: string; l1: string; l2: string }[]>) : []))
+    .then((list) => {
+      if (!list.length) return;
+      satSats = list.map((s) => sgp4Init(parseTle(s.n, s.l1, s.l2)));
+      satInst = new Float32Array(satSats.length * 8);
+      for (let i = 0; i < satSats.length; i++) {
+        const o = i * 8;
+        satInst[o + 3] = 40; // sprite radius (m) — a locator dot at truthful scale
+        satInst[o + 4] = 0.8;
+        satInst[o + 5] = 0.88;
+        satInst[o + 6] = 1.0;
+      }
+      satGroup = renderer.addPointGroup(satInst, 'static');
+      groupIndex.push(satGroup);
+      u.groups.push({
+        frame: earthFrameRef,
+        pos: [0, 0, 0],
+        data: satInst,
+        fadeExtent: 2.5e8,
+        prov: 0, // measured elements, live positions
+      });
+      const NAMED: [string, string, string][] = [
+        ['ISS (ZARYA)', 'iss', 'THE ISS'],
+        ['HST', 'hubble', 'HUBBLE'],
+        ['CSS (TIANHE)', 'tiangong', 'TIANGONG'],
+      ];
+      for (const [tleName, slug, display] of NAMED) {
+        const idx = satSats.findIndex((s) => s.tle.name === tleName);
+        if (idx < 0) continue;
+        const pos: V3 = [0, 0, 0];
+        satTargets.push({ idx, pos });
+        u.targets.push({
+          name: display,
+          slug,
+          source: 'live TLE (CelesTrak), SGP4-propagated — valid near the TLE epoch',
+          frame: earthFrameRef,
+          pos,
+          dist: 1500,
+          pitch: 0.25,
+          hidden: true,
+          parent: 'earth',
+          exit: 2e7,
+        });
+        bySlug.set(slug, u.targets.length - 1);
+      }
+      updateBodies(); // place them before any pending ?goto jump lands
+      if (pendingGoto && bySlug.has(pendingGoto)) {
+        jumpTo(bySlug.get(pendingGoto)!);
+        pendingGoto = null;
+      }
+    })
+    .catch(() => {}); // offline: an empty sky of machines
 
   // ---- stream the star tiles (brightest chunks first) ----
   // The full tileset (854k ATHYG brights + 5.9M Gaia DR3 faint stars, 104 MB)
@@ -1141,6 +1256,7 @@ async function start(): Promise<void> {
   if (goto) {
     const i = u.targets.findIndex((t) => t.slug === goto);
     if (i >= 0) jumpTo(i);
+    else pendingGoto = goto; // satellites register async; retry when they land
   }
   // ?lat=&lon= — free-roam deep link: land anywhere on Earth, street-level
   // imagery included (e.g. ?lat=48.8584&lon=2.2945&dist=3000 for Paris).
