@@ -158,6 +158,7 @@ async function start(): Promise<void> {
   const farBakedOrigin: V3 = [0, 0, 0];
   let deepFade = 1; // stars fade out past the ±1 Myr proper-motion clamp
   let camSunForSprites: V3 | null = null; // last frame's camera, sun frame
+  let gcDist = Infinity; // last frame's camera–galactic-center distance
   const spriteBase = new Map<number, number>(); // locator base intensities
   const spriteLit = new Map<number, number>(); // eclipse dimming overrides
   // Locator glows step aside once the real globe resolves: the sprites are
@@ -1621,6 +1622,24 @@ async function start(): Promise<void> {
     } else {
       updateLocatorFades(); // paused, the camera still moves — fades follow it
     }
+    // Comet + S-star ephemerides advance HERE, before anything reads their
+    // positions. Updated at the end of the frame (as they briefly were)
+    // they lag the freshly rebuilt tail and orbit lines by one frame —
+    // invisible in real time, but at a year per second one frame is six
+    // days, and a comet near perihelion covers a quarter AU of daylight
+    // between itself and its own coma.
+    if (!skipSet.has('comets')) {
+      for (const gi of u.comets.update(simMs)) {
+        renderer.updatePointGroup(groupIndex[gi], u.groups[gi].data);
+      }
+    }
+    // Gated by LAST frame's camera–center distance: the gate is an
+    // optimization with a 40× margin over the group's fade-out, so one
+    // stale frame cannot show.
+    if (gcDist < 1e19) {
+      u.sgrA.update(simMs);
+      renderer.updatePointGroup(groupIndex[u.sgrA.group], u.groups[u.sgrA.group].data);
+    }
     // Keyboard navigation: held arrows glide instead of stepping. Up/down
     // is the trackpad-friendly zoom (same exponential feel as scroll);
     // left/right orbit the focus like a horizontal drag.
@@ -2021,18 +2040,7 @@ async function start(): Promise<void> {
       globals[41] = gcRel[1];
       globals[42] = gcRel[2];
       globals[43] = lensOn ? SGRA_RS : 0;
-      if (dGC < 1e19) {
-        u.sgrA.update(simMs);
-        renderer.updatePointGroup(groupIndex[u.sgrA.group], u.groups[u.sgrA.group].data);
-      }
-    }
-
-    // Interstellar visitors + comet tails: a few hundred two-body solves
-    // per frame while a tail is active, none while every comet is cold.
-    if (!skipSet.has('comets')) {
-      for (const gi of u.comets.update(simMs)) {
-        renderer.updatePointGroup(groupIndex[gi], u.groups[gi].data);
-      }
+      gcDist = dGC; // next frame's S-star update gate
     }
 
     // Atmospheres: one ray-marched shell per world, same integral, different

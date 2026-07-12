@@ -37,7 +37,6 @@ export interface Visitor {
   name: string;
   slug: string;
   el: ConicEl;
-  arriveMs: number; // before this the object honestly predates its data span
 }
 
 // JPL SBDB osculating elements (full precision), 2026 check vectors in
@@ -55,7 +54,6 @@ export const VISITORS: Visitor[] = [
       w: 241.8105360304898,
       tpJd: 2458006.007321375,
     },
-    arriveMs: Date.UTC(2017, 0, 1), // discovered Oct 2017, inbound span modeled from that year
   },
   {
     name: '2I/BORISOV',
@@ -68,7 +66,6 @@ export const VISITORS: Visitor[] = [
       w: 209.1236864378081,
       tpJd: 2458826.052845906,
     },
-    arriveMs: Date.UTC(2019, 0, 1),
   },
   {
     name: '3I/ATLAS',
@@ -81,7 +78,6 @@ export const VISITORS: Visitor[] = [
       w: 128.0228697185194,
       tpJd: 2460977.995262848,
     },
-    arriveMs: Date.UTC(2025, 0, 1),
   },
 ];
 

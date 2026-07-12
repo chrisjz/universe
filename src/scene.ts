@@ -841,7 +841,7 @@ export function buildUniverse(): Universe {
       inst[4] = 0.85;
       inst[5] = 0.92;
       inst[6] = 1.0;
-      const group = groups.length;
+      inst[7] = 0.75;
       groups.push({ frame: sunFrame, pos, data: inst, prov: 0 });
       planetTargets.push({
         name: v.name,
@@ -855,7 +855,7 @@ export function buildUniverse(): Universe {
         exit: 1e13,
         source: 'measured hyperbola — JPL SBDB elements, verified against Horizons',
       });
-      return { v, pos, inst, group, shown: -1 };
+      return { v, pos };
     });
     const tails = [
       { state: halleyState, data: new Float32Array(TAIL_SPRITES * 8) },
@@ -872,18 +872,11 @@ export function buildUniverse(): Universe {
     });
     return (ms: number): number[] => {
       const dirty: number[] = [];
-      for (const vi of visitors) {
-        // Before its data span the object honestly doesn't exist here —
-        // an inbound interstellar body's earlier path is extrapolation we
-        // can't check, so the dot simply isn't shown.
-        const shown = ms >= vi.v.arriveMs ? 1 : 0;
-        if (shown) conicScenePos(vi.v.el, ms, vi.pos);
-        if (shown !== vi.shown) {
-          vi.shown = shown;
-          vi.inst[7] = shown ? 0.75 : 0;
-          dirty.push(vi.group);
-        }
-      }
+      // The visitors ride their whole hyperbolae, inbound leg included:
+      // unlike a thrusting spacecraft, a gravity-only orbit retrodicts as
+      // solidly as it predicts (Horizons serves 3I positions for 1990),
+      // and a dot that pops out mid-scrub reads as a bug, not honesty.
+      for (const vi of visitors) conicScenePos(vi.v.el, ms, vi.pos);
       for (const t of tails) {
         const active = updateTail(t, ms);
         if (active || t.wasActive) dirty.push(t.group); // one extra pass zeroes it
