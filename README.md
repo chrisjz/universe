@@ -203,6 +203,7 @@ by theme:
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [x] The Magellanic Clouds from measured stars: Gaia DR3 resolves both — proper-motion-selected members drawn star by star, so the LMC's bar and the SMC's wing are simply where the stars are (`?goto=lmc`); distances from eclipsing binaries (1%), line-of-sight depth honestly stylized
 - [x] The Local Group census: all 96 known dwarf galaxies (McConnachie 2012) at measured positions, distances, and sizes — the volume between us and Andromeda, drawn inhabited (`?goto=fornax`)
+- [x] The neighborhood, in body: every Messier galaxy gets a particle impression on its measured RC3 dimensions and orientation — M31 leans at its true 77°, the Sombrero sits nearly edge-on, Virgo's core is a field of real-oriented ellipticals. Same honesty class as the atlas's own Milky Way: real size, real tilt, illustrative arm pattern
 - [x] Beyond 260 Mpc: 2.6 million SDSS spectroscopic galaxies at their true comoving depths (redshift-banded tiles from the data repo, ΛCDM distances checked before every tile write) — the survey's twin fans meeting at the Milky Way, the Sloan Great Wall crossing the northern one, the procedural placeholder stepping aside exactly where (and as deep as) the survey looked. The cosmic web measured, not imagined; phones stream a structure-preserving 1-in-17 subsample
 - [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
 
@@ -296,6 +297,9 @@ pipelines (all regenerable from public sources) are documented in
   and Graczyk et al. 2020 (SMC) — `node scripts/generate-magellanic.mjs`
   regenerates the tiles. **Local Group dwarfs** from McConnachie 2012
   (AJ 144, 4) — `node scripts/generate-localgroup.mjs`.
+- **Galaxy orientations** — position angles, axis ratios, and Hubble
+  stages from RC3 (de Vaucouleurs et al. 1991, VizieR VII/155) —
+  `node scripts/generate-galaxybodies.mjs`.
 - **Constellations & Messier objects** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
   by Olaf Frohn (BSD-3-Clause); Messier distances from
   [Wikidata](https://www.wikidata.org/) (CC0, median of published claims).
