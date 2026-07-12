@@ -1123,8 +1123,27 @@ async function start(): Promise<void> {
     return best;
   }
 
+  // A destination anchored to a spinning body: its frame hangs below the
+  // Earth (surface, roam, the whole inward dive), the Moon, or Mars.
+  function ridesASpinningBody(t: Target): boolean {
+    for (let f: Frame | null = t.frame; f; f = f.parent) {
+      if (f === earthFrameRef || f === u.moonFrame || f === u.marsFrame) return true;
+    }
+    return false;
+  }
+
   function flyTo(i: number): void {
     const t = u.targets[i];
+    // Landing on ground that turns: above an hour per second the site
+    // sweeps the sky faster than a camera pinned to it can be watched —
+    // at a day per second the whole universe wheels once a second, and
+    // past that the spin aliases into tumbling (user-reported, flying
+    // universe → fiber at day/s). A flight to any body-fixed target
+    // eases the throttle back to real time; the ladder is right there
+    // to speed it up again.
+    if (ridesASpinningBody(t) && Math.abs(SPEEDS[speedIndex]) > 3600) {
+      speedIndex = REAL_TIME_INDEX;
+    }
     const worldDir = camDir(); // capture before the basis may switch
     retarget = null;
     exitArmed = false;
