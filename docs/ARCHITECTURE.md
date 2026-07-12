@@ -137,6 +137,16 @@ to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
   ISS is a twilight sight) and honestly vanish beyond ±30 days of their TLE
   epoch, where drag makes the elements fiction. ISS, Hubble and Tiangong
   are trackable fly-to targets.
+- **Solar eclipses on the ground and from space** — the mesh shader
+  computes the exact two-circle overlap of the solar and lunar discs per
+  fragment on the globe (Moon and sun passed in the earth-fixed frame, so
+  the shadow geometry is immune to camera-relative compression): umbra,
+  penumbra, and annularity are one lens-area formula. Earthbound site
+  materials share a single ground-light factor evaluated at the camera
+  (the umbra is >100 km wide — locally flat), and the atmosphere's sun
+  radiance scales with it, so totality darkens the dome and the stars
+  return. The Moon biting the sun's disc needs no code at all: the meshes
+  z-test.
 - **Eclipse shading** — pure geometry from the real Sun/Earth/Moon sizes and
   live positions: the Moon's mesh color is a multiplier that dims through
   the penumbra and reddens in the umbra; the Tranquility ground rings share

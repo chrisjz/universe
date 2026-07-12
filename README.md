@@ -184,7 +184,7 @@ by theme:
 - [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
 - [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
 - [x] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as live destinations — Horizons trajectories compressed to 43 kB of Chebyshev segments (residuals < 20,000 km; flybys split fine, cruises coast), so `?goto=voyager-1` answers "where is it right now" truthfully
-- [ ] The Moon's shadow on the Earth: during a solar eclipse the umbra crawls across the real map — the geometry already exists, drawn where it lands
+- [x] The Moon's shadow on the Earth: the exact two-circle sun coverage per fragment — the umbra crawls Iceland and Spain on 12 Aug 2026 where it really will, the ground darkens through the partial phases, and at totality the sky goes out and the stars come back
 - [ ] Comet tails: dust and ion tails as physically derived curves (radiation pressure and solar wind on the true orbits) — Halley grows its tail toward perihelion
 
 **The experience**

@@ -1574,7 +1574,7 @@ async function start(): Promise<void> {
   }
 
   // ---- render loop ----
-  const globals = new Float32Array(32);
+  const globals = new Float32Array(40);
   let last = performance.now();
   const t0 = last;
 
@@ -1918,6 +1918,59 @@ async function start(): Promise<void> {
     // drawn for the PRESENT sky — beyond ±25,000 years the stars have
     // visibly drifted off them (that's the point of proper motion), so the
     // lines bow out honestly rather than pointing at empty sky.
+    // Solar eclipse state: Moon and sun in the EARTH-FIXED frame (units of
+    // R⊕), immune to camera-relative compression. Gated by proximity —
+    // eclipses need the Moon within ~2.5° of the sun.
+    let groundLight = 1;
+    {
+      const R = u.earthRot;
+      const mE = u.moonMesh.pos;
+      const eo = earthBody.frameOffset!;
+      const sW: V3 = [-eo[0], -eo[1], -eo[2]];
+      const dm = len(mE);
+      const dsW = len(sW);
+      const cosSep = (mE[0] * sW[0] + mE[1] * sW[1] + mE[2] * sW[2]) / (dm * dsW);
+      const possible = cosSep > 0.999; // ~2.6°
+      const fx = (v: V3, k: number): number => (R[k][0] * v[0] + R[k][1] * v[1] + R[k][2] * v[2]) / 6.371e6;
+      globals[32] = fx(mE, 0);
+      globals[33] = fx(mE, 1);
+      globals[34] = fx(mE, 2);
+      globals[35] = possible ? 1.7375e6 / 6.371e6 : 0;
+      globals[36] = fx(sW, 0);
+      globals[37] = fx(sW, 1);
+      globals[38] = fx(sW, 2);
+      if (possible) {
+        const camE = relPos(cam.frame, camLocal, earthFrameRef, [0, 0, 0]);
+        if (len(camE) < 2e7) {
+          // Ground-level light: the same disc-overlap the shader computes,
+          // evaluated once at the camera (the umbra is locally flat).
+          const p: V3 = [fx(camE, 0), fx(camE, 1), fx(camE, 2)];
+          const sv: V3 = [globals[36] - p[0], globals[37] - p[1], globals[38] - p[2]];
+          const mv: V3 = [globals[32] - p[0], globals[33] - p[1], globals[34] - p[2]];
+          const ds = len(sv);
+          const dmv = len(mv);
+          const ra = 109.2 / ds;
+          const rb = globals[35] / dmv;
+          const sep = Math.acos(clamp((sv[0] * mv[0] + sv[1] * mv[1] + sv[2] * mv[2]) / (ds * dmv), -1, 1));
+          if (sep >= ra + rb) groundLight = 1;
+          else if (sep <= Math.abs(ra - rb)) groundLight = rb >= ra ? 0 : 1 - (rb * rb) / (ra * ra);
+          else {
+            const a2 = ra * ra;
+            const b2 = rb * rb;
+            const d1 = (sep * sep + a2 - b2) / (2 * sep);
+            const d2 = sep - d1;
+            const area =
+              a2 * Math.acos(clamp(d1 / ra, -1, 1)) +
+              b2 * Math.acos(clamp(d2 / rb, -1, 1)) -
+              d1 * Math.sqrt(Math.max(a2 - d1 * d1, 0)) -
+              d2 * Math.sqrt(Math.max(b2 - d2 * d2, 0));
+            groundLight = 1 - area / (Math.PI * a2);
+          }
+        }
+      }
+      globals[39] = groundLight;
+    }
+
     // Atmospheres: one ray-marched shell per world, same integral, different
     // air. Earth gets the measured Rayleigh + Mie (blue days, red sunsets);
     // Mars gets the dust parameterization with the coefficients REVERSED
@@ -1940,7 +1993,9 @@ async function start(): Promise<void> {
           Rt: 6.371e6 + 1e5, // the Kármán-line-ish top of the shell
           beta: [5.802e-6, 13.558e-6, 33.1e-6], // Bruneton & Neyret
           H: 8500,
-          mie: [3.996e-6, 1200, 0.76, 20],
+          // During a solar eclipse the sky's light source IS the eclipsed
+          // sun: totality darkens the dome and the stars come back.
+          mie: [3.996e-6, 1200, 0.76, 20 * Math.max(groundLight, 0.02)],
         },
         {
           frame: u.marsFrame,
