@@ -71,7 +71,20 @@ async function start(): Promise<void> {
   try {
     await renderer.init();
   } catch (e) {
-    fatal(`UNIVERSE needs WebGPU.<br><br>${(e as Error).message}<br><br>Try Chrome, Edge, or Safari 18+.`);
+    // Safari ships WebGPU on by default only with the 26-generation OSes
+    // (macOS Tahoe 26, iOS/iPadOS 26); Safari 26 on older macOS still
+    // hides it behind a feature flag — reproduced on Safari 26.5/Sequoia,
+    // where navigator.gpu simply doesn't exist. Say so, precisely: a
+    // Safari user deserves the actual switch to flip, not "Safari 18+"
+    // (which was never true — 18 only had it in Technology Preview).
+    const safari = /Safari\//.test(navigator.userAgent) && !/Chrom/.test(navigator.userAgent);
+    const hint =
+      safari && !navigator.gpu
+        ? 'On this system Safari keeps WebGPU behind a flag: <b>Develop&nbsp;→ Feature&nbsp;Flags&nbsp;→ WebGPU</b>' +
+          ' (enable the Develop menu in Safari&nbsp;Settings&nbsp;→ Advanced).<br>' +
+          'On macOS&nbsp;26 (Tahoe) and iOS&nbsp;26 it is on by default.'
+        : 'Try Chrome or Edge — or Safari on macOS&nbsp;26 / iOS&nbsp;26.';
+    fatal(`UNIVERSE needs WebGPU.<br><br>${(e as Error).message}<br><br>${hint}`);
     return;
   }
 
@@ -2050,7 +2063,11 @@ async function start(): Promise<void> {
     // physics yields the butterscotch daytime sky and the blue sunset halo,
     // which really are backwards from Earth's. Beyond ~4e8 m the shells are
     // subpixel; only the nearest world draws.
-    if (!skipSet.has('atmo')) {
+    // The air leaves with the macro world: past the weave (hideBelow 2e-3)
+    // the ground mesh stops drawing, and without its depth the shell's
+    // below-horizon fragments paint on — the whole lower sky dims behind a
+    // sharpened horizon line (the "seam" a tester caught at the proton).
+    if (!skipSet.has('atmo') && cam.dist >= 2e-3) {
       const ATMOS: {
         frame: Frame;
         Rg: number;

@@ -8,7 +8,8 @@
 proton (10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~46 KB gzipped.
 
 **Live at [universeatlas.org](https://universeatlas.org/)** — needs a WebGPU
-browser (Chrome, Edge, or Safari 18+).
+browser: Chrome, Edge — or Safari on macOS 26 / iOS 26 (older Safari hides
+WebGPU behind Develop → Feature Flags).
 
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
