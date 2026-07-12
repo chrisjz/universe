@@ -134,23 +134,24 @@ faces the crescent sun at the moment of totality's approach.
 A dozen real moments the address space can take you to — every one of them
 measured, none of them staged:
 
-| Go see                                                      | Link                                                                                                                 |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| The Moon's shadow crossing Iceland, from orbit              | [`Aug 12 2026, 17:44 UTC`](https://universeatlas.org/?goto=earth&dist=2.2e7&at=2026-08-12T17:44:00Z)                 |
-| The same eclipse from a street in Madrid, near sunset       | [`18:28 UTC`](https://universeatlas.org/?lat=40.42&lon=-3.7&at=2026-08-12T18:28:00Z&dist=25)                         |
-| Io winking out in Jupiter's shadow (every 42 hours)         | [`?goto=io&speed=3600`](https://universeatlas.org/?goto=io&speed=3600)                                               |
-| Saturn's rings nearly edge-on — the real 2026 geometry      | [`?goto=saturn`](https://universeatlas.org/?goto=saturn)                                                             |
-| The ISS, live, dimming through Earth's shadow               | [`?goto=iss&speed=60`](https://universeatlas.org/?goto=iss&speed=60)                                                 |
-| Voyager 1 — where it actually is right now                  | [`?goto=voyager-1`](https://universeatlas.org/?goto=voyager-1)                                                       |
-| 3I/ATLAS, the interstellar comet, wearing its tail          | [`Nov 2025`](https://universeatlas.org/?goto=3i-atlas&at=2025-11-15T00:00:00Z)                                       |
-| Halley growing its tail toward the 2061 perihelion          | [`?goto=halley&at=2061-07-28`](https://universeatlas.org/?goto=halley&at=2061-07-28T00:00:00Z)                       |
-| The S stars swarming Sagittarius A\*                        | [`?goto=sgr-a`](https://universeatlas.org/?goto=sgr-a)                                                               |
-| S2's pericenter dive — 7,700 km/s past the black hole       | [`spring 2018, month/s`](https://universeatlas.org/?goto=sgr-a&at=2018-03-01T00:00:00Z&speed=2629800)                |
-| The shadow of the black hole, orbit lines bending around it | [`?goto=sgr-a&dist=2e11`](https://universeatlas.org/?goto=sgr-a&dist=2e11)                                           |
-| Jezero crater under Mars's butterscotch sky                 | [`?goto=jezero`](https://universeatlas.org/?goto=jezero)                                                             |
-| Vega as the pole star — look north from the picnic          | [`?goto=surface&years=12000`](https://universeatlas.org/?goto=surface&years=12000)                                   |
-| TRAPPIST-1's seven worlds, whirling in real periods         | [`?goto=trappist-1&speed=3600`](https://universeatlas.org/?goto=trappist-1&speed=3600)                               |
-| The constellations coming apart under real proper motion    | [`?goto=surface&years=24000&constellations=1`](https://universeatlas.org/?goto=surface&years=24000&constellations=1) |
+| Go see                                                           | Link                                                                                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| The Moon's shadow crossing Iceland, from orbit                   | [`Aug 12 2026, 17:44 UTC`](https://universeatlas.org/?goto=earth&dist=2.2e7&at=2026-08-12T17:44:00Z)                 |
+| The same eclipse from a street in Madrid, near sunset            | [`18:28 UTC`](https://universeatlas.org/?lat=40.42&lon=-3.7&at=2026-08-12T18:28:00Z&dist=25)                         |
+| Io winking out in Jupiter's shadow (every 42 hours)              | [`?goto=io&speed=3600`](https://universeatlas.org/?goto=io&speed=3600)                                               |
+| Saturn's rings nearly edge-on — the real 2026 geometry           | [`?goto=saturn`](https://universeatlas.org/?goto=saturn)                                                             |
+| The ISS, live, dimming through Earth's shadow                    | [`?goto=iss&speed=60`](https://universeatlas.org/?goto=iss&speed=60)                                                 |
+| Voyager 1 — where it actually is right now                       | [`?goto=voyager-1`](https://universeatlas.org/?goto=voyager-1)                                                       |
+| 3I/ATLAS, the interstellar comet, wearing its tail               | [`Nov 2025`](https://universeatlas.org/?goto=3i-atlas&at=2025-11-15T00:00:00Z)                                       |
+| Halley growing its tail toward the 2061 perihelion               | [`?goto=halley&at=2061-07-28`](https://universeatlas.org/?goto=halley&at=2061-07-28T00:00:00Z)                       |
+| The S stars swarming Sagittarius A\*                             | [`?goto=sgr-a`](https://universeatlas.org/?goto=sgr-a)                                                               |
+| S2's pericenter dive — 7,700 km/s past the black hole            | [`spring 2018, month/s`](https://universeatlas.org/?goto=sgr-a&at=2018-03-01T00:00:00Z&speed=2629800)                |
+| The shadow of the black hole, orbit lines bending around it      | [`?goto=sgr-a&dist=2e11`](https://universeatlas.org/?goto=sgr-a&dist=2e11)                                           |
+| Jezero crater under Mars's butterscotch sky                      | [`?goto=jezero`](https://universeatlas.org/?goto=jezero)                                                             |
+| Vega as the pole star — look north from the picnic               | [`?goto=surface&years=12000`](https://universeatlas.org/?goto=surface&years=12000)                                   |
+| The SDSS wedges — the measured cosmic web, fans of 2.6M galaxies | [`?goto=sun&dist=6e25&pitch=60`](https://universeatlas.org/?goto=sun&dist=6e25&pitch=60)                             |
+| TRAPPIST-1's seven worlds, whirling in real periods              | [`?goto=trappist-1&speed=3600`](https://universeatlas.org/?goto=trappist-1&speed=3600)                               |
+| The constellations coming apart under real proper motion         | [`?goto=surface&years=24000&constellations=1`](https://universeatlas.org/?goto=surface&years=24000&constellations=1) |
 
 ## How it works
 
@@ -199,7 +200,7 @@ by theme:
 - [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
 - [x] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — 4,708 systems as a survey layer whose very shape is honest (it clusters along the Kepler field's stare, because that is where humanity has looked), plus Proxima Centauri and TRAPPIST-1 built as destinations: real star radii and colors, planets with measured radii orbiting on their measured periods, each lit by its own sun (`?goto=trappist-1-e`)
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
-- [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
+- [x] Beyond 260 Mpc: 2.6 million SDSS spectroscopic galaxies at their true comoving depths (redshift-banded tiles from the data repo, ΛCDM distances checked before every tile write) — the survey's twin fans meeting at the Milky Way, the Sloan Great Wall crossing the northern one, the procedural placeholder stepping aside exactly where (and as deep as) the survey looked. The cosmic web measured, not imagined; phones stream a structure-preserving 1-in-17 subsample
 - [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
 
 **A living solar system**
@@ -283,7 +284,10 @@ pipelines (all regenerable from public sources) are documented in
   processed by the Gaia Data Processing and Analysis Consortium (credit:
   **ESA/Gaia/DPAC**).
 - **Galaxies** — the [2MASS Redshift Survey](http://tdc-www.harvard.edu/2mrs/)
-  (Huchra et al. 2012, ApJS 199, 26).
+  (Huchra et al. 2012, ApJS 199, 26); beyond it, 2.6M spectroscopic
+  galaxies from [SDSS DR18](https://www.sdss.org/) (SpecObj via SkyServer;
+  funding: Alfred P. Sloan Foundation & participating institutions) —
+  `node scripts/generate-sdss.mjs` regenerates the tiles and footprint mask.
 - **Constellations & Messier objects** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
   by Olaf Frohn (BSD-3-Clause); Messier distances from
   [Wikidata](https://www.wikidata.org/) (CC0, median of published claims).

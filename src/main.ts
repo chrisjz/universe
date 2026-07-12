@@ -33,6 +33,7 @@ import { parseTle, sgp4Init, sgp4, temeToJ2000, Sat } from './sgp4';
 import { Probe, probeEclipticKm } from './probes';
 import { SGRA_RS } from './blackhole';
 import { loadExoplanets } from './exoplanets';
+import { streamSdss } from './sdss';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -866,6 +867,31 @@ async function start(): Promise<void> {
       d[i + 2] = galaxyBase[i + 2] * webA;
     }
     renderer.updatePointGroup(groupIndex[galaxyGroup], d);
+  }
+
+  // ---- SDSS: the cosmic web measured, not imagined ----
+  // 2.6 million spectroscopic galaxies (universe-data repo) at their true
+  // comoving depths, streamed in redshift bands only once the camera is at
+  // cosmic scale; offline and in CI the bundled 1-in-17 subsample keeps
+  // the wedges' shape. Where the survey looked, the procedural placeholder
+  // has already stepped aside (the footprint mask in scene.ts).
+  let sdssStarted = false;
+  function maybeStreamSdss(): void {
+    if (sdssStarted || skipSet.has('sdss') || cam.dist < 5e22) return;
+    sdssStarted = true;
+    const root = DATA_URL.replace(/stars\/?$/, '');
+    void streamSdss(root, `${import.meta.env.BASE_URL}sdss-fallback.bin`, (band) => {
+      groupIndex.push(renderer.addPointGroup(band.instances));
+      u.groups.push({
+        frame: u.sunFrame,
+        pos: [0, 0, 0],
+        data: band.instances,
+        fadeExtent: 4e26,
+        hideBelow: 2e22, // zoomed inside the galaxy, 2.6M sprites skip entirely
+        comoving: true,
+        prov: 0,
+      });
+    });
   }
 
   // ---- the exoplanet survey: 4,708 systems with known worlds ----
@@ -1756,6 +1782,7 @@ async function start(): Promise<void> {
     maybeStreamMoonImagery();
     maybeStreamMarsImagery();
     maybeStreamStars();
+    maybeStreamSdss();
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.
@@ -1989,6 +2016,9 @@ async function start(): Promise<void> {
       gd[3] = fade;
       gd[4] = g.nearFade ? 1.2e12 : 0;
       gd[5] = g.prov ?? 0;
+      // Comoving groups expand in the shader; webA tracks a(t) in the same
+      // 0.3% steps the CPU-rescaled web uses, so the layers stay in sync.
+      if (g.comoving) gd[7] = webA;
       if (g.tint) {
         gd[8] = g.tint[0];
         gd[9] = g.tint[1];

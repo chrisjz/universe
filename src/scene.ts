@@ -7,7 +7,8 @@ import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
-import { orientSky, raDecToScene } from './sky';
+import { orientSky, raDecToScene, sceneDirToRaDec } from './sky';
+import { SDSS_MASK, SDSS_MASK_W, SDSS_MASK_H, SDSS_MASK_DEPTH_UNIT } from './data/sdssmask';
 import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, keplerScenePos, PlanetElements } from './ephemeris';
 import { VISITORS, conicScenePos, updateTail, TAIL_SPRITES } from './comet';
 import {
@@ -52,6 +53,9 @@ export interface PointGroup {
   data: Float32Array<ArrayBuffer>;
   disabled?: boolean; // perf attribution (?skip=): never drawn
   gcYield?: boolean; // illustrative galaxy glow: dims near the galactic center
+  // Positions stored at a = 1: the shader multiplies by the live ΛCDM scale
+  // factor (SDSS galaxies ride the expansion at zero CPU cost).
+  comoving?: boolean;
   // Star fields fade out as the camera pulls beyond this extent, so a million
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
@@ -2039,6 +2043,18 @@ export function buildUniverse(): Universe {
     const putGal = (x: number, y: number, z: number) => {
       const rr0 = Math.hypot(x, y, z);
       if (rr0 < SURVEY_R + (rand() - 0.15) * 5e24) return;
+      // Where — and only as deep as — SDSS actually measured, the
+      // procedural placeholder steps aside and the real wedges own the
+      // volume (the 2°×2° mask ships with the app; the survey's own
+      // maximum depth per direction is baked into each cell).
+      {
+        const [ra, dec] = sceneDirToRaDec([x, y, z]);
+        const cell =
+          Math.min(Math.floor((dec + 90) / 2), SDSS_MASK_H - 1) * SDSS_MASK_W +
+          Math.min(Math.floor(ra / 2), SDSS_MASK_W - 1);
+        const depth = SDSS_MASK[cell] * SDSS_MASK_DEPTH_UNIT;
+        if (rr0 < depth - rand() * 3e24) return;
+      }
       const warm = rand() < 0.3;
       pts.push(
         x,
