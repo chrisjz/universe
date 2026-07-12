@@ -21,6 +21,8 @@ const VIEWS = [
   ['sub-picnic', 'goto=weave', false],
   ['star-close', 'goto=miaplacidus', false],
   ['star-mesh', 'goto=betelgeuse', false],
+  ['io-drag', 'goto=io', true],
+  ['mars-drag', 'goto=mars&dist=2e7', true],
 ];
 const KNOCKOUTS = ['none', 'atmo', 'belt', 'sats', 'stars', 'web', 'galaxies', 'imagery', 'rescale'];
 
@@ -40,6 +42,14 @@ const browser = await puppeteer.launch({
 });
 
 const views = process.env.ONLY ? VIEWS.filter((v) => v[0] === process.env.ONLY) : VIEWS;
+// Warm the pipeline caches first: the sweep's first cell otherwise pays
+// shader compilation and reads ~30 fps slow (it mislabeled mars-drag once).
+{
+  const warm = await browser.newPage();
+  await warm.goto(`http://localhost:5229/?goto=earth&fps=1`, { waitUntil: 'networkidle0', timeout: 90000 });
+  await new Promise((r) => setTimeout(r, 4000));
+  await warm.close();
+}
 const table = {};
 for (const [name, q, drag] of views) {
   table[name] = {};

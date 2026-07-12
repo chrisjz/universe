@@ -148,6 +148,9 @@ async function start(): Promise<void> {
   const farOrigin: V3 = [0, 0, 0]; // bake viewpoint (sun-frame), frozen at face 0
   const farBakedOrigin: V3 = [0, 0, 0];
   let deepFade = 1; // stars fade out past the ±1 Myr proper-motion clamp
+  let camSunForSprites: V3 | null = null; // last frame's camera, sun frame
+  const spriteBase = new Map<number, number>(); // locator base intensities
+  const spriteLit = new Map<number, number>(); // eclipse dimming overrides
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -175,6 +178,13 @@ async function start(): Promise<void> {
         x = keplerOut[0];
         y = keplerOut[1];
         z = keplerOut[2];
+        if (b.center) {
+          // Jovicentric elements ride the live Jupiter (updated earlier in
+          // this same loop — planets precede their moons in u.bodies).
+          x += b.center[0];
+          y += b.center[1];
+          z += b.center[2];
+        }
       } else {
         const theta = -2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
         x = b.a * Math.cos(theta);
@@ -199,6 +209,33 @@ async function start(): Promise<void> {
       }
     }
     updateMoonShadow();
+    // Galilean eclipses: a moon crossing Jupiter's shadow goes dark — no
+    // atmosphere to redden it, so unlike our Moon it simply winks out
+    // (watch Io do it every 42 hours). Cylindrical shadow with a soft
+    // edge the size of the moon; the cone correction is ~2% at Callisto.
+    {
+      const jp = u.jupiterPos;
+      const dJ = len(jp);
+      const R_J = 6.99e7;
+      for (const g of u.galileans) {
+        const rx = g.pos[0] - jp[0],
+          ry = g.pos[1] - jp[1],
+          rz = g.pos[2] - jp[2];
+        const along = (rx * jp[0] + ry * jp[1] + rz * jp[2]) / dJ;
+        let lit = 1;
+        if (along > 0) {
+          const px = rx - (along / dJ) * jp[0],
+            py = ry - (along / dJ) * jp[1],
+            pz = rz - (along / dJ) * jp[2];
+          const perp = Math.hypot(px, py, pz);
+          lit = clamp((perp - (R_J - g.r)) / (2 * g.r), 0.05, 1);
+        }
+        g.mesh.color[0] = g.base[0] * lit;
+        g.mesh.color[1] = g.base[1] * lit;
+        g.mesh.color[2] = g.base[2] * lit;
+        spriteLit.set(g.spriteFloatBase, lit);
+      }
+    }
     // Synchronous lunar rotation: UNIFORM spin at the sidereal-month rate,
     // phased by the mean longitude so the near side faces Earth on average.
     // The ecliptic-longitude residuals (equation of the center etc.) then
@@ -226,6 +263,24 @@ async function start(): Promise<void> {
     const rawYears = (simMs - J2000) / 3.15576e10;
     deepFade = clamp((3e6 - Math.abs(rawYears)) / 2e6, 0, 1);
     u.driftStars(starYears);
+    // Locator glows step aside once the real globe resolves: the sprites
+    // are findability aids at 4x radius, and left on they swallow their
+    // true-scale neighborhoods — from the Jovian system view, Io's whole
+    // (correct) orbit sat inside Jupiter's halo. Below ~0.23° the locator
+    // shines; past ~0.46° the honest globe and atmosphere own the pixels.
+    if (camSunForSprites) {
+      const cs = camSunForSprites;
+      const d = u.groups[u.planetSpriteGroup].data;
+      for (const b of u.bodies) {
+        if (b.spriteFloatBase === undefined) continue;
+        const o = b.spriteFloatBase;
+        if (!spriteBase.has(o)) spriteBase.set(o, d[o + 7]);
+        const dist = Math.hypot(d[o] - cs[0], d[o + 1] - cs[1], d[o + 2] - cs[2]);
+        const ang = d[o + 3] / Math.max(dist, 1);
+        const fade = clamp((0.008 - ang) / 0.004, 0, 1);
+        d[o + 7] = spriteBase.get(o)! * fade * (spriteLit.get(o) ?? 1);
+      }
+    }
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Satellites: SGP4 in TEME, precessed to J2000, mapped into the scene.
     // Beyond ±30 days of a TLE's epoch the elements are stale (drag makes
@@ -1804,10 +1859,8 @@ async function start(): Promise<void> {
       data.atmo = atmoData;
     }
 
-    manageFarField(
-      scale(relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal), -1), // camera in the sun frame
-      performance.now(),
-    );
+    camSunForSprites = scale(relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal), -1);
+    manageFarField(camSunForSprites, performance.now());
     data.farDome = far.active ? deepFade : 0;
 
     const skyVisible = constellations && cam.dist < 2e19 && Math.abs(starYears) < 25000;
