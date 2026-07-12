@@ -2027,6 +2027,14 @@ async function start(): Promise<void> {
       }
     }
 
+    // Interstellar visitors + comet tails: a few hundred two-body solves
+    // per frame while a tail is active, none while every comet is cold.
+    if (!skipSet.has('comets')) {
+      for (const gi of u.comets.update(simMs)) {
+        renderer.updatePointGroup(groupIndex[gi], u.groups[gi].data);
+      }
+    }
+
     // Atmospheres: one ray-marched shell per world, same integral, different
     // air. Earth gets the measured Rayleigh + Mie (blue days, red sunsets);
     // Mars gets the dust parameterization with the coefficients REVERSED

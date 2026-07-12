@@ -185,7 +185,8 @@ by theme:
 - [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
 - [x] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as live destinations — Horizons trajectories compressed to 43 kB of Chebyshev segments (residuals < 20,000 km; flybys split fine, cruises coast), so `?goto=voyager-1` answers "where is it right now" truthfully
 - [x] The Moon's shadow on the Earth: the exact two-circle sun coverage per fragment — the umbra crawls Iceland and Spain on 12 Aug 2026 where it really will, the ground darkens through the partial phases, and at totality the sky goes out and the stars come back
-- [ ] Comet tails: dust and ion tails as physically derived curves (radiation pressure and solar wind on the true orbits) — Halley grows its tail toward perihelion
+- [x] Comet tails as dust dynamics: Finson–Probstein syndynes — every grain flies a real Kepler orbit under radiation-pressure-reduced gravity — plus the solar-wind-aberrated ion tail, switching on with sublimation inside ~3.5 AU. Scrub to 2061 and Halley grows its tail toward perihelion; 3I/ATLAS wore one through late 2025
+- [x] The interstellar visitors: 1I/ʻOumuamua, 2I/Borisov, and 3I/ATLAS on their real hyperbolae (JPL SBDB elements, verified against Horizons to <0.03 AU) — `?goto=oumuamua` answers where the first known visitor is now
 
 **The experience**
 
@@ -276,6 +277,9 @@ pipelines (all regenerable from public sources) are documented in
   [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
   CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
   resamples `public/smallbodies.bin`.
+- **Interstellar visitors** — hyperbolic elements from
+  [JPL SBDB](https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html), verified
+  against Horizons by `scripts/verify-interstellar.mjs`.
 - **Sagittarius A\*** — S-star orbital elements from Gillessen et al. 2017
   (ApJ 837, 30); black-hole mass and distance from the
   [GRAVITY Collaboration](https://www.mpe.mpg.de/ir/GRAVITY) 2022 (A&A 657,
