@@ -7,7 +7,8 @@ import { V3, mulberry32, gaussian } from './math';
 import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
-import { orientSky, raDecToScene, sceneDirToRaDec } from './sky';
+import { orientSky, raDecToScene, sceneDirToRaDec, eqVecToScene } from './sky';
+import { GALAXY_BODIES } from './data/galaxybodies';
 import { SDSS_MASK, SDSS_MASK_W, SDSS_MASK_H, SDSS_MASK_DEPTH_UNIT } from './data/sdssmask';
 import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, keplerScenePos, PlanetElements } from './ephemeris';
 import { VISITORS, conicScenePos, updateTail, TAIL_SPRITES } from './comet';
@@ -1635,6 +1636,128 @@ export function buildUniverse(): Universe {
       });
     });
     groups.push({ frame: sunFrame, pos: [0, 0, 0], data: md, fadeExtent: 5e24, prov: 0.5 });
+
+    // ---- the neighborhood, in body ----
+    // Every Messier galaxy gets a particle impression on its MEASURED
+    // dimensions and orientation (RC3: position angle, axis ratio, Hubble
+    // stage — src/data/galaxybodies.ts). The same honesty class as the
+    // atlas's own Milky Way: real size, real tilt, illustrative arm
+    // pattern. M31 leans in the sky exactly the way the real one does.
+    const bodyPts: number[] = [];
+    const DEG2 = Math.PI / 180;
+    for (const [m, paDeg, ratio, t] of GALAXY_BODIES) {
+      const entry = MESSIER.find((e) => e[0] === m);
+      if (!entry) continue;
+      const [, , ra, dec, distLy, sizeM] = entry;
+      const dist = distLy * 9.4607e15;
+      const dir = raDecToScene(ra, dec);
+      const center: V3 = [dir[0] * dist, dir[1] * dist, dir[2] * dist];
+      const raR = ((((ra % 360) + 360) % 360) * Math.PI) / 180;
+      const decR = dec * DEG2;
+      const east = eqVecToScene(-Math.sin(raR), Math.cos(raR), 0);
+      const north = eqVecToScene(-Math.sin(decR) * Math.cos(raR), -Math.sin(decR) * Math.sin(raR), Math.cos(decR));
+      const cpa = Math.cos(paDeg * DEG2);
+      const spa = Math.sin(paDeg * DEG2);
+      // Line of nodes (the major axis on the sky, N→E) and its sky-plane
+      // perpendicular; the disk tilts the latter out of the sky by the
+      // inclination recovered from the axis ratio (q0 = 0.2 intrinsic
+      // thickness — the standard Hubble formula). Near vs far side is
+      // unmeasured; the sign choice is part of the stylization.
+      const U: V3 = [0, 1, 2].map((k) => north[k] * cpa + east[k] * spa) as V3;
+      const Vsky: V3 = [0, 1, 2].map((k) => east[k] * cpa - north[k] * spa) as V3;
+      const q = Math.min(1 / ratio, 1);
+      const elliptical = t <= -3.5;
+      const R = sizeM / 2;
+      const n = m === 31 || m === 33 ? 4200 : 1600;
+      if (elliptical) {
+        // Oblate spheroid at the projected flattening; depth stylized.
+        for (let i = 0; i < n; i++) {
+          const g = Math.abs(gaussian(rand));
+          const rr = Math.min((g * R) / 2.2, R);
+          const u1 = rand() * 2 - 1;
+          const ph = rand() * Math.PI * 2;
+          const sxy = Math.sqrt(1 - u1 * u1);
+          const x = rr * sxy * Math.cos(ph);
+          const y = rr * sxy * Math.sin(ph) * q;
+          const z = rr * u1 * q;
+          bodyPts.push(
+            center[0] + U[0] * x + Vsky[0] * y + dir[0] * z,
+            center[1] + U[1] * x + Vsky[1] * y + dir[1] * z,
+            center[2] + U[2] * x + Vsky[2] * y + dir[2] * z,
+            R * 0.012 * (0.5 + rand()),
+            1.0,
+            0.87,
+            0.68,
+            0.05 + rand() * 0.1,
+          );
+        }
+      } else {
+        const cosI = Math.sqrt(Math.max(q * q - 0.04, 0) / 0.96);
+        const inc = Math.acos(Math.min(cosI, 1));
+        // Disk plane: U stays in the sky; W is Vsky tilted by the
+        // inclination; the disk normal completes the frame.
+        const W: V3 = [0, 1, 2].map((k) => Vsky[k] * Math.cos(inc) + dir[k] * Math.sin(inc)) as V3;
+        const N: V3 = [0, 1, 2].map((k) => -Vsky[k] * Math.sin(inc) + dir[k] * Math.cos(inc)) as V3;
+        const pitch = Math.tan(13 * DEG2);
+        const bulge = t < 2 ? 0.34 : t < 5 ? 0.22 : 0.12; // early types: big bulges
+        for (let i = 0; i < n; i++) {
+          const isBulge = rand() < bulge;
+          let x: number;
+          let y: number;
+          let z: number;
+          let warm: boolean;
+          if (isBulge) {
+            const rr = (Math.abs(gaussian(rand)) * R) / 7;
+            const u1 = rand() * 2 - 1;
+            const ph = rand() * Math.PI * 2;
+            const sxy = Math.sqrt(1 - u1 * u1);
+            x = rr * sxy * Math.cos(ph);
+            y = rr * sxy * Math.sin(ph);
+            z = rr * u1 * 0.6;
+            warm = true;
+          } else {
+            let rr = -Math.log(1 - rand()) * (R / 3.2);
+            if (rr > R) rr = rand() * R;
+            let th = rand() * Math.PI * 2;
+            // pull toward the nearest of two log-spiral arms (skip for
+            // lenticulars, T < 0 — disks without arms)
+            if (t >= 0) {
+              const armTh = Math.log(Math.max(rr, R / 40) / (R / 9)) / pitch;
+              const rel = ((((th - armTh) % Math.PI) + Math.PI * 1.5) % Math.PI) - Math.PI / 2;
+              th -= rel * 0.62 * Math.min(1, (rr * 4) / R);
+            }
+            x = rr * Math.cos(th);
+            y = rr * Math.sin(th);
+            z = gaussian(rand) * (R / 16);
+            warm = rand() < 0.3;
+          }
+          const pink = !isBulge && t >= 3 && rand() < 0.05;
+          bodyPts.push(
+            center[0] + U[0] * x + W[0] * y + N[0] * z,
+            center[1] + U[1] * x + W[1] * y + N[1] * z,
+            center[2] + U[2] * x + W[2] * y + N[2] * z,
+            R * 0.012 * (0.5 + rand()),
+            pink ? 1.0 : warm ? 1.0 : 0.66,
+            pink ? 0.55 : warm ? 0.85 : 0.74,
+            pink ? 0.66 : warm ? 0.62 : 1.0,
+            0.05 + rand() * 0.1,
+          );
+        }
+      }
+      // The featureless glow steps back where a body now stands, and the
+      // fly-to arrival moves close enough for the body to fill the view.
+      const gi = MESSIER.indexOf(entry) * 8;
+      md[gi + 7] *= 0.3;
+      const tgt = messierTargets[MESSIER.indexOf(entry)];
+      if (tgt) tgt.dist = Math.max(1.9 * sizeM, 1e15);
+    }
+    groups.push({
+      frame: sunFrame,
+      pos: [0, 0, 0],
+      data: Float32Array.from(bodyPts),
+      fadeExtent: 6e24,
+      prov: 0.5,
+    });
   }
 
   // ---- Sagittarius A*: the black hole at the galactic center ----
