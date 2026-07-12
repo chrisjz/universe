@@ -176,7 +176,7 @@ by theme:
 - [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
-- [ ] Sagittarius A*: the real black hole at the galactic center with geodesic gravitational lensing — the background stars bend for real
+- [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
 
 **A living solar system**
 
@@ -276,6 +276,11 @@ pipelines (all regenerable from public sources) are documented in
   [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
   CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
   resamples `public/smallbodies.bin`.
+- **Sagittarius A\*** — S-star orbital elements from Gillessen et al. 2017
+  (ApJ 837, 30); black-hole mass and distance from the
+  [GRAVITY Collaboration](https://www.mpe.mpg.de/ir/GRAVITY) 2022 (A&A 657,
+  L12), Schwarzschild precession from GRAVITY 2020 (A&A 636, L5) — verified
+  against the published S2 measurements by `scripts/verify-sstars.mjs`.
 - **Deep-space probes** — Voyager 1 & 2, New Horizons, and JWST
   trajectories from [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/),
   Chebyshev-compressed by `node scripts/generate-probes.mjs` into

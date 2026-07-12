@@ -31,6 +31,7 @@ import { moonEcliptic, keplerScenePos } from './ephemeris';
 import { raDecToScene, eqVecToScene } from './sky';
 import { parseTle, sgp4Init, sgp4, temeToJ2000, Sat } from './sgp4';
 import { Probe, probeEclipticKm } from './probes';
+import { SGRA_RS } from './blackhole';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -159,6 +160,32 @@ async function start(): Promise<void> {
   let camSunForSprites: V3 | null = null; // last frame's camera, sun frame
   const spriteBase = new Map<number, number>(); // locator base intensities
   const spriteLit = new Map<number, number>(); // eclipse dimming overrides
+  // Locator glows step aside once the real globe resolves: the sprites are
+  // findability aids at 4x radius, and left on they swallow their
+  // true-scale neighborhoods — from the Jovian system view, Io's whole
+  // (correct) orbit sat inside Jupiter's halo. Below ~0.23° the locator
+  // shines; past ~0.46° the honest globe and atmosphere own the pixels.
+  // Called every frame, paused or not: the fade tracks the CAMERA, and a
+  // paused session that relied on updateBodies left it to a startup race
+  // (whether the satellites/probes fetch callbacks landed before or after
+  // the first frame set camSunForSprites — the halo state literally
+  // depended on the bundle's parse time; a CI capture caught both sides).
+  function updateLocatorFades(): void {
+    if (camSunForSprites) {
+      const cs = camSunForSprites;
+      const d = u.groups[u.planetSpriteGroup].data;
+      for (const b of u.bodies) {
+        if (b.spriteFloatBase === undefined) continue;
+        const o = b.spriteFloatBase;
+        if (!spriteBase.has(o)) spriteBase.set(o, d[o + 7]);
+        const dist = Math.hypot(d[o] - cs[0], d[o + 1] - cs[1], d[o + 2] - cs[2]);
+        const ang = d[o + 3] / Math.max(dist, 1);
+        const fade = clamp((0.008 - ang) / 0.004, 0, 1);
+        d[o + 7] = spriteBase.get(o)! * fade * (spriteLit.get(o) ?? 1);
+      }
+    }
+    renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+  }
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -285,25 +312,7 @@ async function start(): Promise<void> {
         renderer.updatePointGroup(pr.rIdx, pr.inst);
       }
     }
-    // Locator glows step aside once the real globe resolves: the sprites
-    // are findability aids at 4x radius, and left on they swallow their
-    // true-scale neighborhoods — from the Jovian system view, Io's whole
-    // (correct) orbit sat inside Jupiter's halo. Below ~0.23° the locator
-    // shines; past ~0.46° the honest globe and atmosphere own the pixels.
-    if (camSunForSprites) {
-      const cs = camSunForSprites;
-      const d = u.groups[u.planetSpriteGroup].data;
-      for (const b of u.bodies) {
-        if (b.spriteFloatBase === undefined) continue;
-        const o = b.spriteFloatBase;
-        if (!spriteBase.has(o)) spriteBase.set(o, d[o + 7]);
-        const dist = Math.hypot(d[o] - cs[0], d[o + 1] - cs[1], d[o + 2] - cs[2]);
-        const ang = d[o + 3] / Math.max(dist, 1);
-        const fade = clamp((0.008 - ang) / 0.004, 0, 1);
-        d[o + 7] = spriteBase.get(o)! * fade * (spriteLit.get(o) ?? 1);
-      }
-    }
-    renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+    updateLocatorFades();
     // Satellites: SGP4 in TEME, precessed to J2000, mapped into the scene.
     // Beyond ±30 days of a TLE's epoch the elements are stale (drag makes
     // them diverge irrecoverably), so each bird honestly vanishes instead
@@ -1574,7 +1583,7 @@ async function start(): Promise<void> {
   }
 
   // ---- render loop ----
-  const globals = new Float32Array(40);
+  const globals = new Float32Array(44);
   let last = performance.now();
   const t0 = last;
 
@@ -1609,6 +1618,8 @@ async function start(): Promise<void> {
     if (!paused) {
       simMs = clamp(simMs + dt * SPEEDS[speedIndex] * 1000, SIM_MIN_MS, SIM_MAX_MS);
       updateBodies();
+    } else {
+      updateLocatorFades(); // paused, the camera still moves — fades follow it
     }
     // Keyboard navigation: held arrows glide instead of stepping. Up/down
     // is the trackpad-friendly zoom (same exponential feel as scroll);
@@ -1838,12 +1849,25 @@ async function start(): Promise<void> {
       data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }
 
+    // Camera distance to the galactic center: the illustrative galaxy glow
+    // yields there (gcYield), the gravitational lens engages within a
+    // parsec, and the S-star draws double for the counter-images. At and
+    // beyond the sun's 8.3 kpc every factor is exactly 1 or off — no
+    // existing view moves by a bit.
+    const gcRel = relPos(u.sgrA.frame, [0, 0, 0], cam.frame, camLocal);
+    const dGC = len(gcRel);
+    const lensOn = dGC < 3e16 && !skipSet.has('lens');
+
     // Orbit rings are GPU overlay too: they yield with the rest when the
     // overlay is hidden (H) — a clean frame means no scaffolding at all.
     for (const orbit of overlayHidden ? [] : u.orbits) {
       const rel = relPos(orbit.frame, orbit.center, cam.frame, camLocal);
       const ratio = len(rel) / orbit.radius;
-      const fade = smootherstep((ratio - 0.02) / 0.25) * (1 - smootherstep((ratio - 40) / 360));
+      // The near-fade threshold scales per orbit (nearRatio, default 0.02),
+      // and its ramp width scales with it — at the default this is exactly
+      // the old (ratio − 0.02) / 0.25 curve, bit-identical.
+      const nr = orbit.nearRatio ?? 0.02;
+      const fade = smootherstep((ratio - nr) / (12.5 * nr)) * (1 - smootherstep((ratio - 40) / 360));
       if (fade < 0.01) continue;
       const l = new Float32Array(16);
       // Ellipse center = focus (the frame's origin) + the center offset.
@@ -1863,6 +1887,13 @@ async function start(): Promise<void> {
       l[13] = B[1];
       l[14] = B[2];
       data.lines.push(l);
+      // Near Sgr A* the S-star ellipses draw a second time as their
+      // gravitational counter-images (axisA.w flags the lens's other root).
+      if (orbit.secondImage && lensOn) {
+        const l2 = Float32Array.from(l);
+        l2[11] = 1;
+        data.lines.push(l2);
+      }
     }
 
     // Frustum culling for coned star tiles: the deep sky is vertex-bound
@@ -1880,6 +1911,7 @@ async function start(): Promise<void> {
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
       let fade = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
       if (g.stellar) fade *= deepFade;
+      if (g.gcYield) fade *= Math.max(Math.min(dGC / 1e18, 1), 0.05);
       if (fade < 0.012) return; // beyond the band's reach: invisible, skip the draw
       if (g.cone) {
         const camSunDist = len(rel); // star tiles live in the sun frame
@@ -1911,6 +1943,13 @@ async function start(): Promise<void> {
         gd[11] = g.tint[3];
       }
       data.groups.push({ index: groupIndex[i], data: gd });
+      // The S stars also draw their gravitational counter-images (misc.z):
+      // a star crossing behind the shadow shows both arcs of its ring.
+      if (lensOn && i === u.sgrA.group) {
+        const g2 = Float32Array.from(gd);
+        g2[6] = 1;
+        data.groups.push({ index: groupIndex[i], data: g2 });
+      }
     });
 
     // Constellation figures: a dome of line segments around the sun, shown
@@ -1969,6 +2008,23 @@ async function start(): Promise<void> {
         }
       }
       globals[39] = groundLight;
+    }
+
+    // Gravitational lens: Sgr A* relative the camera in TRUE meters. The
+    // Schwarzschild radius rides in .w only while the camera is within a
+    // parsec of the galactic center — beyond that every deflection is
+    // sub-pixel and the vertex-shader branch stays cold. The S-star Kepler
+    // solve (40 published orbits + the GR pericenter advance) also only
+    // runs near the center; the group is fully faded everywhere else.
+    {
+      globals[40] = gcRel[0];
+      globals[41] = gcRel[1];
+      globals[42] = gcRel[2];
+      globals[43] = lensOn ? SGRA_RS : 0;
+      if (dGC < 1e19) {
+        u.sgrA.update(simMs);
+        renderer.updatePointGroup(groupIndex[u.sgrA.group], u.groups[u.sgrA.group].data);
+      }
     }
 
     // Atmospheres: one ray-marched shell per world, same integral, different

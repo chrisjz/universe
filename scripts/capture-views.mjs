@@ -44,6 +44,9 @@ const VIEWS = [
   { name: 'moon', q: 'goto=moon&dist=1.2e7' },
   // Viking global mosaic
   { name: 'mars', q: 'goto=mars&dist=2.5e7' },
+  // Sgr A*: shadow sphere, S-star sprites/ellipses, primary + secondary
+  // gravitational lensing, and the near-center fade of the galaxy glow
+  { name: 'sgra', q: 'goto=sgr-a&dist=1e12' },
 ];
 
 const outDir = process.argv[2] ?? 'visual-out'; // NOT dot-prefixed: upload-artifact drops hidden paths
