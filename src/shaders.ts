@@ -436,6 +436,8 @@ export const atmoWgsl = (nView: number, nLight: number, jitter: boolean): string
 struct Atmo {
   center : vec4f, // xyz: planet center rel camera (true meters), w: ground radius
   sun    : vec4f, // xyz: unit direction to the sun, w: atmosphere top radius
+  beta   : vec4f, // xyz: molecular/dust scattering per meter (rgb), w: scale height
+  mie    : vec4f, // x: Mie beta, y: Mie scale height, z: anisotropy g, w: sun radiance
 };
 @group(1) @binding(0) var<uniform> A : Atmo;
 
@@ -475,15 +477,7 @@ fn raySphere(v : vec3f, c : vec3f, r : f32) -> vec2f {
 }
 
 const PI_A = 3.14159265;
-// Sea-level scattering coefficients (per meter) and scale heights: the
-// measured Earth values (Bruneton & Neyret 2008; Preetham Mie).
-const BETA_R = vec3f(5.802e-6, 13.558e-6, 33.1e-6);
-const H_R = 8500.0;
-const BETA_M = 3.996e-6;
-const H_M = 1200.0;
-const MIE_G = 0.76;
 const MIE_ABS = 1.11; // Mie extinction = scattering x 1.11
-const SUN_I = 20.0;   // display radiance scale
 
 struct FOut {
   @location(0) col : vec4f,
@@ -514,8 +508,8 @@ ${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 4375
     let t = t0 + (f32(i) + jit) * dt;
     let pos = v * t - c; // planet-centric sample
     let h = max(length(pos) - Rg, 0.0);
-    let sR = exp(-h / H_R) * dt;
-    let sM = exp(-h / H_M) * dt;
+    let sR = exp(-h / A.beta.w) * dt;
+    let sM = exp(-h / A.mie.y) * dt;
     odR = odR + sR;
     odM = odM + sM;
     // Night side: the sun ray from this sample hits the planet.
@@ -527,21 +521,21 @@ ${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 4375
     var lodM = 0.0;
     for (var j = 0; j < ${nLight}; j = j + 1) {
       let lh = max(length(pos + sd * ((f32(j) + 0.5) * dl)) - Rg, 0.0);
-      lodR = lodR + exp(-lh / H_R) * dl;
-      lodM = lodM + exp(-lh / H_M) * dl;
+      lodR = lodR + exp(-lh / A.beta.w) * dl;
+      lodM = lodM + exp(-lh / A.mie.y) * dl;
     }
-    let T = exp(-(BETA_R * (odR + lodR) + vec3f(BETA_M * MIE_ABS * (odM + lodM))));
+    let T = exp(-(A.beta.xyz * (odR + lodR) + vec3f(A.mie.x * MIE_ABS * (odM + lodM))));
     accR = accR + T * sR;
     accM = accM + T * sM;
   }
   let mu = dot(v, sd);
   let phR = 3.0 / (16.0 * PI_A) * (1.0 + mu * mu);
-  let gg = MIE_G * MIE_G;
+  let gg = A.mie.z * A.mie.z;
   let phM = 3.0 / (8.0 * PI_A) * ((1.0 - gg) * (1.0 + mu * mu)) /
-            ((2.0 + gg) * pow(1.0 + gg - 2.0 * MIE_G * mu, 1.5));
-  var L = SUN_I * (BETA_R * phR * accR + vec3f(BETA_M) * phM * accM);
+            ((2.0 + gg) * pow(1.0 + gg - 2.0 * A.mie.z * mu, 1.5));
+  var L = A.mie.w * (A.beta.xyz * phR * accR + vec3f(A.mie.x) * phM * accM);
   L = vec3f(1.0) - exp(-L); // soft shoulder: the zenith stays blue, not white
-  let Tv = exp(-(BETA_R * odR + vec3f(BETA_M * MIE_ABS * odM)));
+  let Tv = exp(-(A.beta.xyz * odR + vec3f(A.mie.x * MIE_ABS * odM)));
   // Transmittance dims what's behind — and bright air also MASKS it. Stars
   // sit above the atmosphere, so daylight hides them by contrast, not
   // extinction; a veiling-luminance term folds that into the blend.

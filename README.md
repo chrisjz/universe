@@ -192,7 +192,7 @@ by theme:
 - [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
 - [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
 - [x] Atmospheric scattering: a real single-scatter Rayleigh + Mie atmosphere for Earth — the blue limb from orbit, blue noons and red sunsets from the picnic, stars fading into daylight, all from one ray-marched integral
-- [ ] Mars's sky at Jezero: the same scattering integral with Mars's thin CO₂ and dust — the butterscotch daytime sky and the blue sunsets, which really are backwards from Earth's
+- [x] Mars's sky at Jezero: the same scattering integral with the dust coefficients reversed (red scatters most) — the butterscotch daytime sky and the blue sunset halo, which really are backwards from Earth's
 - [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
 
