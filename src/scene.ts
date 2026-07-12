@@ -1644,6 +1644,11 @@ export function buildUniverse(): Universe {
     // atlas's own Milky Way: real size, real tilt, illustrative arm
     // pattern. M31 leans in the sky exactly the way the real one does.
     const bodyPts: number[] = [];
+    // Its own seeded stream: drawing ~200k samples from the SHARED rand()
+    // would shift every procedural sprite generated after this block — the
+    // whole Milky Way band re-rolled, and CI caught the mars view moving
+    // 2.46% three runs straight before the cause was this line.
+    const brand = mulberry32(577215664);
     const DEG2 = Math.PI / 180;
     for (const [m, paDeg, ratio, t] of GALAXY_BODIES) {
       const entry = MESSIER.find((e) => e[0] === m);
@@ -1672,10 +1677,10 @@ export function buildUniverse(): Universe {
       if (elliptical) {
         // Oblate spheroid at the projected flattening; depth stylized.
         for (let i = 0; i < n; i++) {
-          const g = Math.abs(gaussian(rand));
+          const g = Math.abs(gaussian(brand));
           const rr = Math.min((g * R) / 2.2, R);
-          const u1 = rand() * 2 - 1;
-          const ph = rand() * Math.PI * 2;
+          const u1 = brand() * 2 - 1;
+          const ph = brand() * Math.PI * 2;
           const sxy = Math.sqrt(1 - u1 * u1);
           const x = rr * sxy * Math.cos(ph);
           const y = rr * sxy * Math.sin(ph) * q;
@@ -1684,11 +1689,11 @@ export function buildUniverse(): Universe {
             center[0] + U[0] * x + Vsky[0] * y + dir[0] * z,
             center[1] + U[1] * x + Vsky[1] * y + dir[1] * z,
             center[2] + U[2] * x + Vsky[2] * y + dir[2] * z,
-            R * 0.012 * (0.5 + rand()),
+            R * 0.012 * (0.5 + brand()),
             1.0,
             0.87,
             0.68,
-            0.05 + rand() * 0.1,
+            0.05 + brand() * 0.1,
           );
         }
       } else {
@@ -1701,24 +1706,24 @@ export function buildUniverse(): Universe {
         const pitch = Math.tan(13 * DEG2);
         const bulge = t < 2 ? 0.34 : t < 5 ? 0.22 : 0.12; // early types: big bulges
         for (let i = 0; i < n; i++) {
-          const isBulge = rand() < bulge;
+          const isBulge = brand() < bulge;
           let x: number;
           let y: number;
           let z: number;
           let warm: boolean;
           if (isBulge) {
-            const rr = (Math.abs(gaussian(rand)) * R) / 7;
-            const u1 = rand() * 2 - 1;
-            const ph = rand() * Math.PI * 2;
+            const rr = (Math.abs(gaussian(brand)) * R) / 7;
+            const u1 = brand() * 2 - 1;
+            const ph = brand() * Math.PI * 2;
             const sxy = Math.sqrt(1 - u1 * u1);
             x = rr * sxy * Math.cos(ph);
             y = rr * sxy * Math.sin(ph);
             z = rr * u1 * 0.6;
             warm = true;
           } else {
-            let rr = -Math.log(1 - rand()) * (R / 3.2);
-            if (rr > R) rr = rand() * R;
-            let th = rand() * Math.PI * 2;
+            let rr = -Math.log(1 - brand()) * (R / 3.2);
+            if (rr > R) rr = brand() * R;
+            let th = brand() * Math.PI * 2;
             // pull toward the nearest of two log-spiral arms (skip for
             // lenticulars, T < 0 — disks without arms)
             if (t >= 0) {
@@ -1728,19 +1733,19 @@ export function buildUniverse(): Universe {
             }
             x = rr * Math.cos(th);
             y = rr * Math.sin(th);
-            z = gaussian(rand) * (R / 16);
-            warm = rand() < 0.3;
+            z = gaussian(brand) * (R / 16);
+            warm = brand() < 0.3;
           }
-          const pink = !isBulge && t >= 3 && rand() < 0.05;
+          const pink = !isBulge && t >= 3 && brand() < 0.05;
           bodyPts.push(
             center[0] + U[0] * x + W[0] * y + N[0] * z,
             center[1] + U[1] * x + W[1] * y + N[1] * z,
             center[2] + U[2] * x + W[2] * y + N[2] * z,
-            R * 0.012 * (0.5 + rand()),
+            R * 0.012 * (0.5 + brand()),
             pink ? 1.0 : warm ? 1.0 : 0.66,
             pink ? 0.55 : warm ? 0.85 : 0.74,
             pink ? 0.66 : warm ? 0.62 : 1.0,
-            0.05 + rand() * 0.1,
+            0.05 + brand() * 0.1,
           );
         }
       }
