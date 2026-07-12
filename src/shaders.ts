@@ -430,7 +430,7 @@ struct VOut { @builtin(position) pos : vec4f };
 // the horizon. Fragment depth is the ray's LAST scattering point, so
 // foreground objects (a tree against the horizon, the Moon crossing the
 // limb) occlude the sky behind them instead of glowing through it.
-export const ATMO_WGSL =
+export const atmoWgsl = (nView: number, nLight: number, jitter: boolean): string =>
   COMMON +
   /* wgsl */ `
 struct Atmo {
@@ -504,13 +504,14 @@ struct FOut {
   if (t1 <= t0) { discard; }
 
   let sd = A.sun.xyz;
-  let dt = (t1 - t0) / 16.0;
+  let dt = (t1 - t0) / ${nView}.0;
   var odR = 0.0;
   var odM = 0.0;
   var accR = vec3f(0.0);
   var accM = vec3f(0.0);
-  for (var i = 0; i < 16; i = i + 1) {
-    let t = t0 + (f32(i) + 0.5) * dt;
+${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 43758.547);' : '  let jit = 0.5;'}
+  for (var i = 0; i < ${nView}; i = i + 1) {
+    let t = t0 + (f32(i) + jit) * dt;
     let pos = v * t - c; // planet-centric sample
     let h = max(length(pos) - Rg, 0.0);
     let sR = exp(-h / H_R) * dt;
@@ -521,10 +522,10 @@ struct FOut {
     let lg = raySphere(sd, -pos, Rg);
     if (lg.x < lg.y && lg.x > 0.0) { continue; }
     // Optical depth along the light path to the top of the shell.
-    let dl = raySphere(sd, -pos, Rt).y / 6.0;
+    let dl = raySphere(sd, -pos, Rt).y / ${nLight}.0;
     var lodR = 0.0;
     var lodM = 0.0;
-    for (var j = 0; j < 6; j = j + 1) {
+    for (var j = 0; j < ${nLight}; j = j + 1) {
       let lh = max(length(pos + sd * ((f32(j) + 0.5) * dl)) - Rg, 0.0);
       lodR = lodR + exp(-lh / H_R) * dl;
       lodM = lodM + exp(-lh / H_M) * dl;

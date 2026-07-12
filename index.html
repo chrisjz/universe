@@ -37,6 +37,16 @@
       body.photo #seam {
         display: none !important;
       }
+      .hud,
+      .hud button,
+      #search,
+      #search input,
+      #search li {
+        /* No iOS double-tap-to-zoom on controls: a double-tapped HUD button
+           zoomed the page and stranded half the UI off-screen. Pinch zoom
+           elsewhere stays available for accessibility. */
+        touch-action: manipulation;
+      }
       .hud {
         position: fixed;
         font-family: 'SF Mono', ui-monospace, Menlo, monospace;
