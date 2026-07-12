@@ -4,6 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Universe Atlas — from quark to cosmos, to true scale</title>
+    <!-- What a shared link unfurls into. The card image is a real frame:
+         a headless capture of the actual renderer, not an illustration. -->
+    <meta
+      name="description"
+      content="A true-scale atlas of the universe in your browser: scroll from the observable universe to a proton through 6.8 million real stars, real planets on real orbits, and a picnic blanket in Chicago. Every size, distance, and speed is real."
+    />
+    <link rel="canonical" href="https://universeatlas.org/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Universe Atlas" />
+    <meta property="og:title" content="Universe Atlas — from quark to cosmos, to true scale" />
+    <meta
+      property="og:description"
+      content="Scroll through 43 orders of magnitude: the cosmic web, 6.8 million measured stars, planets on their real orbits, eclipses where they really land — down to a picnic blanket, and inward to the quarks."
+    />
+    <meta property="og:url" content="https://universeatlas.org/" />
+    <meta property="og:image" content="https://universeatlas.org/social-card.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Universe Atlas — from quark to cosmos, to true scale" />
+    <meta
+      name="twitter:description"
+      content="A true-scale WebGPU atlas of the universe: 43 orders of magnitude, every one of them real."
+    />
+    <meta name="twitter:image" content="https://universeatlas.org/social-card.jpg" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
@@ -376,6 +401,40 @@
           margin-left: 0;
         }
       }
+      /* The first-visit nudge: a visitor lands at the observable universe
+         with no cue that the whole atlas is one scroll away. One line,
+         gone forever on the first gesture (see the inline script below). */
+      #welcome {
+        position: fixed;
+        left: 50%;
+        top: 62%;
+        transform: translateX(-50%);
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+        color: #cfd8e6;
+        text-align: center;
+        user-select: none;
+        pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+        letter-spacing: 0.14em;
+        font-size: 13px;
+        animation: welcome-breathe 2.6s ease-in-out infinite;
+        transition: opacity 0.6s;
+      }
+      #welcome .sub {
+        margin-top: 8px;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #8fa1b8;
+      }
+      @keyframes welcome-breathe {
+        0%,
+        100% {
+          opacity: 0.95;
+        }
+        50% {
+          opacity: 0.45;
+        }
+      }
     </style>
   </head>
   <body>
@@ -414,6 +473,39 @@
       <ul></ul>
     </div>
     <div id="fatal"></div>
+    <script>
+      // First-visit nudge: only on a bare load (a shared ?goto link speaks
+      // for itself), only once per browser, and gone on the first gesture —
+      // any scroll, touch, key, or click means the visitor is already flying.
+      (() => {
+        let seen = false;
+        try {
+          seen = localStorage.getItem('atlas-welcomed') === '1';
+        } catch {
+          /* storage blocked: show it, skip remembering */
+        }
+        if (location.search !== '' || seen) return;
+        const el = document.createElement('div');
+        el.id = 'welcome';
+        el.innerHTML =
+          'SCROLL TO FALL IN — 43 ORDERS OF MAGNITUDE DOWN TO A PICNIC' +
+          '<div class="sub">PINCH ON TOUCH · OR PRESS T FOR THE GRAND TOUR</div>';
+        document.body.appendChild(el);
+        const dismiss = () => {
+          try {
+            localStorage.setItem('atlas-welcomed', '1');
+          } catch {
+            /* fine */
+          }
+          el.style.opacity = '0';
+          setTimeout(() => el.remove(), 700);
+        };
+        for (const ev of ['wheel', 'pointerdown', 'touchstart', 'keydown']) {
+          addEventListener(ev, dismiss, { once: true, passive: true });
+        }
+        setTimeout(dismiss, 45000); // it is a nudge, not a billboard
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
