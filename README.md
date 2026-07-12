@@ -149,6 +149,7 @@ measured, none of them staged:
 | The shadow of the black hole, orbit lines bending around it | [`?goto=sgr-a&dist=2e11`](https://universeatlas.org/?goto=sgr-a&dist=2e11)                                           |
 | Jezero crater under Mars's butterscotch sky                 | [`?goto=jezero`](https://universeatlas.org/?goto=jezero)                                                             |
 | Vega as the pole star — look north from the picnic          | [`?goto=surface&years=12000`](https://universeatlas.org/?goto=surface&years=12000)                                   |
+| TRAPPIST-1's seven worlds, whirling in real periods         | [`?goto=trappist-1&speed=3600`](https://universeatlas.org/?goto=trappist-1&speed=3600)                               |
 | The constellations coming apart under real proper motion    | [`?goto=surface&years=24000&constellations=1`](https://universeatlas.org/?goto=surface&years=24000&constellations=1) |
 
 ## How it works
@@ -196,7 +197,7 @@ by theme:
 **A deeper sky**
 
 - [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
-- [ ] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — fly to Proxima b, orbit TRAPPIST-1's seven worlds
+- [x] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — 4,708 systems as a survey layer whose very shape is honest (it clusters along the Kepler field's stare, because that is where humanity has looked), plus Proxima Centauri and TRAPPIST-1 built as destinations: real star radii and colors, planets with measured radii orbiting on their measured periods, each lit by its own sun (`?goto=trappist-1-e`)
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
 - [ ] Beyond 260 Mpc: SDSS spectroscopic galaxies as LOD tiles from the data repo — the cosmic web measured, not imagined
 - [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
@@ -301,6 +302,10 @@ pipelines (all regenerable from public sources) are documented in
   [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
   CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
   resamples `public/smallbodies.bin`.
+- **Exoplanets** — the [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/)'s
+  composite table (`pscomppars`), compacted by
+  `node scripts/generate-exoplanets.mjs` into `public/exoplanets.bin`;
+  Proxima/TRAPPIST-1 system parameters verbatim from the same table.
 - **Interstellar visitors** — hyperbolic elements from
   [JPL SBDB](https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html), verified
   against Horizons by `scripts/verify-interstellar.mjs`.

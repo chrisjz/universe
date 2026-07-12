@@ -10,6 +10,15 @@ import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
 import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, keplerScenePos, PlanetElements } from './ephemeris';
 import { VISITORS, conicScenePos, updateTail, TAIL_SPRITES } from './comet';
+import {
+  EXO_SYSTEMS,
+  ExoPlanet,
+  exoBasis,
+  exoStarRadius,
+  exoPlanetRadius,
+  exoOrbitRadius,
+  exoPlanetOffset,
+} from './exoplanets';
 import { MESSIER } from './data/messier';
 import { S_STARS, sStarPos, sStarAxes, SGRA_SHADOW } from './blackhole';
 
@@ -28,6 +37,9 @@ export interface MeshObj {
   // The inward journey dives *through* solid objects; each scale layer hides
   // once the camera's focus distance drops below this (the film's cross-fade).
   hideBelow?: number;
+  // Light this mesh from a live position instead of the sun — an exoplanet
+  // orbits a star that isn't ours (references the host star's pos array).
+  litFrom?: V3;
   // Honest-seam provenance: 0 = measured, 0.5 = real dimensions but stylized
   // look, 1 = illustrative. Drives the seam view's recoloring.
   prov?: number;
@@ -97,6 +109,7 @@ export interface Target {
   button?: boolean; // hidden, but still gets a HUD button (the inward-journey stages)
   radius?: number; // physical bound radius in meters; presence makes it clickable
   sunlit?: boolean; // flights/jumps arrive facing the sunlit side (yaw computed live)
+  lightPos?: V3; // the sunlit side faces THIS live position (exoplanet hosts)
   basis?: [V3, V3, V3]; // camera orbit basis (east, up, north) for tilted surface sites
   // Catalog stars get a color so the renderer can substitute a real star mesh
   // for their sprite up close (sprites jitter at 1e16 m f32 magnitudes).
@@ -142,6 +155,8 @@ export interface Universe {
   // Interstellar visitors + comet tails: the per-frame update returns the
   // indices of groups whose instance data changed (main re-uploads those).
   comets: { update: (ms: number) => number[] };
+  // Exoplanet destinations (Proxima, TRAPPIST-1): circular-orbit update.
+  exo: { update: (ms: number) => void };
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
@@ -1735,6 +1750,101 @@ export function buildUniverse(): Universe {
     return update;
   })();
 
+  // ---- exoplanet destinations: Proxima Centauri and TRAPPIST-1 ----
+  // Real star radii and colors, planets with measured radii on their
+  // measured orbits — the survey layer (4,708 systems) streams separately
+  // in main.ts. Orbit orientation/phase are stylized (see exoplanets.ts).
+  const exoTargets: Target[] = [];
+  const exoUpdate = ((): ((ms: number) => void) => {
+    const live: { p: ExoPlanet; u: V3; v: V3; star: V3; pos: V3 }[] = [];
+    for (const s of EXO_SYSTEMS) {
+      const { pos: starPos, u: lu, v: lv } = exoBasis(s);
+      const starR = exoStarRadius(s);
+      meshes.push({
+        frame: sunFrame,
+        pos: starPos,
+        mesh: 'sphere',
+        size: [starR, starR, starR],
+        bound: starR,
+        color: s.color,
+        emissive: 0,
+        matId: 2,
+        rim: 0,
+        gridScale: 0,
+        prov: 0.5,
+      });
+      const span = exoOrbitRadius(s.planets[s.planets.length - 1]);
+      exoTargets.push({
+        name: s.name,
+        slug: s.slug,
+        frame: sunFrame,
+        pos: starPos,
+        dist: Math.max(40 * starR, 3.2 * span),
+        pitch: 0.15,
+        parent: 'galaxy',
+        exit: Math.max(6e17, 3 * s.distPc * 3.0857e16),
+        radius: starR,
+        hidden: true,
+        source: 'measured — NASA Exoplanet Archive; orbit orientation & phase stylized',
+      });
+      for (const p of s.planets) {
+        const r = exoPlanetRadius(p);
+        const pos: V3 = [starPos[0], starPos[1], starPos[2]];
+        live.push({ p, u: lu, v: lv, star: starPos, pos });
+        meshes.push({
+          frame: sunFrame,
+          pos,
+          mesh: 'sphere',
+          size: [r, r, r],
+          bound: r,
+          color: [0.62, 0.58, 0.54],
+          emissive: 0,
+          matId: 4,
+          rim: 0,
+          gridScale: 0,
+          prov: 0.5,
+          litFrom: starPos,
+        });
+        const a = exoOrbitRadius(p);
+        orbits.push({
+          frame: sunFrame,
+          center: starPos,
+          radius: a,
+          axisA: [a * lu[0], a * lu[1], a * lu[2]],
+          axisB: [a * lv[0], a * lv[1], a * lv[2]],
+          color: [0.55, 0.8, 0.62],
+          alpha: 0.22,
+        });
+        exoTargets.push({
+          name: p.name,
+          slug: p.slug,
+          frame: sunFrame,
+          pos,
+          dist: 40 * r,
+          pitch: 0.1,
+          parent: s.slug,
+          exit: Math.max(1e11, 4 * a),
+          radius: r,
+          hidden: true,
+          sunlit: true,
+          lightPos: starPos,
+          source: 'measured radius, a & period (NASA Exoplanet Archive) — surface & orbit orientation stylized',
+        });
+      }
+    }
+    const off: V3 = [0, 0, 0];
+    const update = (ms: number): void => {
+      for (const l of live) {
+        exoPlanetOffset(l.p, l.u, l.v, ms, off);
+        l.pos[0] = l.star[0] + off[0];
+        l.pos[1] = l.star[1] + off[1];
+        l.pos[2] = l.star[2] + off[2];
+      }
+    };
+    update(Date.UTC(2000, 0, 1, 12)); // deterministic build; main re-times it
+    return update;
+  })();
+
   // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
   // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
 
@@ -2145,6 +2255,7 @@ export function buildUniverse(): Universe {
     ...starTargets,
     ...messierTargets,
     ...sgrATargets,
+    ...exoTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
     // roams this point anywhere on the planet; the imagery stack follows.
     {
@@ -2178,6 +2289,7 @@ export function buildUniverse(): Universe {
     earthRot,
     sgrA: { frame: galaxy, group: sgrAGroup, update: sgrAUpdate },
     comets: { update: cometUpdate },
+    exo: { update: exoUpdate },
     moonFrame,
     driftStars,
     planetSpins,
