@@ -2,7 +2,7 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL, ATMO_WGSL, DOME_WGSL } from './shaders';
+import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL, atmoWgsl, DOME_WGSL } from './shaders';
 import { mat4Mul, mat4Perspective, V3 } from './math';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
@@ -334,7 +334,14 @@ export class Renderer {
       layout: globalsBGL,
       entries: [{ binding: 0, resource: { buffer: this.atmoUBO } }],
     });
-    const atmoMod = d.createShaderModule({ code: ATMO_WGSL });
+    // Atmosphere quality tier: phones get half the view samples and half
+    // the light march (jittered — dither hides the banding); desktops keep
+    // the full integral. ?atmoq=low|high overrides for testing.
+    const atmoQ = new URLSearchParams(location.search).get('atmoq');
+    const coarseAtmo =
+      atmoQ === 'low' ||
+      (atmoQ !== 'high' && navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 900);
+    const atmoMod = d.createShaderModule({ code: atmoWgsl(coarseAtmo ? 12 : 16, coarseAtmo ? 3 : 6, false) });
     this.atmoPipe = d.createRenderPipeline({
       layout: d.createPipelineLayout({ bindGroupLayouts: [globalsBGL, globalsBGL] }),
       vertex: {
