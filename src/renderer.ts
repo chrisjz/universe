@@ -22,7 +22,11 @@ export interface FrameData {
 }
 
 const SLOT = 256; // dynamic uniform offset alignment
-const MAX_DRAWS = 256; // the cellulose chain alone is ~90 spheres
+// 512 slots: the cellulose chain alone is ~90 mesh draws, and the point-
+// group list crossed 256 when the Messier bodies joined the streamed star
+// tiles — the overflow silently dropped the LAST group, which happened to
+// be a Milky Way band tile (CI caught the band changing in the mars view).
+const MAX_DRAWS = 512;
 
 interface Geometry {
   vbuf: GPUBuffer;
@@ -77,6 +81,7 @@ export class Renderer {
   private skyVerts = 0;
   private circleVerts = 0;
 
+  private warnedGroupCap = false;
   private depthTex: GPUTexture | null = null;
   private msaaTex: GPUTexture | null = null;
 
@@ -713,6 +718,12 @@ export class Renderer {
     if (nLine + drawSky) q.writeBuffer(this.lineUBO, 0, this.lineStaging, 0, (SLOT / 4) * (nLine + drawSky));
 
     const nGrp = Math.min(frame.groups.length, MAX_DRAWS);
+    if (frame.groups.length > MAX_DRAWS && !this.warnedGroupCap) {
+      this.warnedGroupCap = true;
+      console.warn(
+        `[render] ${frame.groups.length} point groups exceed the ${MAX_DRAWS}-slot cap — the excess are NOT drawn`,
+      );
+    }
     for (let i = 0; i < nGrp; i++) this.groupStaging.set(frame.groups[i].data, (SLOT / 4) * i);
     if (nGrp) q.writeBuffer(this.groupUBO, 0, this.groupStaging, 0, (SLOT / 4) * nGrp);
     if (frame.atmo) q.writeBuffer(this.atmoUBO, 0, frame.atmo);
