@@ -149,6 +149,7 @@ measured, none of them staged:
 | The shadow of the black hole, orbit lines bending around it      | [`?goto=sgr-a&dist=2e11`](https://universeatlas.org/?goto=sgr-a&dist=2e11)                                           |
 | Jezero crater under Mars's butterscotch sky                      | [`?goto=jezero`](https://universeatlas.org/?goto=jezero)                                                             |
 | Vega as the pole star — look north from the picnic               | [`?goto=surface&years=12000`](https://universeatlas.org/?goto=surface&years=12000)                                   |
+| The Large Magellanic Cloud, drawn from 1.28M measured stars      | [`?goto=lmc`](https://universeatlas.org/?goto=lmc)                                                                   |
 | The SDSS wedges — the measured cosmic web, fans of 2.6M galaxies | [`?goto=sun&dist=6e25&pitch=60`](https://universeatlas.org/?goto=sun&dist=6e25&pitch=60)                             |
 | TRAPPIST-1's seven worlds, whirling in real periods              | [`?goto=trappist-1&speed=3600`](https://universeatlas.org/?goto=trappist-1&speed=3600)                               |
 | The constellations coming apart under real proper motion         | [`?goto=surface&years=24000&constellations=1`](https://universeatlas.org/?goto=surface&years=24000&constellations=1) |
@@ -200,6 +201,8 @@ by theme:
 - [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
 - [x] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — 4,708 systems as a survey layer whose very shape is honest (it clusters along the Kepler field's stare, because that is where humanity has looked), plus Proxima Centauri and TRAPPIST-1 built as destinations: real star radii and colors, planets with measured radii orbiting on their measured periods, each lit by its own sun (`?goto=trappist-1-e`)
 - [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
+- [x] The Magellanic Clouds from measured stars: Gaia DR3 resolves both — proper-motion-selected members drawn star by star, so the LMC's bar and the SMC's wing are simply where the stars are (`?goto=lmc`); distances from eclipsing binaries (1%), line-of-sight depth honestly stylized
+- [x] The Local Group census: all 96 known dwarf galaxies (McConnachie 2012) at measured positions, distances, and sizes — the volume between us and Andromeda, drawn inhabited (`?goto=fornax`)
 - [x] Beyond 260 Mpc: 2.6 million SDSS spectroscopic galaxies at their true comoving depths (redshift-banded tiles from the data repo, ΛCDM distances checked before every tile write) — the survey's twin fans meeting at the Milky Way, the Sloan Great Wall crossing the northern one, the procedural placeholder stepping aside exactly where (and as deep as) the survey looked. The cosmic web measured, not imagined; phones stream a structure-preserving 1-in-17 subsample
 - [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
 
@@ -288,6 +291,11 @@ pipelines (all regenerable from public sources) are documented in
   galaxies from [SDSS DR18](https://www.sdss.org/) (SpecObj via SkyServer;
   funding: Alfred P. Sloan Foundation & participating institutions) —
   `node scripts/generate-sdss.mjs` regenerates the tiles and footprint mask.
+- **The Magellanic Clouds** — member stars from **Gaia DR3** (ESA/DPAC,
+  proper-motion selection); distances from Pietrzyński et al. 2019 (LMC)
+  and Graczyk et al. 2020 (SMC) — `node scripts/generate-magellanic.mjs`
+  regenerates the tiles. **Local Group dwarfs** from McConnachie 2012
+  (AJ 144, 4) — `node scripts/generate-localgroup.mjs`.
 - **Constellations & Messier objects** — [d3-celestial](https://github.com/ofrohn/d3-celestial)
   by Olaf Frohn (BSD-3-Clause); Messier distances from
   [Wikidata](https://www.wikidata.org/) (CC0, median of published claims).
