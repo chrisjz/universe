@@ -17,6 +17,10 @@ struct Globals {
   params   : vec4f, // x: cap, y: 1/log2(1+far), z: time, w: worldPerPixel@d=1
   motion   : vec4f, // x: years from J2000 (clamped ±1e6 — proper motion is
                     // linear on that scale; beyond it stars hold position)
+  ecl0     : vec4f, // solar eclipse: Moon in earth-fixed units of R⊕ (xyz),
+                    // w: Moon radius / R⊕ while an eclipse is possible, else 0
+  ecl1     : vec4f, // sun in earth-fixed R⊕ units (xyz), w: ground-light
+                    // factor at the camera's site (umbra >100 km: locally flat)
 };
 @group(0) @binding(0) var<uniform> G : Globals;
 
@@ -80,6 +84,32 @@ export const MESH_WGSL =
   COMMON +
   NOISE +
   /* wgsl */ `
+// Fraction of the sun's disc visible from p (earth-fixed, units of R⊕):
+// the exact two-circle overlap of the solar and lunar discs in angular
+// radii. This is the whole solar-eclipse model — umbra, penumbra, and
+// annularity all fall out of the same lens area.
+fn sunVisible(p : vec3f, m : vec3f, rm : f32, s : vec3f) -> f32 {
+  let sv = s - p;
+  let mv = m - p;
+  let ds = length(sv);
+  let dm = length(mv);
+  let ra = 109.2 / ds; // solar angular radius (R_sun = 109.2 R⊕)
+  let rb = rm / dm;
+  let sep = acos(clamp(dot(sv, mv) / (ds * dm), -1.0, 1.0));
+  if (sep >= ra + rb) { return 1.0; }
+  if (sep <= abs(ra - rb)) {
+    if (rb >= ra) { return 0.0; } // totality
+    return 1.0 - (rb * rb) / (ra * ra); // annularity: the ring of fire
+  }
+  let a2 = ra * ra;
+  let b2 = rb * rb;
+  let d1 = (sep * sep + a2 - b2) / (2.0 * sep);
+  let d2 = sep - d1;
+  let area = a2 * acos(clamp(d1 / ra, -1.0, 1.0)) + b2 * acos(clamp(d2 / rb, -1.0, 1.0))
+           - d1 * sqrt(max(a2 - d1 * d1, 0.0)) - d2 * sqrt(max(b2 - d2 * d2, 0.0));
+  return 1.0 - area / (3.14159265 * a2);
+}
+
 struct Obj {
   model : mat4x4f,
   color : vec4f, // rgb + emissive
@@ -250,6 +280,16 @@ struct FOut {
   if (matId >= 5 && matId != 8 && matId != 9 && matId != 10 && matId != 11 && matId != 12) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
   var alpha = 1.0;
   var dif = max(ndl, 0.0);
+  // Solar eclipse: the Moon's shadow. The globe (matId 1) computes real
+  // per-fragment sun coverage — the umbra spot crosses the map where it
+  // really lands; earthbound site materials share the ground factor.
+  if (G.ecl0.w > 0.0) {
+    if (matId == 1) {
+      dif = dif * sunVisible(lp, G.ecl0.xyz, G.ecl0.w, G.ecl1.xyz);
+    } else if (matId == 5 || matId == 6 || matId == 7 || matId == 8 || matId == 9) {
+      dif = dif * G.ecl1.w;
+    }
+  }
   if (matId == 12) {
     // Saturn's rings: Cassini's radial scan (color measured, opacity from
     // brightness) sampled by distance from the planet's center. The strip

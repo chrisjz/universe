@@ -125,6 +125,7 @@ export interface Universe {
   moonMesh: MeshObj; // eclipse shading mutates its color as it crosses Earth's shadow
   galileans: { mesh: MeshObj; pos: V3; base: [number, number, number]; r: number; spriteFloatBase: number }[];
   jupiterPos: V3; // heliocentric, live (eclipse geometry needs the sun line)
+  earthRot: [V3, V3, V3]; // live earth-fixed → world basis (solar-eclipse frame)
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
@@ -1969,6 +1970,7 @@ export function buildUniverse(): Universe {
     moonMesh,
     galileans,
     jupiterPos,
+    earthRot,
     moonFrame,
     driftStars,
     planetSpins,

@@ -110,7 +110,7 @@ export class Renderer {
     this.ctx.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
 
     const d = this.device;
-    this.globalsBuf = d.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.globalsBuf = d.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.meshUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.lineUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.groupUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -382,7 +382,7 @@ export class Renderer {
     // ---- far-field bake pipeline: the moving-star sprites, rendered into
     // an fp16 cube face instead of the swapchain (no depth, no MSAA — pure
     // additive accumulation; quantization-free, unlike the 8-bit canvas).
-    this.bakeGlobals = d.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.bakeGlobals = d.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.bakeGlobalsBG = d.createBindGroup({
       layout: globalsBGL,
       entries: [{ binding: 0, resource: { buffer: this.bakeGlobals } }],
@@ -983,7 +983,7 @@ export class Renderer {
     view[6] = -f[1];
     view[10] = -f[2];
     view[15] = 1;
-    const g = new Float32Array(32);
+    const g = new Float32Array(40);
     g.set(mat4Mul(mat4Perspective(Math.PI / 2, 1, 0.1, 100), view), 0);
     g[16] = r[0];
     g[17] = r[1];
