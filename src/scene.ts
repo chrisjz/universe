@@ -8,7 +8,8 @@ import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
-import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, PlanetElements } from './ephemeris';
+import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, keplerScenePos, PlanetElements } from './ephemeris';
+import { VISITORS, conicScenePos, updateTail, TAIL_SPRITES } from './comet';
 import { MESSIER } from './data/messier';
 import { S_STARS, sStarPos, sStarAxes, SGRA_SHADOW } from './blackhole';
 
@@ -138,6 +139,9 @@ export interface Universe {
   // the S-star point group's index in `groups`, and the per-frame Kepler
   // update for the 40 published orbits (main.ts calls it near the center).
   sgrA: { frame: Frame; group: number; update: (ms: number) => void };
+  // Interstellar visitors + comet tails: the per-frame update returns the
+  // indices of groups whose instance data changed (main re-uploads those).
+  comets: { update: (ms: number) => number[] };
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
@@ -816,6 +820,71 @@ export function buildUniverse(): Universe {
       hidden: true,
     });
   }
+
+  // ---- the interstellar visitors, and tails that are dust dynamics ----
+  // 1I/ʻOumuamua, 2I/Borisov, and 3I/ATLAS on their real hyperbolae (JPL
+  // SBDB elements, verified against Horizons state vectors to < 0.03 AU by
+  // scripts/verify-interstellar.mjs). Halley and 3I — the two comets with
+  // element-driven positions — grow Finson–Probstein tails: each dust
+  // syndyne is grains of one radiation-pressure β flying Kepler orbits
+  // under μ(1−β), so the tail curves, points anti-sunward, and exists only
+  // where sublimation does (scrub to 2061 and watch Halley grow one).
+  const J2000_MS = Date.UTC(2000, 0, 1, 12);
+  const halleyState = (ms: number, out: V3): void => {
+    keplerScenePos(HALLEY_EL, (ms - J2000_MS) / 86400000 / 36525, out);
+  };
+  const cometUpdate = ((): ((ms: number) => number[]) => {
+    const visitors = VISITORS.map((v) => {
+      const pos: V3 = [0, 0, 0];
+      const inst = new Float32Array(8);
+      inst[3] = 200; // locator dot: the objects themselves are ~0.1–1 km
+      inst[4] = 0.85;
+      inst[5] = 0.92;
+      inst[6] = 1.0;
+      inst[7] = 0.75;
+      groups.push({ frame: sunFrame, pos, data: inst, prov: 0 });
+      planetTargets.push({
+        name: v.name,
+        slug: v.slug,
+        frame: sunFrame,
+        pos,
+        dist: 3e5,
+        pitch: 0.2,
+        hidden: true,
+        parent: 'system',
+        exit: 1e13,
+        source: 'measured hyperbola — JPL SBDB elements, verified against Horizons',
+      });
+      return { v, pos };
+    });
+    const tails = [
+      { state: halleyState, data: new Float32Array(TAIL_SPRITES * 8) },
+      {
+        state: (ms: number, out: V3) => conicScenePos(VISITORS[2].el, ms, out),
+        data: new Float32Array(TAIL_SPRITES * 8),
+      },
+    ].map((t) => {
+      const group = groups.length;
+      // The syndyne positions are physics; the sprite rendering of them is
+      // a sketch — stylized-on-real, amber under the honest seam.
+      groups.push({ frame: sunFrame, pos: [0, 0, 0], data: t.data, prov: 0.5, fadeExtent: 8e18 });
+      return { ...t, group, wasActive: true };
+    });
+    return (ms: number): number[] => {
+      const dirty: number[] = [];
+      // The visitors ride their whole hyperbolae, inbound leg included:
+      // unlike a thrusting spacecraft, a gravity-only orbit retrodicts as
+      // solidly as it predicts (Horizons serves 3I positions for 1990),
+      // and a dot that pops out mid-scrub reads as a bug, not honesty.
+      for (const vi of visitors) conicScenePos(vi.v.el, ms, vi.pos);
+      for (const t of tails) {
+        const active = updateTail(t, ms);
+        if (active || t.wasActive) dirty.push(t.group); // one extra pass zeroes it
+        t.wasActive = active;
+      }
+      return dirty;
+    };
+  })();
 
   // The ring annulus net: unit outer radius in the local xz plane; the
   // shader recovers the radial fraction from |lp.xz| (74,500 km = 0.53025).
@@ -2108,6 +2177,7 @@ export function buildUniverse(): Universe {
     jupiterPos,
     earthRot,
     sgrA: { frame: galaxy, group: sgrAGroup, update: sgrAUpdate },
+    comets: { update: cometUpdate },
     moonFrame,
     driftStars,
     planetSpins,
