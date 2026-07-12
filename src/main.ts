@@ -34,6 +34,7 @@ import { Probe, probeEclipticKm } from './probes';
 import { SGRA_RS } from './blackhole';
 import { loadExoplanets } from './exoplanets';
 import { streamSdss } from './sdss';
+import { CLOUDS, loadCloud } from './magellanic';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -867,6 +868,31 @@ async function start(): Promise<void> {
       d[i + 2] = galaxyBase[i + 2] * webA;
     }
     renderer.updatePointGroup(groupIndex[galaxyGroup], d);
+  }
+
+  // ---- the Magellanic Clouds: Gaia DR3 members, streamed at galactic
+  // zoom (the only other galaxies drawn from measured stars) ----
+  let cloudsStarted = false;
+  function maybeStreamClouds(): void {
+    if (cloudsStarted || skipSet.has('clouds') || cam.dist < 1e18) return;
+    cloudsStarted = true;
+    const root = DATA_URL.replace(/stars\/?$/, '');
+    for (const c of CLOUDS) {
+      void loadCloud(root, c).then((instances) => {
+        if (!instances) return;
+        groupIndex.push(renderer.addPointGroup(instances));
+        u.groups.push({
+          frame: u.sunFrame,
+          pos: [0, 0, 0],
+          data: instances,
+          fadeExtent: 6e21,
+          hideBelow: 1e17, // a million sprites skip below galactic zoom
+          nearFade: true,
+          stellar: true,
+          prov: 0.5, // measured sky structure; the DEPTH is the stylized axis
+        });
+      });
+    }
   }
 
   // ---- SDSS: the cosmic web measured, not imagined ----
@@ -1802,6 +1828,7 @@ async function start(): Promise<void> {
     maybeStreamMarsImagery();
     maybeStreamStars();
     maybeStreamSdss();
+    maybeStreamClouds();
 
     // Smooth the horizon roll toward the active basis (48° tilt at the
     // Chicago site) so basis hand-offs read as a gentle roll, not a snap.

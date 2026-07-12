@@ -20,6 +20,8 @@ import {
   exoOrbitRadius,
   exoPlanetOffset,
 } from './exoplanets';
+import { CLOUDS } from './magellanic';
+import { LOCAL_GROUP } from './data/localgroup';
 import { MESSIER } from './data/messier';
 import { S_STARS, sStarPos, sStarAxes, SGRA_SHADOW } from './blackhole';
 
@@ -1754,6 +1756,64 @@ export function buildUniverse(): Universe {
     return update;
   })();
 
+  // ---- the Local Group census: every known dwarf galaxy ----
+  // McConnachie 2012 — measured positions, distances, half-light radii,
+  // luminosities. The volume between the Milky Way and Andromeda is not
+  // empty, and now it isn't drawn empty: 96 real neighbors as type-tinted
+  // glows (real position & size, stylized look), each one a destination.
+  const lgTargets: Target[] = [];
+  {
+    const d = new Float32Array(LOCAL_GROUP.length * 8);
+    LOCAL_GROUP.forEach(([name, ra, dec, distKpc, rHalfKpc, vMag], i) => {
+      const dir = raDecToScene(ra, dec);
+      const dist = distKpc * KPC;
+      const pos: V3 = [dir[0] * dist, dir[1] * dist, dir[2] * dist];
+      const size = 3 * rHalfKpc * KPC; // the glow spans ~3 half-light radii
+      const o = i * 8;
+      d[o] = pos[0];
+      d[o + 1] = pos[1];
+      d[o + 2] = pos[2];
+      d[o + 3] = size / 2;
+      d[o + 4] = 0.93;
+      d[o + 5] = 0.87;
+      d[o + 6] = 0.78; // old, metal-poor starlight: uniformly warm-pale
+      d[o + 7] = Math.min(Math.max(-0.028 * vMag - 0.02, 0.05), 0.4);
+      lgTargets.push({
+        name: name.toUpperCase(),
+        slug: slugify(name),
+        frame: sunFrame,
+        pos,
+        dist: Math.max(4 * size, 2e19),
+        pitch: 0.1,
+        parent: 'galaxy',
+        exit: Math.max(6e20, 3 * dist),
+        radius: size / 2,
+        hidden: true,
+        source: 'measured position, distance & size — McConnachie 2012 census; stylized glow',
+      });
+    });
+    groups.push({ frame: sunFrame, pos: [0, 0, 0], data: d, fadeExtent: 1e24, prov: 0.5 });
+  }
+
+  // ---- the Magellanic Clouds: fly-to targets (the stars stream in
+  // main.ts once the tiles land — Gaia DR3 members, see magellanic.ts) ----
+  const cloudTargets: Target[] = CLOUDS.map((c) => {
+    const dir = raDecToScene(c.ra, c.dec);
+    return {
+      name: c.name,
+      slug: c.slug,
+      frame: sunFrame,
+      pos: [dir[0] * c.distM, dir[1] * c.distM, dir[2] * c.distM] as V3,
+      dist: 4.5 * c.radiusM,
+      pitch: 0.15,
+      parent: 'galaxy',
+      exit: 3 * c.distM,
+      radius: c.radiusM,
+      hidden: true,
+      source: 'measured stars — Gaia DR3; distance: eclipsing binaries; depth stylized',
+    };
+  });
+
   // ---- exoplanet destinations: Proxima Centauri and TRAPPIST-1 ----
   // Real star radii and colors, planets with measured radii on their
   // measured orbits — the survey layer (4,708 systems) streams separately
@@ -2272,6 +2332,8 @@ export function buildUniverse(): Universe {
     ...messierTargets,
     ...sgrATargets,
     ...exoTargets,
+    ...cloudTargets,
+    ...lgTargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
     // roams this point anywhere on the planet; the imagery stack follows.
     {
@@ -2288,6 +2350,16 @@ export function buildUniverse(): Universe {
       hidden: true,
     },
   ];
+
+  // No two destinations may share a slug — a duplicate silently hijacks
+  // ?goto= for whichever registered first (96 dwarf names just joined).
+  {
+    const seen = new Set<string>();
+    for (const t of targets) {
+      while (seen.has(t.slug)) t.slug += '-b';
+      seen.add(t.slug);
+    }
+  }
 
   return {
     root,
