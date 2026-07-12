@@ -976,7 +976,9 @@ export function buildUniverse(): Universe {
       center: jupiterPos,
       spriteFloatBase,
     });
-    galileans.push({ mesh: m, pos, base: color, r, spriteFloatBase });
+    // base must be a COPY: the eclipse dimmer writes mesh.color from it
+    // every frame, and sphere() stores the color array by reference.
+    galileans.push({ mesh: m, pos, base: [color[0], color[1], color[2]], r, spriteFloatBase });
     planetTargets.push({
       name: display,
       slug,
