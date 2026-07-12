@@ -32,6 +32,7 @@ import { raDecToScene, eqVecToScene } from './sky';
 import { parseTle, sgp4Init, sgp4, temeToJ2000, Sat } from './sgp4';
 import { Probe, probeEclipticKm } from './probes';
 import { SGRA_RS } from './blackhole';
+import { loadExoplanets } from './exoplanets';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -867,6 +868,17 @@ async function start(): Promise<void> {
     renderer.updatePointGroup(groupIndex[galaxyGroup], d);
   }
 
+  // ---- the exoplanet survey: 4,708 systems with known worlds ----
+  // One dot per system at its real host-star position (NASA Exoplanet
+  // Archive). The layer's shape is honest twice over: it clusters along
+  // the Kepler field's stare and thins with distance, because that is
+  // where and how far humanity has actually looked.
+  void loadExoplanets(`${import.meta.env.BASE_URL}exoplanets.bin`).then((instances) => {
+    if (!instances || skipSet.has('exo')) return;
+    groupIndex.push(renderer.addPointGroup(instances));
+    u.groups.push({ frame: u.sunFrame, pos: [0, 0, 0], data: instances, fadeExtent: 1.2e21, prov: 0.5 });
+  });
+
   // ---- constellation figures (toggle: C) ----
   // The 88 IAU figures drawn on a dome around the sun, through the same
   // true-sky rotation as the stars — so the lines land on their stars.
@@ -989,9 +1001,11 @@ async function start(): Promise<void> {
   ];
 
   // Arrival yaw for sunlit-side targets, computed live (bodies move now).
+  // A target may name its own light (exoplanets orbit a sun that isn't
+  // ours); everything else faces Sol.
   function arrivalYaw(t: Target): number | undefined {
     if (!t.sunlit) return undefined;
-    const s = relPos(u.sunFrame, [0, 0, 0], t.frame, t.pos);
+    const s = t.lightPos ? sub(t.lightPos, t.pos) : relPos(u.sunFrame, [0, 0, 0], t.frame, t.pos);
     return Math.atan2(s[0], s[2]);
   }
 
@@ -1646,6 +1660,7 @@ async function start(): Promise<void> {
         renderer.updatePointGroup(groupIndex[gi], u.groups[gi].data);
       }
     }
+    u.exo.update(simMs); // Proxima's and TRAPPIST-1's worlds ride along
     // Gated by LAST frame's camera–center distance: the gate is an
     // optimization with a 40× margin over the group's fade-out, so one
     // stale frame cannot show.
@@ -1867,7 +1882,13 @@ async function start(): Promise<void> {
       o[17] = m.color[1];
       o[18] = m.color[2];
       o[19] = m.emissive;
-      const sd = m.matId === 2 ? [0, 1, 0] : norm(relPos(u.sunFrame, [0, 0, 0], m.frame, m.pos));
+      // Worlds are lit by THEIR sun: an exoplanet carries its host star's
+      // live position (litFrom) — Sol is 12 parsecs beside the point there.
+      const sd = m.litFrom
+        ? norm(sub(m.litFrom, m.pos))
+        : m.matId === 2
+          ? [0, 1, 0]
+          : norm(relPos(u.sunFrame, [0, 0, 0], m.frame, m.pos));
       o[20] = sd[0];
       o[21] = sd[1];
       o[22] = sd[2];
