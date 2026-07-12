@@ -178,6 +178,13 @@ async function start(): Promise<void> {
         x = keplerOut[0];
         y = keplerOut[1];
         z = keplerOut[2];
+        if (b.center) {
+          // Jovicentric elements ride the live Jupiter (updated earlier in
+          // this same loop — planets precede their moons in u.bodies).
+          x += b.center[0];
+          y += b.center[1];
+          z += b.center[2];
+        }
       } else {
         const theta = -2 * Math.PI * (b.L0 / 360 + days / b.periodDays);
         x = b.a * Math.cos(theta);
