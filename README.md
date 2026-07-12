@@ -129,6 +129,28 @@ Compose them and you can stand in an eclipse:
 [Reykjavík, Aug 12 2026, 17:45 UTC](https://universeatlas.org/?lat=64.147&lon=-21.94&at=2026-08-12T17:45:00Z&dist=25&yaw=71.8&pitch=2)
 faces the crescent sun at the moment of totality's approach.
 
+## Field guide
+
+A dozen real moments the address space can take you to — every one of them
+measured, none of them staged:
+
+| Go see                                                      | Link                                                                                                                 |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| The Moon's shadow crossing Iceland, from orbit              | [`Aug 12 2026, 17:44 UTC`](https://universeatlas.org/?goto=earth&dist=2.2e7&at=2026-08-12T17:44:00Z)                 |
+| The same eclipse from a street in Madrid, near sunset       | [`18:28 UTC`](https://universeatlas.org/?lat=40.42&lon=-3.7&at=2026-08-12T18:28:00Z&dist=25)                         |
+| Io winking out in Jupiter's shadow (every 42 hours)         | [`?goto=io&speed=3600`](https://universeatlas.org/?goto=io&speed=3600)                                               |
+| Saturn's rings nearly edge-on — the real 2026 geometry      | [`?goto=saturn`](https://universeatlas.org/?goto=saturn)                                                             |
+| The ISS, live, dimming through Earth's shadow               | [`?goto=iss&speed=60`](https://universeatlas.org/?goto=iss&speed=60)                                                 |
+| Voyager 1 — where it actually is right now                  | [`?goto=voyager-1`](https://universeatlas.org/?goto=voyager-1)                                                       |
+| 3I/ATLAS, the interstellar comet, wearing its tail          | [`Nov 2025`](https://universeatlas.org/?goto=3i-atlas&at=2025-11-15T00:00:00Z)                                       |
+| Halley growing its tail toward the 2061 perihelion          | [`?goto=halley&at=2061-07-28`](https://universeatlas.org/?goto=halley&at=2061-07-28T00:00:00Z)                       |
+| The S stars swarming Sagittarius A\*                        | [`?goto=sgr-a`](https://universeatlas.org/?goto=sgr-a)                                                               |
+| S2's pericenter dive — 7,700 km/s past the black hole       | [`spring 2018, month/s`](https://universeatlas.org/?goto=sgr-a&at=2018-03-01T00:00:00Z&speed=2629800)                |
+| The shadow of the black hole, orbit lines bending around it | [`?goto=sgr-a&dist=2e11`](https://universeatlas.org/?goto=sgr-a&dist=2e11)                                           |
+| Jezero crater under Mars's butterscotch sky                 | [`?goto=jezero`](https://universeatlas.org/?goto=jezero)                                                             |
+| Vega as the pole star — look north from the picnic          | [`?goto=surface&years=12000`](https://universeatlas.org/?goto=surface&years=12000)                                   |
+| The constellations coming apart under real proper motion    | [`?goto=surface&years=24000&constellations=1`](https://universeatlas.org/?goto=surface&years=24000&constellations=1) |
+
 ## How it works
 
 Single-precision floats can't hold the universe — the engine composes
@@ -197,13 +219,14 @@ by theme:
 - [x] Mars's sky at Jezero: the same scattering integral with the dust coefficients reversed (red scatters most) — the butterscotch daytime sky and the blue sunset halo, which really are backwards from Earth's
 - [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
 - [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
+- [ ] Free flight: a way to step off the zoom chain's rails — release the focus and wander. The chain is also what makes the atlas navigable hands-free, so this wants to be an explicit mode, not a default
 
 **Under the hood**
 
-- [x] Visual regression CI: eight deterministic views rendered with WebGPU on software Vulkan (Mesa lavapipe) in Actions, pixel-compared against baselines
+- [x] Visual regression CI: nine deterministic views rendered with WebGPU on software Vulkan (Mesa lavapipe) in Actions, pixel-compared against baselines
 - [x] Ephemeris tests against JPL Horizons: every planet within 0.2° at three epochs, on ephemeris changes + weekly
-- [ ] Performance, measured first: a headless attribution harness (which system costs what, per view), then targeted fixes — shader-side comoving scaling, adaptive atmosphere sampling, per-instance Kepler, noise-octave LOD — with any visible trade-off decided explicitly
-- [ ] Mobile performance tier: device-aware star budget, DPR and texture sizes
+- [x] Performance, measured first: a headless attribution harness (`scripts/perf-attrib.mjs` — which system costs what, per view), then the fix it pointed at: the far-field star bake, which took every slow view from 10–25 to 43–60 fps pixel-identically, plus adaptive atmosphere sampling on phones. Per-instance Kepler was already in (the 40k small bodies solve in the vertex shader)
+- [ ] Mobile performance tier, the rest of it: device-aware star budget, DPR and texture sizes (the adaptive atmosphere tier shipped with the performance pass above)
 
 <details id="shipped">
 <summary><b>Shipped</b> — the founding roadmap, complete</summary>
