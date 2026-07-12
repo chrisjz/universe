@@ -250,7 +250,15 @@ drawn last with premultiplied blending: the in-scatter adds and everything
 behind attenuates by transmittance plus a veiling-luminance term. The blue
 limb from orbit, the blue daytime sky, the white horizon band, red sunsets,
 twilight, and stars fading into daylight are not effects — they are the
-same integral evaluated from different places at different times.
+same integral evaluated from different places at different times. The
+per-world coefficients live in the uniform: Earth carries the measured
+Rayleigh + Mie; Mars carries the dust parameterization with the
+coefficients reversed (red scatters most — Collienne et al.'s effective
+fit), and the identical integral then yields Jezero's butterscotch days
+and blue sunset halos, which really are backwards from Earth's. One
+geometric care: each world's analytic ground radius sits below its lowest
+visited terrain (Jezero is 2.6 km under the areoid), or the sky wash
+paints over the crater floor.
 
 Verification is headless: real-GPU Chrome (`--headless=new
 --enable-unsafe-webgpu`) drives screenshot regressions for every feature,

@@ -127,7 +127,7 @@ async function start(): Promise<void> {
   let webA = 1; // last-applied cosmic scale factor
 
   const keplerOut: [number, number, number] = [0, 0, 0];
-  const atmoData = new Float32Array(8); // atmosphere uniform scratch
+  const atmoData = new Float32Array(16); // atmosphere uniform scratch
   // ?skip=atmo,belt,sats,stars,web,galaxies,imagery,rescale — the perf
   // attribution knife: knock one system out per run and the fps delta is
   // its cost (scripts/perf-attrib.mjs sweeps these). Not a user feature.
@@ -1841,22 +1841,57 @@ async function start(): Promise<void> {
     // drawn for the PRESENT sky — beyond ±25,000 years the stars have
     // visibly drifted off them (that's the point of proper motion), so the
     // lines bow out honestly rather than pointing at empty sky.
-    // Earth's atmosphere: one ray-marched shell gives the blue limb from
-    // orbit, the blue sky and red sunsets from the ground, and daylight
-    // star-fading. Beyond ~4e8 m (the Moon) the shell is subpixel — skip.
-    const eRel = relPos(earthFrameRef, [0, 0, 0], cam.frame, camLocal);
-    if (len(eRel) < 4e8 && !skipSet.has('atmo')) {
-      const sRel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
-      const sd = norm(sub(sRel, eRel));
-      atmoData[0] = eRel[0];
-      atmoData[1] = eRel[1];
-      atmoData[2] = eRel[2];
-      atmoData[3] = 6.371e6;
-      atmoData[4] = sd[0];
-      atmoData[5] = sd[1];
-      atmoData[6] = sd[2];
-      atmoData[7] = 6.371e6 + 1e5; // the Kármán-line-ish top of the shell
-      data.atmo = atmoData;
+    // Atmospheres: one ray-marched shell per world, same integral, different
+    // air. Earth gets the measured Rayleigh + Mie (blue days, red sunsets);
+    // Mars gets the dust parameterization with the coefficients REVERSED
+    // (red scatters most — Collienne et al.'s effective fit), so the same
+    // physics yields the butterscotch daytime sky and the blue sunset halo,
+    // which really are backwards from Earth's. Beyond ~4e8 m the shells are
+    // subpixel; only the nearest world draws.
+    if (!skipSet.has('atmo')) {
+      const ATMOS: {
+        frame: Frame;
+        Rg: number;
+        Rt: number;
+        beta: [number, number, number];
+        H: number;
+        mie: [number, number, number, number];
+      }[] = [
+        {
+          frame: earthFrameRef,
+          Rg: 6.371e6,
+          Rt: 6.371e6 + 1e5, // the Kármán-line-ish top of the shell
+          beta: [5.802e-6, 13.558e-6, 33.1e-6], // Bruneton & Neyret
+          H: 8500,
+          mie: [3.996e-6, 1200, 0.76, 20],
+        },
+        {
+          frame: u.marsFrame,
+          // Ground radius sits BELOW Jezero's real floor (−2563 m vs the
+          // areoid): the ray's analytic ground hit must land beyond the
+          // terrain depth, or the sky wash paints over the crater floor.
+          Rg: 3.3895e6 - 3200,
+          Rt: 3.3895e6 + 8e4,
+          beta: [19.918e-6, 13.57e-6, 5.75e-6], // dust: red-dominant (reversed)
+          H: 11100,
+          mie: [2e-6, 2000, 0.76, 10.5], // thinner light: Mars gets 43% of our sun
+        },
+      ];
+      for (const w of ATMOS) {
+        const rel = relPos(w.frame, [0, 0, 0], cam.frame, camLocal);
+        if (len(rel) >= 4e8) continue;
+        const sRel = relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal);
+        const sd = norm(sub(sRel, rel));
+        atmoData.set(rel, 0);
+        atmoData[3] = w.Rg;
+        atmoData.set(sd, 4);
+        atmoData[7] = w.Rt;
+        atmoData.set(w.beta, 8);
+        atmoData[11] = w.H;
+        atmoData.set(w.mie, 12);
+        data.atmo = atmoData;
+        break;
+      }
     }
 
     camSunForSprites = scale(relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal), -1);

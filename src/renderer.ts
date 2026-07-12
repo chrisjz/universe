@@ -329,7 +329,7 @@ export class Renderer {
     // The atmosphere shell: back faces of a unit sphere, ray-marched single
     // scattering. Premultiplied blend — in-scatter adds, and everything
     // behind (stars, the sun, the surface) attenuates by transmittance.
-    this.atmoUBO = d.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.atmoUBO = d.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.atmoBG = d.createBindGroup({
       layout: globalsBGL,
       entries: [{ binding: 0, resource: { buffer: this.atmoUBO } }],
