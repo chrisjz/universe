@@ -30,6 +30,7 @@ import { scaleFactor, BIG_BANG_MS, YEAR_MS } from './cosmo';
 import { moonEcliptic, keplerScenePos } from './ephemeris';
 import { raDecToScene, eqVecToScene } from './sky';
 import { parseTle, sgp4Init, sgp4, temeToJ2000, Sat } from './sgp4';
+import { Probe, probeEclipticKm } from './probes';
 import { CONSTELLATION_SEGMENTS, CONSTELLATION_LABELS } from './data/constellations';
 import { Hud } from './hud';
 
@@ -141,6 +142,13 @@ async function start(): Promise<void> {
   const satTargets: { idx: number; pos: V3 }[] = [];
   const SAT_VALID_MS = 30 * 86400000; // TLEs are honest for ~weeks, not months
   let pendingGoto: string | null = null; // ?goto= slug awaiting an async target
+  // Deep-space probes: Chebyshev trajectories, evaluated every frame.
+  // Each probe gets its OWN point group with the group origin at the live
+  // f64 position and the instance at zero: a sun-frame instance out at
+  // 171 AU carries ~2,000 km of f32 quantum, which at a 1.5 km viewing
+  // distance throws the locator dot thousands of screens off target.
+  let probes: { p: Probe; pos: V3; inst: Float32Array<ArrayBuffer>; rIdx: number }[] = [];
+  const probeKm: V3 = [0, 0, 0];
   // Far-field bake state: which renderer groups bake, and bake progress.
   const farGroups: number[] = [];
   let farLastChunkAt = 0;
@@ -263,6 +271,20 @@ async function start(): Promise<void> {
     const rawYears = (simMs - J2000) / 3.15576e10;
     deepFade = clamp((3e6 - Math.abs(rawYears)) / 2e6, 0, 1);
     u.driftStars(starYears);
+    // Probes ride their Chebyshev tracks (heliocentric ecliptic → scene).
+    for (const pr of probes) {
+      const aloft = probeEclipticKm(pr.p, simMs, probeKm);
+      if (aloft) {
+        pr.pos[0] = probeKm[0] * 1000;
+        pr.pos[1] = probeKm[2] * 1000;
+        pr.pos[2] = -probeKm[1] * 1000;
+      }
+      const want = aloft ? 0.5 : 0; // not aloft: honestly absent
+      if (pr.inst[7] !== want) {
+        pr.inst[7] = want;
+        renderer.updatePointGroup(pr.rIdx, pr.inst);
+      }
+    }
     // Locator glows step aside once the real globe resolves: the sprites
     // are findability aids at 4x radius, and left on they swallow their
     // true-scale neighborhoods — from the Jovian system view, Io's whole
@@ -648,9 +670,57 @@ async function start(): Promise<void> {
         if (pendingGoto && bySlug.has(pendingGoto)) {
           jumpTo(bySlug.get(pendingGoto)!);
           pendingGoto = null;
+          reapplyPose(); // the deep link's dist/yaw/pitch outrank the default
         }
       })
       .catch(() => {}); // offline: an empty sky of machines
+
+  // ---- the deep-space probes: humanity's farthest machines, live ----
+  // Voyager 1 & 2, New Horizons, JWST on Chebyshev-compressed Horizons
+  // trajectories (scripts/generate-probes.mjs, residuals < 20,000 km).
+  // "Where is Voyager 1 right now" has a true, searchable answer.
+  void fetch(`${import.meta.env.BASE_URL}probes.json`)
+    .then((r) => (r.ok ? (r.json() as Promise<Probe[]>) : []))
+    .then((list) => {
+      if (!list.length) return;
+      probes = list.map((p) => {
+        const inst = new Float32Array(8);
+        inst[3] = 25; // locator dot: the craft itself is meters
+        inst[4] = 0.95;
+        inst[5] = 0.9;
+        inst[6] = 0.75;
+        const pos: V3 = [0, 0, 0];
+        u.targets.push({
+          name: p.name,
+          slug: p.slug,
+          source: 'JPL Horizons trajectory, Chebyshev-compressed (< 20,000 km) — the craft itself is meters across',
+          frame: u.sunFrame,
+          pos,
+          dist: 1500,
+          pitch: 0.2,
+          hidden: true,
+          parent: 'system',
+          exit: 1e13,
+        });
+        bySlug.set(p.slug, u.targets.length - 1);
+        const rIdx = renderer.addPointGroup(inst, 'static');
+        groupIndex.push(rIdx);
+        u.groups.push({
+          frame: u.sunFrame,
+          pos, // live f64 origin: the dot stays pinned at any distance
+          data: inst,
+          prov: 0, // measured trajectory
+        });
+        return { p, pos, inst, rIdx };
+      });
+      updateBodies(); // place them before any pending ?goto jump lands
+      if (pendingGoto && bySlug.has(pendingGoto)) {
+        jumpTo(bySlug.get(pendingGoto)!);
+        pendingGoto = null;
+        reapplyPose(); // the deep link's dist/yaw/pitch outrank the default
+      }
+    })
+    .catch(() => {}); // offline: the machines rest
 
   // ---- stream the star tiles (brightest chunks first) ----
   // The full tileset (854k ATHYG brights + 5.9M Gaia DR3 faint stars, 104 MB)
@@ -1413,6 +1483,13 @@ async function start(): Promise<void> {
   if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
   const pitchParam = parseFloat(params.get('pitch') ?? '');
   if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
+  // Async targets (satellites, probes) resolve a pending ?goto with a
+  // jumpTo whose defaults would stomp the URL's explicit pose — reapply.
+  function reapplyPose(): void {
+    if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
+    if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
+    if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
+  }
   // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
   // scene to one instant, which is what a reproducible screenshot needs.
   if (params.get('paused') !== null) paused = true;
