@@ -60,6 +60,9 @@ interface Flight {
   dur: number;
   switched: boolean;
   fromInToFrame: V3 | null;
+  // Chain-initiated (zoom-in handoff to a surface site): forward input
+  // rides the flight instead of cancelling it — see updateAutoTarget.
+  auto?: boolean;
 }
 
 const fatal = (msg: string) => {
@@ -1106,7 +1109,23 @@ async function start(): Promise<void> {
     if (flight || touring || retarget) return;
     const t = u.targets[activeTarget];
     if (t.child !== undefined && t.enter !== undefined && cam.dist < t.enter) {
-      retargetTo(bySlug.get(t.child)!);
+      const child = bySlug.get(t.child)!;
+      // Descending onto a surface site, the pose-preserving retarget can
+      // arrive gazing at the sky: the site rides the spinning globe, so at
+      // the wrong hour the approach is a graze and the terrain floor tips
+      // the view up (user-reported — a held ↑ from orbit landed staring at
+      // the horizon at 16:00 UTC and at the ground at 04:00). Sites get
+      // the tour's arrival instead: fly over the point, settle looking
+      // down at it. Deep-space handoffs keep the seamless retarget.
+      if (u.targets[child].basis) {
+        flyTo(child);
+        // (cast: TS narrowed `flight` to null from the guard above, but
+        // flyTo just reassigned it)
+        const f = flight as Flight | null;
+        if (f) f.auto = true;
+      } else {
+        retargetTo(child);
+      }
     } else if (t.parent !== undefined && t.exit !== undefined) {
       if (!exitArmed) {
         if (cam.dist < t.exit * 0.7) exitArmed = true;
@@ -1469,6 +1488,7 @@ async function start(): Promise<void> {
     'wheel',
     (e) => {
       e.preventDefault();
+      if (flight?.auto && e.deltaY < 0) return; // scrolling in rides the arrival
       flight = null;
       touring = false;
       // Roamed ground has no dive below it (the picnic is the only door
@@ -1744,11 +1764,15 @@ async function start(): Promise<void> {
     // left/right orbit the focus like a horizontal drag.
     if (heldArrows.size) {
       if (heldArrows.has('ArrowUp') || heldArrows.has('ArrowDown')) {
-        flight = null;
-        touring = false;
-        const dir = heldArrows.has('ArrowUp') ? -1 : 1;
-        const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
-        cam.dist = clamp(cam.dist * Math.exp(dir * 1.8 * dt), minD, MAX_DIST);
+        // A held ↑ during a chain-initiated site arrival rides the flight
+        // (it is already taking you down); ↓ hands control straight back.
+        if (!(flight?.auto && !heldArrows.has('ArrowDown'))) {
+          flight = null;
+          touring = false;
+          const dir = heldArrows.has('ArrowUp') ? -1 : 1;
+          const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+          cam.dist = clamp(cam.dist * Math.exp(dir * 1.8 * dt), minD, MAX_DIST);
+        }
       }
       if (heldArrows.has('ArrowLeft')) cam.yaw += 1.1 * dt;
       if (heldArrows.has('ArrowRight')) cam.yaw -= 1.1 * dt;
