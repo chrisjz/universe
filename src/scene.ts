@@ -10,6 +10,7 @@ import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
 import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, PlanetElements } from './ephemeris';
 import { MESSIER } from './data/messier';
+import { S_STARS, sStarPos, sStarAxes, SGRA_SHADOW } from './blackhole';
 
 export interface MeshObj {
   frame: Frame;
@@ -37,6 +38,7 @@ export interface PointGroup {
   pos: V3;
   data: Float32Array<ArrayBuffer>;
   disabled?: boolean; // perf attribution (?skip=): never drawn
+  gcYield?: boolean; // illustrative galaxy glow: dims near the galactic center
   // Star fields fade out as the camera pulls beyond this extent, so a million
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
@@ -68,6 +70,12 @@ export interface OrbitLine {
   radius: number;
   color: [number, number, number];
   alpha: number;
+  // Rings fade once the camera is within this fraction of `radius` of the
+  // center (default 0.02 — the sun-view declutter). The S-star ellipses set
+  // it far lower: bending around the shadow IS their show, and the shadow
+  // is 2e-4 of S2's orbit.
+  nearRatio?: number;
+  secondImage?: boolean; // near Sgr A*: also draw the lens's counter-image
 }
 export interface Target {
   name: string;
@@ -126,6 +134,10 @@ export interface Universe {
   galileans: { mesh: MeshObj; pos: V3; base: [number, number, number]; r: number; spriteFloatBase: number }[];
   jupiterPos: V3; // heliocentric, live (eclipse geometry needs the sun line)
   earthRot: [V3, V3, V3]; // live earth-fixed → world basis (solar-eclipse frame)
+  // Sagittarius A*: the galaxy frame (the black hole sits at its origin),
+  // the S-star point group's index in `groups`, and the per-frame Kepler
+  // update for the 40 published orbits (main.ts calls it near the center).
+  sgrA: { frame: Frame; group: number; update: (ms: number) => void };
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
@@ -1535,6 +1547,125 @@ export function buildUniverse(): Universe {
     groups.push({ frame: sunFrame, pos: [0, 0, 0], data: md, fadeExtent: 5e24, prov: 0.5 });
   }
 
+  // ---- Sagittarius A*: the black hole at the galactic center ----
+  // The galaxy frame's origin IS the galactic center (the sun frame hangs
+  // 8.3 kpc off it in the true Sgr A* direction), so the black hole and the
+  // S stars — the stars whose measured Kepler ellipses weigh it — drop in
+  // at zero. Orbits: Gillessen et al. 2017; mass & distance: GRAVITY 2022;
+  // the ephemeris includes the Schwarzschild pericenter advance GRAVITY
+  // measured on S2 (12.1′ per orbit) — see src/blackhole.ts and
+  // scripts/verify-sstars.mjs.
+  const sgrAGroup = groups.length;
+  const sgrATargets: Target[] = [];
+  const sgrAUpdate = ((): ((ms: number) => void) => {
+    const n = S_STARS.length;
+    const sd = new Float32Array(n * 8);
+    const starR = 8 * R_SUN; // S stars are young B mains — stylized radius
+    const positions: V3[] = [];
+    S_STARS.forEach((s, i) => {
+      const o = i * 8;
+      sd[o + 3] = starR;
+      sd[o + 4] = 0.78;
+      sd[o + 5] = 0.85;
+      sd[o + 6] = 1.0;
+      sd[o + 7] = s.name === 'S2' ? 0.95 : 0.7;
+      const pos: V3 = [0, 0, 0];
+      positions.push(pos);
+      const { A, B } = sStarAxes(s);
+      orbits.push({
+        frame: galaxy,
+        center: [0, 0, 0],
+        centerOff: [-s.e * A[0], -s.e * A[1], -s.e * A[2]],
+        axisA: A,
+        axisB: B,
+        radius: s.aM,
+        color: [0.5, 0.62, 0.9],
+        alpha: 0.2,
+        nearRatio: 0.0004,
+        secondImage: true,
+      });
+      sgrATargets.push({
+        name: s.name,
+        slug: s.name.toLowerCase(),
+        frame: galaxy,
+        pos,
+        dist: 60 * starR,
+        pitch: 0.1,
+        parent: 'sgr-a',
+        exit: Math.max(1e15, 4 * s.aM),
+        radius: starR,
+        hidden: true,
+        starColor: [0.78, 0.85, 1.0],
+        source: 'measured orbit — Gillessen et al. 2017; stylized surface',
+      });
+    });
+    // The shadow: an opaque sphere of exactly the capture impact parameter
+    // √27/2 · rs subtends the correct silhouette from every distance — the
+    // event horizon's shadow drawn as geometry, black because it is.
+    meshes.push({
+      frame: galaxy,
+      pos: [0, 0, 0],
+      mesh: 'sphere',
+      size: [SGRA_SHADOW, SGRA_SHADOW, SGRA_SHADOW],
+      bound: SGRA_SHADOW,
+      color: [0, 0, 0],
+      emissive: 0,
+      matId: 0,
+      rim: 0,
+      gridScale: 0,
+      prov: 0,
+    });
+    sgrATargets.push({
+      name: 'SAGITTARIUS A* · BLACK HOLE',
+      slug: 'sgr-a',
+      frame: galaxy,
+      pos: [0, 0, 0],
+      dist: 5e14, // ~3300 AU: S2's whole ellipse in view; scroll in for the shadow
+      pitch: 0.15,
+      parent: 'galaxy',
+      exit: 6e19,
+      radius: SGRA_SHADOW,
+      hidden: true,
+      source: 'measured — M•, R0: GRAVITY 2022; S-star orbits: Gillessen et al. 2017',
+    });
+    groups.push({
+      frame: galaxy,
+      pos: [0, 0, 0],
+      data: sd,
+      fadeExtent: 2.5e18,
+      nearFade: true,
+      prov: 0,
+      stellar: true,
+    });
+    // Sgr A*'s own glow — the accretion flow really does shine (EHT's ring
+    // is its picture), but ours is a stylized warm sprite: its OWN group,
+    // marked stylized-on-real, so the honest seam turns it amber while the
+    // S stars around it stay measured-natural.
+    groups.push({
+      frame: galaxy,
+      pos: [0, 0, 0],
+      data: Float32Array.from([0, 0, 0, 8e10, 1.0, 0.72, 0.42, 0.5]),
+      fadeExtent: 2.5e18,
+      prov: 0.5,
+    });
+    const tmp: V3 = [0, 0, 0];
+    const update = (ms: number): void => {
+      S_STARS.forEach((s, i) => {
+        sStarPos(s, ms, tmp);
+        const o = i * 8;
+        sd[o] = tmp[0];
+        sd[o + 1] = tmp[1];
+        sd[o + 2] = tmp[2];
+        const p = positions[i];
+        p[0] = tmp[0];
+        p[1] = tmp[1];
+        p[2] = tmp[2];
+      });
+    };
+    update(Date.UTC(2000, 0, 1, 12)); // deterministic build; main re-times it
+    return update;
+  })();
+
   // (The old procedural "local stars" sprinkle is gone: the streamed ATHYG
   // tiles — 850k+ real Tycho-2/Gaia stars — fill the solar neighborhood now.)
 
@@ -1699,7 +1830,11 @@ export function buildUniverse(): Universe {
       const s = Math.sqrt(1 - u * u);
       put(rr * s * Math.cos(ph), rr * u, rr * s * Math.sin(ph), 3e17, [1.0, 0.92, 0.78], 0.02 + rand() * 0.03);
     }
-    groups.push({ frame: galaxy, pos: [0, 0, 0], data: d, prov: 1 });
+    // gcYield: the procedural cloud is the galaxy seen from OUTSIDE; a
+    // camera deep in the center sits inside the additive bulge sprites and
+    // the sky washes to white — so near Sgr A* the illustrative glow steps
+    // aside (never fully off) and the measured S-star cluster owns the view.
+    groups.push({ frame: galaxy, pos: [0, 0, 0], data: d, prov: 1, gcYield: true });
   }
 
   // ---- Cosmic web: nodes + filaments, each point one "galaxy" ----
@@ -1940,6 +2075,7 @@ export function buildUniverse(): Universe {
     ...planetTargets.filter((t) => t.slug !== 'mars'),
     ...starTargets,
     ...messierTargets,
+    ...sgrATargets,
     // Free Earth navigation: a movable surface focus. Panning near Earth
     // roams this point anywhere on the planet; the imagery stack follows.
     {
@@ -1971,6 +2107,7 @@ export function buildUniverse(): Universe {
     galileans,
     jupiterPos,
     earthRot,
+    sgrA: { frame: galaxy, group: sgrAGroup, update: sgrAUpdate },
     moonFrame,
     driftStars,
     planetSpins,

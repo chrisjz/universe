@@ -110,7 +110,7 @@ export class Renderer {
     this.ctx.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
 
     const d = this.device;
-    this.globalsBuf = d.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.globalsBuf = d.createBuffer({ size: 176, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.meshUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.lineUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.groupUBO = d.createBuffer({ size: SLOT * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -382,7 +382,10 @@ export class Renderer {
     // ---- far-field bake pipeline: the moving-star sprites, rendered into
     // an fp16 cube face instead of the swapchain (no depth, no MSAA — pure
     // additive accumulation; quantization-free, unlike the 8-bit canvas).
-    this.bakeGlobals = d.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // 176 B matches the WGSL Globals struct exactly (an undersized binding
+    // kills the pass silently); the bake writes 40 floats — the lens slot
+    // stays zeroed, so baked star tiles never bend.
+    this.bakeGlobals = d.createBuffer({ size: 176, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.bakeGlobalsBG = d.createBindGroup({
       layout: globalsBGL,
       entries: [{ binding: 0, resource: { buffer: this.bakeGlobals } }],

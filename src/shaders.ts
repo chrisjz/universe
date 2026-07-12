@@ -21,6 +21,9 @@ struct Globals {
                     // w: Moon radius / R⊕ while an eclipse is possible, else 0
   ecl1     : vec4f, // sun in earth-fixed R⊕ units (xyz), w: ground-light
                     // factor at the camera's site (umbra >100 km: locally flat)
+  lens     : vec4f, // gravitational lens: xyz Sgr A* rel camera (true meters),
+                    // w its Schwarzschild radius while the camera is near
+                    // the galactic center, else 0 (the branch below is free)
 };
 @group(0) @binding(0) var<uniform> G : Globals;
 
@@ -48,6 +51,54 @@ fn seamTint(col : vec3f, prov : f32) -> vec3f {
   let g = dot(col, vec3f(0.299, 0.587, 0.114));
   if (prov < 0.75) { return mix(col, vec3f(1.0, 0.72, 0.3) * (g * 0.9 + 0.1), 0.75); }
   return vec3f(0.3, 0.85, 1.0) * (g * 0.85 + 0.15);
+}
+
+// Gravitational lensing by Sgr A* (active only near the galactic center —
+// G.lens.w carries the Schwarzschild radius, or 0). A source behind the
+// hole appears displaced OUTWARD: the point-mass lens equation
+// θ² − βθ − θ_E² = 0 with θ_E² = 2·rs·D_LS/(D_L·D_S), solved per vertex,
+// so the S stars, their orbit lines, and the background galaxies all bend
+// for real. Returns the displaced position (same distance, new direction)
+// and the magnification μ — a star sweeping behind the hole visibly
+// flares, exactly the microlensing a real observer would see.
+//
+// The second arg selects the equation's OTHER root: the counter-image on the far
+// side of the hole. The S-star groups draw twice near the center, so a
+// source crossing behind the shadow shows both arcs of its Einstein ring.
+// A secondary draw returns weight 0 wherever the image is undefined.
+fn lensPoint(raw : vec3f, second : f32) -> vec4f {
+  let rs = G.lens.w;
+  let dead = vec4f(raw, 1.0 - second); // no lensing: secondary images vanish
+  if (rs <= 0.0) { return dead; }
+  let dl = length(G.lens.xyz);
+  let ds = bigLength(raw);
+  if (ds < 1e-6 || dl < rs * 3.0) { return dead; }
+  let bh = G.lens.xyz / dl;
+  let sh = raw / ds;
+  // Only light that passes the hole bends: the source must lie beyond it.
+  let along = dot(sh, bh) * ds;
+  if (along <= dl * 1.02) { return dead; }
+  // β from the chord (acos loses small angles in f32); skip wide pairs.
+  let beta = 2.0 * asin(min(0.5 * length(sh - bh), 1.0));
+  if (beta > 0.7) { return dead; }
+  let dls = along - dl;
+  let te2 = (2.0 * rs * (dls / (dls + dl))) / dl; // θ_E²
+  let root = sqrt(beta * beta + 4.0 * te2);
+  // Primary root bends outward; the secondary lands on the opposite side
+  // (negative angle — the rotation below takes it across the hole).
+  let th = select(0.5 * (beta + root), 0.5 * (beta - root), second > 0.5);
+  // Rotate the source direction away from the hole, in their common plane.
+  let ax = sh - bh * dot(sh, bh);
+  let axn = length(ax);
+  if (axn < 1e-9) { return dead; } // dead center: a ring, not a point
+  let t = ax / axn;
+  let dir = bh * cos(th) + t * sin(th);
+  // Magnification; the far cap only guards β/θ_E → 0. μ₋ falls to zero for
+  // far-off-axis sources — their counter-images demagnify to nothing.
+  let u = max(beta / max(sqrt(te2), 1e-12), 1e-3);
+  let mu = (u * u + 2.0) / (2.0 * u * sqrt(u * u + 4.0));
+  let mag = select(mu + 0.5, mu - 0.5, second > 0.5);
+  return vec4f(dir * ds, min(mag, 60.0));
 }
 `;
 
@@ -377,7 +428,9 @@ ${
   let pint = P.tint.w * clamp(1.3 - 0.09 * prm.w, 0.15, 1.0);`
     : `  let ppos = ppos0${mode === 'moving' ? ' + pvel * G.motion.x' : ''};`
 }
-  let raw = P.origin.xyz + ppos;
+  // Sgr A* bends passing light; misc.z > 0 marks a secondary-image draw.
+  let lz = lensPoint(P.origin.xyz + ppos, P.misc.z);
+  let raw = lz.xyz;
   let d0 = max(bigLength(raw), 1e-18);
   let cap = G.params.x;
   var dc = d0;
@@ -397,7 +450,7 @@ ${
   o.pos = clip;
   o.uv = vec2f(ux, uy);
   o.col = seamTint(pcol, P.misc.y);
-  var inten = pint * P.origin.w;
+  var inten = pint * P.origin.w * lz.w; // lensed images brighten (μ₊)
   // Near fade: f32 cancellation jitters a sprite by ~6e-8 of its distance
   // from the group origin, and a focused star's arrival distance grows with
   // its radius — so the fade radius scales with the sprite's own remoteness
@@ -637,16 +690,26 @@ struct Line {
   origin : vec4f, // xyz: ELLIPSE center rel camera (the sun sits at a focus)
   color  : vec4f, // rgb + alpha
   axisA  : vec4f, // xyz: semi-major axis vector (scene meters)
+                  // w: 1 on a secondary-image draw (Sgr A* counter-image)
   axisB  : vec4f, // xyz: semi-minor axis vector
 };
 @group(1) @binding(0) var<uniform> L : Line;
 
-struct VOut { @builtin(position) pos : vec4f };
+struct VOut {
+  @builtin(position) pos : vec4f,
+  @location(0) am : f32, // per-vertex brightness (secondary images fade out)
+};
 
 @vertex fn vs(@location(0) c : vec2f) -> VOut {
   // pos(θ) = center + A·cosθ + B·sinθ: the true inclined Kepler ellipse
-  // (a circle is the special case A = (r,0,0), B = (0,0,r)).
-  let raw = L.origin.xyz + L.axisA.xyz * c.x + L.axisB.xyz * c.y;
+  // (a circle is the special case A = (r,0,0), B = (0,0,r)). Near Sgr A*
+  // each sample point lenses independently — the far side of an S-star
+  // orbit visibly warps around the shadow, and a second draw adds the
+  // counter-image arcs hugging the Einstein ring. A line is an extended
+  // source (surface brightness is conserved), so the primary image keeps
+  // its alpha; the secondary fades by its demagnification.
+  let lz = lensPoint(L.origin.xyz + L.axisA.xyz * c.x + L.axisB.xyz * c.y, L.axisA.w);
+  let raw = lz.xyz;
   let d0 = max(bigLength(raw), 1e-3);
   let cap = G.params.x;
   var dc = d0;
@@ -659,11 +722,12 @@ struct VOut { @builtin(position) pos : vec4f };
   clip.z = logDepth(dc) * clip.w;
   var o : VOut;
   o.pos = clip;
+  o.am = select(1.0, clamp(abs(lz.w), 0.0, 1.0), L.axisA.w > 0.5);
   return o;
 }
 
-@fragment fn fs() -> @location(0) vec4f {
+@fragment fn fs(in : VOut) -> @location(0) vec4f {
   // Orbit guides depict real orbits with a drawn line: stylized-on-real.
-  return vec4f(seamTint(L.color.rgb, 0.5) * L.color.a, 1.0); // additive
+  return vec4f(seamTint(L.color.rgb, 0.5) * L.color.a * in.am, 1.0); // additive
 }
 `;
