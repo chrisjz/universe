@@ -160,6 +160,32 @@ async function start(): Promise<void> {
   let camSunForSprites: V3 | null = null; // last frame's camera, sun frame
   const spriteBase = new Map<number, number>(); // locator base intensities
   const spriteLit = new Map<number, number>(); // eclipse dimming overrides
+  // Locator glows step aside once the real globe resolves: the sprites are
+  // findability aids at 4x radius, and left on they swallow their
+  // true-scale neighborhoods — from the Jovian system view, Io's whole
+  // (correct) orbit sat inside Jupiter's halo. Below ~0.23° the locator
+  // shines; past ~0.46° the honest globe and atmosphere own the pixels.
+  // Called every frame, paused or not: the fade tracks the CAMERA, and a
+  // paused session that relied on updateBodies left it to a startup race
+  // (whether the satellites/probes fetch callbacks landed before or after
+  // the first frame set camSunForSprites — the halo state literally
+  // depended on the bundle's parse time; a CI capture caught both sides).
+  function updateLocatorFades(): void {
+    if (camSunForSprites) {
+      const cs = camSunForSprites;
+      const d = u.groups[u.planetSpriteGroup].data;
+      for (const b of u.bodies) {
+        if (b.spriteFloatBase === undefined) continue;
+        const o = b.spriteFloatBase;
+        if (!spriteBase.has(o)) spriteBase.set(o, d[o + 7]);
+        const dist = Math.hypot(d[o] - cs[0], d[o + 1] - cs[1], d[o + 2] - cs[2]);
+        const ang = d[o + 3] / Math.max(dist, 1);
+        const fade = clamp((0.008 - ang) / 0.004, 0, 1);
+        d[o + 7] = spriteBase.get(o)! * fade * (spriteLit.get(o) ?? 1);
+      }
+    }
+    renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+  }
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -286,25 +312,7 @@ async function start(): Promise<void> {
         renderer.updatePointGroup(pr.rIdx, pr.inst);
       }
     }
-    // Locator glows step aside once the real globe resolves: the sprites
-    // are findability aids at 4x radius, and left on they swallow their
-    // true-scale neighborhoods — from the Jovian system view, Io's whole
-    // (correct) orbit sat inside Jupiter's halo. Below ~0.23° the locator
-    // shines; past ~0.46° the honest globe and atmosphere own the pixels.
-    if (camSunForSprites) {
-      const cs = camSunForSprites;
-      const d = u.groups[u.planetSpriteGroup].data;
-      for (const b of u.bodies) {
-        if (b.spriteFloatBase === undefined) continue;
-        const o = b.spriteFloatBase;
-        if (!spriteBase.has(o)) spriteBase.set(o, d[o + 7]);
-        const dist = Math.hypot(d[o] - cs[0], d[o + 1] - cs[1], d[o + 2] - cs[2]);
-        const ang = d[o + 3] / Math.max(dist, 1);
-        const fade = clamp((0.008 - ang) / 0.004, 0, 1);
-        d[o + 7] = spriteBase.get(o)! * fade * (spriteLit.get(o) ?? 1);
-      }
-    }
-    renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
+    updateLocatorFades();
     // Satellites: SGP4 in TEME, precessed to J2000, mapped into the scene.
     // Beyond ±30 days of a TLE's epoch the elements are stale (drag makes
     // them diverge irrecoverably), so each bird honestly vanishes instead
@@ -1610,6 +1618,8 @@ async function start(): Promise<void> {
     if (!paused) {
       simMs = clamp(simMs + dt * SPEEDS[speedIndex] * 1000, SIM_MIN_MS, SIM_MAX_MS);
       updateBodies();
+    } else {
+      updateLocatorFades(); // paused, the camera still moves — fades follow it
     }
     // Keyboard navigation: held arrows glide instead of stepping. Up/down
     // is the trackpad-friendly zoom (same exponential feel as scroll);
