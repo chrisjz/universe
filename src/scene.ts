@@ -8,7 +8,7 @@ import { Frame } from './frames';
 import { MeshKind } from './renderer';
 import { BRIGHT_STARS } from './data/brightstars';
 import { orientSky, raDecToScene } from './sky';
-import { PLANET_ELEMENTS, keplerEllipse, PlanetElements } from './ephemeris';
+import { PLANET_ELEMENTS, GALILEAN_ELEMENTS, keplerEllipse, PlanetElements } from './ephemeris';
 import { MESSIER } from './data/messier';
 
 export interface MeshObj {
@@ -108,6 +108,7 @@ export interface OrbitalBody {
   frameOffset?: V3;
   spriteFloatBase?: number; // float offset of its locator sprite in the planet sprite group
   el?: PlanetElements; // full Keplerian elements (planets ride these)
+  center?: V3; // el is relative to this live position (moons of a planet)
   moon?: boolean; // use the full inclined, perturbed lunar ephemeris (ephemeris.ts)
 }
 
@@ -122,6 +123,8 @@ export interface Universe {
   planetSpriteGroup: number; // index into groups; its buffer is re-uploaded as bodies move
   webGroup: number; // index into groups; re-uploaded when the scale factor moves
   moonMesh: MeshObj; // eclipse shading mutates its color as it crosses Earth's shadow
+  galileans: { mesh: MeshObj; pos: V3; base: [number, number, number]; r: number; spriteFloatBase: number }[];
+  jupiterPos: V3; // heliocentric, live (eclipse geometry needs the sun line)
   moonFrame: Frame; // origin rides moonPos; Tranquility Base hangs off it
   // Textured planets spin about their real poles; main.ts drives the phase.
   planetSpins: { basis: [V3, V3, V3]; e0: V3; up: V3; n0: V3; periodDays: number }[];
@@ -578,6 +581,7 @@ export function buildUniverse(): Universe {
   // Hooks run after each spin update (surface sites riding a spinning planet).
   const postSpin: (() => void)[] = [];
   let marsPos!: V3;
+  let jupiterPos!: V3;
   let marsMesh!: MeshObj;
   let marsSpinBasis!: [V3, V3, V3];
   const registerSpin = (pole: [number, number], periodDays: number): [V3, V3, V3] => {
@@ -661,6 +665,7 @@ export function buildUniverse(): Universe {
       m.tex = face.tex;
       m.rot = registerSpin(face.pole, face.periodDays);
       m.prov = 0; // measured imagery
+      if (name === 'jupiter') jupiterPos = pos;
       if (name === 'mars') {
         marsPos = pos;
         marsMesh = m;
@@ -929,6 +934,64 @@ export function buildUniverse(): Universe {
   // 5.1° off it — visibly honest at moon zoom.
   orbits.push({ frame: earthFrame, center: [0, 0, 0], radius: 3.844e8, color: [0.7, 0.72, 0.8], alpha: 0.16 });
   bodies.push({ a: 3.844e8, periodDays: 27.3217, L0: 218.32, positions: [moonPos], moon: true });
+
+  // ---- the Galilean moons: real orbits, watchable speed ----
+  // Io laps Jupiter in 1.77 days — 42 minutes of clock time at 1 min/s, a
+  // clockwork you can actually watch. Elements fitted from JPL Horizons
+  // (scripts/fit-galilean.mjs, held-out residuals under 6,500 km), solved
+  // by the same Kepler machinery as the planets, centered on the live
+  // Jupiter. Surfaces are honest tints (measured radii, stylized faces).
+  const galileans: { mesh: MeshObj; pos: V3; base: [number, number, number]; r: number; spriteFloatBase: number }[] =
+    [];
+  for (const [slug, display, r, color] of [
+    ['io', 'IO', 1.8216e6, [0.84, 0.74, 0.38]],
+    ['europa', 'EUROPA', 1.5608e6, [0.86, 0.82, 0.73]],
+    ['ganymede', 'GANYMEDE', 2.6341e6, [0.6, 0.56, 0.5]],
+    ['callisto', 'CALLISTO', 2.4103e6, [0.42, 0.39, 0.36]],
+  ] as [string, string, number, [number, number, number]][]) {
+    const el = GALILEAN_ELEMENTS[slug];
+    const pos: V3 = [el.a * AU, 0, 0];
+    const m = sphere(sunFrame, pos, r, color, 4);
+    m.prov = 0.5; // measured radius & orbit, stylized surface
+    meshes.push(m);
+    const ell = keplerEllipse(el);
+    orbits.push({
+      frame: sunFrame,
+      center: jupiterPos, // live reference: the ellipses ride Jupiter
+      radius: el.a * AU,
+      color: [0.45, 0.6, 0.85],
+      alpha: 0.16,
+      axisA: ell.A,
+      axisB: ell.B,
+      centerOff: ell.center,
+    });
+    const spriteFloatBase = planetSprites.length * 8;
+    planetSprites.push([...pos, r * 4, color[0], color[1], color[2], 0.2]);
+    bodies.push({
+      a: el.a * AU,
+      periodDays: 36525 / (el.LDot / 360),
+      L0: 0,
+      positions: [pos],
+      el,
+      center: jupiterPos,
+      spriteFloatBase,
+    });
+    galileans.push({ mesh: m, pos, base: color, r, spriteFloatBase });
+    planetTargets.push({
+      name: display,
+      slug,
+      frame: sunFrame,
+      pos,
+      dist: 8 * r,
+      pitch: 0.2,
+      sunlit: true,
+      source: 'orbit fit to JPL Horizons (residuals < 6,500 km); measured size, stylized surface',
+      parent: 'jupiter',
+      exit: 5e9,
+      radius: r,
+      hidden: true,
+    });
+  }
 
   // ---- Tranquility Base: the second surface site ----
   // Apollo 11's landing site on Mare Tranquillitatis. Fixed (no lunar roam),
@@ -1902,6 +1965,8 @@ export function buildUniverse(): Universe {
     planetSpriteGroup,
     webGroup,
     moonMesh,
+    galileans,
+    jupiterPos,
     moonFrame,
     driftStars,
     planetSpins,

@@ -198,3 +198,19 @@ export function keplerEllipse(el: PlanetElements): {
   const center = toScene(-a * e, 0);
   return { center, A, B };
 }
+
+// The Galilean moons: jovicentric elements in the same Standish layout,
+// FITTED from JPL Horizons state vectors by scripts/fit-galilean.mjs
+// (osculating elements sampled 1990-2050, a/e/i as means, L/ϖ/Ω as linear
+// fits — Jupiter's J2 makes fixed ellipses drift within weeks). Held-out
+// residuals: Io 479 km, Europa 6,439 km, Ganymede 3,553 km, Callisto
+// 2,837 km — far inside a Jupiter radius, so orbital phases, transits,
+// and shadow passages stay honest. keplerScenePos applies unchanged; the
+// result is a JUPITER-relative scene offset.
+// prettier-ignore
+export const GALILEAN_ELEMENTS: Record<string, PlanetElements> = {
+  io: EL(0.00282122912589, 0, 0.00418679550742, 0, 2.21555046345, 0, 743778.341588, 7432434.20129, -2112.70510034, -27010.4130655, 337.756366909, 0.427642168673),
+  europa: EL(0.00448721030281, 0, 0.00937091237709, 0, 2.24173098505, 0, 370652.814579, 3702711.8218, -2292.65660696, -27010.8632246, 335.467574578, 13.1753391764),
+  ganymede: EL(0.00715723706803, 0, 0.00191837769453, 0, 2.2747998405, 0, 184540.058713, 1837850.60054, 643.038652322, 208.202375764, 343.130108416, -17.4828025373),
+  callisto: EL(0.0125886389086, 0, 0.007292329084, 0, 1.96969951462, 0, 79279.2179607, 787883.426182, 352.970545603, 65.4205946396, 337.821803591, -3.25020822947),
+};

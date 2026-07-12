@@ -168,7 +168,7 @@ by theme:
 - [x] Mars, the third surface site: Jezero crater beside Perseverance — Viking imagery via NASA Mars Trek, MOLA terrain (the site reads −2563 m against the published −2570 m crater floor)
 - [x] Real planet faces: NASA global mosaics for Mercury, Mars, and Jupiter on spinning, correctly tilted globes (Venus and the ice giants stay honestly stylized — their visible faces are featureless)
 - [x] Saturn's rings at true scale: Cassini's radial scan on the real radii — the Cassini division, and the ring plane riding the real pole (nearly edge-on in 2026, as in the real sky)
-- [ ] The Galilean moons: real mosaics, and orbits fast enough to watch — Io laps Jupiter in 42 hours of clock time
+- [x] The Galilean moons: Io, Europa, Ganymede, Callisto on orbits fitted to JPL Horizons (held-out residuals under 6,500 km over sixty years), eclipsed for real by Jupiter's shadow — Io laps the planet every 42 hours; real mosaics still to come
 
 **A deeper sky**
 

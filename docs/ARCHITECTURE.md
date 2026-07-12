@@ -105,6 +105,14 @@ to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
   and varying distance. That is what makes every 2026 eclipse land within
   ~10 minutes of its true time, annular vs total decided by the Moon's
   actual distance that day.
+- **The Galilean moons** — jovicentric elements in the same Standish
+  layout, FITTED from Horizons state vectors (`scripts/fit-galilean.mjs`:
+  osculating elements sampled across 1990–2050, a/e/i as means, L/ϖ/Ω as
+  linear fits). Held-out residuals: Io 479 km, Europa 6,439 km, Ganymede
+  3,553 km, Callisto 2,837 km — far inside a Jupiter radius, so phases and
+  shadow passages are honest. The same `keplerScenePos` solves them,
+  centered on the live Jupiter; a moon crossing Jupiter's shadow goes dark
+  (no atmosphere to redden it — unlike our Moon, it simply winks out).
 - **Satellites** ([`src/sgp4.ts`](../src/sgp4.ts)) — the ~170 brightest
   satellites plus the stations, propagated per frame with the near-Earth
   SGP4 (Vallado's formulation, WGS-72) from bundled CelesTrak TLEs, then

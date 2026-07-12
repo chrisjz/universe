@@ -199,6 +199,34 @@ async function start(): Promise<void> {
       }
     }
     updateMoonShadow();
+    // Galilean eclipses: a moon crossing Jupiter's shadow goes dark — no
+    // atmosphere to redden it, so unlike our Moon it simply winks out
+    // (watch Io do it every 42 hours). Cylindrical shadow with a soft
+    // edge the size of the moon; the cone correction is ~2% at Callisto.
+    {
+      const jp = u.jupiterPos;
+      const dJ = len(jp);
+      const R_J = 6.99e7;
+      for (const g of u.galileans) {
+        const rx = g.pos[0] - jp[0],
+          ry = g.pos[1] - jp[1],
+          rz = g.pos[2] - jp[2];
+        const along = (rx * jp[0] + ry * jp[1] + rz * jp[2]) / dJ;
+        let lit = 1;
+        if (along > 0) {
+          const px = rx - (along / dJ) * jp[0],
+            py = ry - (along / dJ) * jp[1],
+            pz = rz - (along / dJ) * jp[2];
+          const perp = Math.hypot(px, py, pz);
+          lit = clamp((perp - (R_J - g.r)) / (2 * g.r), 0.05, 1);
+        }
+        g.mesh.color[0] = g.base[0] * lit;
+        g.mesh.color[1] = g.base[1] * lit;
+        g.mesh.color[2] = g.base[2] * lit;
+        const d = u.groups[u.planetSpriteGroup].data;
+        d[g.spriteFloatBase + 7] = 0.2 * lit;
+      }
+    }
     // Synchronous lunar rotation: UNIFORM spin at the sidereal-month rate,
     // phased by the mean longitude so the near side faces Earth on average.
     // The ecliptic-longitude residuals (equation of the center etc.) then
