@@ -72,6 +72,18 @@ export function eqVecToScene(x: number, y: number, z: number): V3 {
   return [x, -SE * y + CE * z, -CE * y - SE * z];
 }
 
+// The inverse: RA/Dec of a scene direction (EQ_TO_SCENE is orthonormal,
+// so its transpose goes back). The SDSS footprint mask is indexed by this.
+export function sceneDirToRaDec(v: V3): [number, number] {
+  const n = Math.hypot(v[0], v[1], v[2]) || 1;
+  const x = v[0] / n;
+  const y = (EQ_TO_SCENE[1][1] * v[1] + EQ_TO_SCENE[2][1] * v[2]) / n;
+  const z = (EQ_TO_SCENE[1][2] * v[1] + EQ_TO_SCENE[2][2] * v[2]) / n;
+  const ra = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  const dec = (Math.asin(Math.min(Math.max(z, -1), 1)) * 180) / Math.PI;
+  return [ra, dec];
+}
+
 // Scene direction of a J2000 equatorial position (for verification and
 // future real-catalog placements).
 export function raDecToScene(raDeg: number, decDeg: number): V3 {

@@ -391,6 +391,9 @@ struct Grp {
                 // (f32 cancellation jitters near sprites at 1e16 m coords;
                 // a double-precision star mesh takes over up close)
                 // y: provenance (see seamTint)
+                // z: secondary-lens-image draw flag (Sgr A*)
+                // w: comoving scale — positions stored at a = 1 multiply by
+                //    the live ΛCDM scale factor (0 = not comoving)
   tint : vec4f, // orbital groups: rgb population color, w base intensity
 };
 @group(1) @binding(0) var<uniform> P : Grp;
@@ -428,8 +431,10 @@ ${
   let pint = P.tint.w * clamp(1.3 - 0.09 * prm.w, 0.15, 1.0);`
     : `  let ppos = ppos0${mode === 'moving' ? ' + pvel * G.motion.x' : ''};`
 }
+  // Comoving groups (SDSS) expand with the universe at zero CPU cost.
+  let cosc = select(1.0, P.misc.w, P.misc.w > 0.0);
   // Sgr A* bends passing light; misc.z > 0 marks a secondary-image draw.
-  let lz = lensPoint(P.origin.xyz + ppos, P.misc.z);
+  let lz = lensPoint(P.origin.xyz + ppos * cosc, P.misc.z);
   let raw = lz.xyz;
   let d0 = max(bigLength(raw), 1e-18);
   let cap = G.params.x;

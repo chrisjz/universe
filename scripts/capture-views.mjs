@@ -47,6 +47,9 @@ const VIEWS = [
   // Sgr A*: shadow sphere, S-star sprites/ellipses, primary + secondary
   // gravitational lensing, and the near-center fade of the galaxy glow
   { name: 'sgra', q: 'goto=sgr-a&dist=1e12' },
+  // the SDSS wedges (bundled subsample), comoving shader scale, and the
+  // procedural web's footprint retreat — the measured cosmic web
+  { name: 'web', q: 'goto=sun&dist=6e25&pitch=60' },
 ];
 
 const outDir = process.argv[2] ?? 'visual-out'; // NOT dot-prefixed: upload-artifact drops hidden paths
