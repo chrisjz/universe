@@ -183,7 +183,7 @@ by theme:
 - [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
 - [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
 - [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
-- [ ] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as real destinations — Horizons trajectories compressed with Chebyshev fits, so "where is Voyager right now" has a true answer
+- [x] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as live destinations — Horizons trajectories compressed to 43 kB of Chebyshev segments (residuals < 20,000 km; flybys split fine, cruises coast), so `?goto=voyager-1` answers "where is it right now" truthfully
 - [ ] The Moon's shadow on the Earth: during a solar eclipse the umbra crawls across the real map — the geometry already exists, drawn where it lands
 - [ ] Comet tails: dust and ion tails as physically derived curves (radiation pressure and solar wind on the true orbits) — Halley grows its tail toward perihelion
 
@@ -276,6 +276,10 @@ pipelines (all regenerable from public sources) are documented in
   [Minor Planet Center](https://www.minorplanetcenter.net/)'s MPCORB and
   CometEls catalogs — `node scripts/generate-smallbodies.mjs <MPCORB.DAT>`
   resamples `public/smallbodies.bin`.
+- **Deep-space probes** — Voyager 1 & 2, New Horizons, and JWST
+  trajectories from [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/),
+  Chebyshev-compressed by `node scripts/generate-probes.mjs` into
+  `public/probes.json`.
 - **Satellites** — two-line elements from
   [CelesTrak](https://celestrak.org/) (visual + stations groups), propagated
   with SGP4 (`src/sgp4.ts`, verified against JPL Horizons' ISS ephemeris by

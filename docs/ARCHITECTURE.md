@@ -113,6 +113,20 @@ to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
   shadow passages are honest. The same `keplerScenePos` solves them,
   centered on the live Jupiter; a moon crossing Jupiter's shadow goes dark
   (no atmosphere to redden it — unlike our Moon, it simply winks out).
+- **Deep-space probes** ([`src/probes.ts`](../src/probes.ts)) — Voyager
+  1 & 2, New Horizons, and JWST on Chebyshev-segment trajectories fitted
+  from Horizons state vectors (`scripts/generate-probes.mjs`) — the same
+  representation JPL's SPK kernels use. Segments split recursively until
+  every sample fits within 20,000 km, so gravity-assist flybys get short
+  segments and cruise decades compress to almost nothing (79 segments,
+  43 kB, for four spacecraft across eight decades). Verified against
+  Horizons: Voyager 1 lands at 171.1 AU on the day of writing, matching
+  to the fourth digit. Escaping probes coast on a linear end-state
+  extension beyond their span; JWST honestly vanishes past its predicted
+  station-keeping. Each probe draws as its own point group with an f64
+  origin — a sun-frame instance at 171 AU carries ~2,000 km of f32
+  quantum, which at a 1.5 km viewing distance would throw the locator
+  thousands of screens off target.
 - **Satellites** ([`src/sgp4.ts`](../src/sgp4.ts)) — the ~170 brightest
   satellites plus the stations, propagated per frame with the near-Earth
   SGP4 (Vallado's formulation, WGS-72) from bundled CelesTrak TLEs, then
