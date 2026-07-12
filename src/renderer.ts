@@ -2,7 +2,8 @@
 // additive orbit lines) sharing a globals uniform and a per-draw dynamic
 // uniform buffer. 4x MSAA, float32 log depth.
 
-import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL, ATMO_WGSL } from './shaders';
+import { MESH_WGSL, pointsWgsl, PointsMode, LINES_WGSL, SKY_WGSL, ATMO_WGSL, DOME_WGSL } from './shaders';
+import { mat4Mul, mat4Perspective, V3 } from './math';
 
 export type MeshKind = string; // 'sphere' | 'box' | 'disk' built in; more via addGeometry()
 
@@ -17,6 +18,7 @@ export interface FrameData {
   groups: { index: number; data: F32 }[]; // 4 floats each
   sky?: F32 | null; // 8 floats: constellation-dome origin rel camera, radius, color, alpha
   atmo?: F32 | null; // 8 floats: planet center rel camera + ground R, sun dir + top R
+  farDome?: number; // baked far-field intensity (0 = draw nothing)
 }
 
 const SLOT = 256; // dynamic uniform offset alignment
@@ -56,6 +58,21 @@ export class Renderer {
   private atmoPipe!: GPURenderPipeline;
   private atmoUBO!: GPUBuffer;
   private atmoBG!: GPUBindGroup;
+  // Far-field bake: faint star bands accumulate into a fp16 cubemap once,
+  // then draw as a single dome (see bakeFarFace / DOME_WGSL).
+  private farTex: GPUTexture | null = null;
+  private farFaceViews: GPUTextureView[] = [];
+  private farSize = 0;
+  private bakeMovePipe!: GPURenderPipeline;
+  private bakeGlobals!: GPUBuffer;
+  private bakeGlobalsBG!: GPUBindGroup;
+  private bakeGrpBG!: GPUBindGroup;
+  private bakeGrp!: GPUBuffer;
+  private domePipe!: GPURenderPipeline;
+  private domeBGL!: GPUBindGroupLayout;
+  private domeBG: GPUBindGroup | null = null;
+  private domeUBO!: GPUBuffer;
+  private domeSampler!: GPUSampler;
   private skyBuf: GPUBuffer | null = null;
   private skyVerts = 0;
   private circleVerts = 0;
@@ -355,6 +372,72 @@ export class Renderer {
       multisample: { count: 4 },
     });
 
+    // ---- far-field bake pipeline: the moving-star sprites, rendered into
+    // an fp16 cube face instead of the swapchain (no depth, no MSAA — pure
+    // additive accumulation; quantization-free, unlike the 8-bit canvas).
+    this.bakeGlobals = d.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.bakeGlobalsBG = d.createBindGroup({
+      layout: globalsBGL,
+      entries: [{ binding: 0, resource: { buffer: this.bakeGlobals } }],
+    });
+    const bakeGrp = d.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.bakeGrp = bakeGrp;
+    this.bakeGrpBG = mkDyn(bakeGrp, 48);
+    this.bakeMovePipe = d.createRenderPipeline({
+      layout,
+      vertex: {
+        module: pointMoveMod,
+        entryPoint: 'vs',
+        buffers: [
+          {
+            arrayStride: 44,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32' },
+              { shaderLocation: 2, offset: 16, format: 'float32x3' },
+              { shaderLocation: 3, offset: 28, format: 'float32' },
+              { shaderLocation: 4, offset: 32, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      fragment: { module: pointMoveMod, entryPoint: 'fs', targets: [{ format: 'rgba16float', blend: additive }] },
+      primitive: { topology: 'triangle-list' },
+    });
+
+    // ---- the dome that plays the bake back ----
+    this.domeUBO = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.domeSampler = d.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    this.domeBGL = d.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: 'cube' } },
+      ],
+    });
+    const domeMod = d.createShaderModule({ code: DOME_WGSL });
+    this.domePipe = d.createRenderPipeline({
+      layout: d.createPipelineLayout({ bindGroupLayouts: [globalsBGL, this.domeBGL] }),
+      vertex: {
+        module: domeMod,
+        entryPoint: 'vs',
+        buffers: [
+          {
+            arrayStride: 24,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      fragment: { module: domeMod, entryPoint: 'fs', targets: [{ format: this.format, blend: additive }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: depthNoWrite,
+      multisample: { count: 4 },
+    });
+
     this.buildGeometries();
     this.buildCircle();
   }
@@ -623,6 +706,7 @@ export class Renderer {
     for (let i = 0; i < nGrp; i++) this.groupStaging.set(frame.groups[i].data, (SLOT / 4) * i);
     if (nGrp) q.writeBuffer(this.groupUBO, 0, this.groupStaging, 0, (SLOT / 4) * nGrp);
     if (frame.atmo) q.writeBuffer(this.atmoUBO, 0, frame.atmo);
+    if (frame.farDome) q.writeBuffer(this.domeUBO, 0, new Float32Array([frame.farDome, 0, 0, 0]));
 
     const enc = this.device.createCommandEncoder();
     const pass = enc.beginRenderPass({
@@ -668,6 +752,16 @@ export class Renderer {
       pass.setVertexBuffer(0, this.skyBuf);
       pass.setBindGroup(1, this.lineBG, [SLOT * nLine]);
       pass.draw(this.skyVerts);
+    }
+
+    // The baked far field: millions of faint stars as one additive dome.
+    if (frame.farDome && this.domeBG) {
+      const gd = this.geoms.get('sphere')!;
+      pass.setPipeline(this.domePipe);
+      pass.setBindGroup(1, this.domeBG);
+      pass.setVertexBuffer(0, gd.vbuf);
+      pass.setIndexBuffer(gd.ibuf, 'uint32');
+      pass.drawIndexed(gd.indexCount);
     }
 
     let curMode: PointsMode | null = null;
@@ -807,6 +901,120 @@ export class Renderer {
       if (!(await run(name, fn))) break; // a hang wedges the queue for good
     }
     return results.join(' | ');
+  }
+
+  // ---- far-field bake ----
+  // Renders the given point groups (moving-mode star tiles, sun-frame
+  // positions) into one face of the fp16 cubemap, viewpoint at the sun.
+  // Six calls — one per face, typically one per frame — complete a bake.
+  bakeFarFace(face: number, starYears: number, indices: number[], origin: V3): void {
+    const d = this.device;
+    const size = 1024;
+    if (!this.farTex || this.farSize !== size) {
+      this.farTex?.destroy();
+      this.farTex = d.createTexture({
+        size: [size, size, 6],
+        format: 'rgba16float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      this.farSize = size;
+      this.farFaceViews = Array.from({ length: 6 }, (_, i) =>
+        this.farTex!.createView({ dimension: '2d', baseArrayLayer: i, arrayLayerCount: 1 }),
+      );
+      this.domeBG = d.createBindGroup({
+        layout: this.domeBGL,
+        entries: [
+          { binding: 0, resource: { buffer: this.domeUBO } },
+          { binding: 1, resource: this.domeSampler },
+          { binding: 2, resource: this.farTex.createView({ dimension: 'cube' }) },
+        ],
+      });
+    }
+    // Face bases chosen so sampling the cube with a scene direction returns
+    // exactly what was rendered toward that direction (WebGPU face layout).
+    const FACES: [V3, V3, V3][] = [
+      [
+        [0, 0, -1],
+        [0, 1, 0],
+        [1, 0, 0],
+      ], // +X
+      [
+        [0, 0, 1],
+        [0, 1, 0],
+        [-1, 0, 0],
+      ], // -X
+      [
+        [1, 0, 0],
+        [0, 0, -1],
+        [0, 1, 0],
+      ], // +Y
+      [
+        [1, 0, 0],
+        [0, 0, 1],
+        [0, -1, 0],
+      ], // -Y
+      [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ], // +Z
+      [
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, 0, -1],
+      ], // -Z
+    ];
+    const [r, u, f] = FACES[face];
+    const view = new Float32Array(16);
+    view[0] = r[0];
+    view[4] = r[1];
+    view[8] = r[2];
+    view[1] = u[0];
+    view[5] = u[1];
+    view[9] = u[2];
+    view[2] = -f[0];
+    view[6] = -f[1];
+    view[10] = -f[2];
+    view[15] = 1;
+    const g = new Float32Array(32);
+    g.set(mat4Mul(mat4Perspective(Math.PI / 2, 1, 0.1, 100), view), 0);
+    g[16] = r[0];
+    g[17] = r[1];
+    g[18] = r[2];
+    g[19] = 1; // log-depth reference
+    g[20] = u[0];
+    g[21] = u[1];
+    g[22] = u[2];
+    g[24] = 1e7; // scaled-space cap, matching the live pass
+    g[25] = 1 / Math.log2(1 + 1e21);
+    g[27] = 2 / size; // worldPerPixel at d=1 for a 90° face
+    g[28] = starYears;
+    d.queue.writeBuffer(this.bakeGlobals, 0, g);
+    // Baked tiles live in the sun frame; the bake camera sits at `origin`
+    // (the live camera's sun-frame position), so the tiles' group origin
+    // relative to it is −origin. Fade 1, no near-fade, provenance 0.
+    d.queue.writeBuffer(
+      this.bakeGrp,
+      0,
+      new Float32Array([-origin[0], -origin[1], -origin[2], 1, 0, 0, 0, 0, 0, 0, 0, 0]),
+    );
+    const enc = d.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+      colorAttachments: [
+        { view: this.farFaceViews[face], clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+      ],
+    });
+    pass.setPipeline(this.bakeMovePipe);
+    pass.setBindGroup(0, this.bakeGlobalsBG);
+    pass.setBindGroup(1, this.bakeGrpBG, [0]);
+    for (const idx of indices) {
+      const grp = this.pointGroups[idx];
+      if (grp.mode !== 'moving') continue;
+      pass.setVertexBuffer(0, grp.buf);
+      pass.draw(6, grp.count);
+    }
+    pass.end();
+    d.queue.submit([enc.finish()]);
   }
 
   private makeGeometry(verts: F32, indices: Uint32Array<ArrayBuffer>): Geometry {

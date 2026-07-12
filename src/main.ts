@@ -141,6 +141,13 @@ async function start(): Promise<void> {
   const satTargets: { idx: number; pos: V3 }[] = [];
   const SAT_VALID_MS = 30 * 86400000; // TLEs are honest for ~weeks, not months
   let pendingGoto: string | null = null; // ?goto= slug awaiting an async target
+  // Far-field bake state: which renderer groups bake, and bake progress.
+  const farGroups: number[] = [];
+  let farLastChunkAt = 0;
+  const far = { face: -1, bakeYears: 0, bakedYears: NaN, bakedCount: 0, pendingCount: 0, at: 0, active: false };
+  const farOrigin: V3 = [0, 0, 0]; // bake viewpoint (sun-frame), frozen at face 0
+  const farBakedOrigin: V3 = [0, 0, 0];
+  let deepFade = 1; // stars fade out past the ±1 Myr proper-motion clamp
   function updateBodies(): void {
     const days = (simMs - J2000) / 86400000;
     for (const b of u.bodies) {
@@ -213,6 +220,11 @@ async function start(): Promise<void> {
     // the ±1 Myr scale; beyond that the drift holds (the galactic-year
     // rotation carries deep time from there) — see the motion uniform.
     starYears = Math.max(-1e6, Math.min(1e6, (simMs - J2000) / 3.15576e10));
+    // Beyond the ±1 Myr clamp star positions freeze — showing today's
+    // stellar neighborhood at the Big Bang would be fiction, so the stars
+    // fade out across 1–3 Myr. The comoving web and galaxies remain.
+    const rawYears = (simMs - J2000) / 3.15576e10;
+    deepFade = clamp((3e6 - Math.abs(rawYears)) / 2e6, 0, 1);
     u.driftStars(starYears);
     renderer.updatePointGroup(groupIndex[u.planetSpriteGroup], u.groups[u.planetSpriteGroup].data);
     // Satellites: SGP4 in TEME, precessed to J2000, mapped into the scene.
@@ -596,7 +608,16 @@ async function start(): Promise<void> {
   const DATA_URL = starParams.get('data') ?? 'https://data.universeatlas.org/stars/';
   let starCount = 0;
   const onStarChunk = (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta): void => {
-    groupIndex.push(renderer.addPointGroup(instances, 'moving'));
+    const rIdx = renderer.addPointGroup(instances, 'moving');
+    groupIndex.push(rIdx);
+    // Faint bands (short far-fades) are individually sub-8-bit: they matter
+    // only collectively, and from near the sun they are static — so they
+    // bake into the far-field dome instead of costing ~35M vertices/frame.
+    const farBand = meta.fade < 5.9e18 && !!meta.cone;
+    if (farBand) {
+      farGroups.push(rIdx);
+      farLastChunkAt = performance.now();
+    }
     u.groups.push({
       frame: u.sunFrame,
       pos: [0, 0, 0],
@@ -606,6 +627,8 @@ async function start(): Promise<void> {
       prov: 0,
       cone: meta.cone ?? undefined,
       maxDrift: meta.maxDrift,
+      stellar: true,
+      farBand,
       mode: 'moving',
     });
     starCount += instances.length / 11;
@@ -614,6 +637,55 @@ async function start(): Promise<void> {
   // starts only once the camera actually enters the stellar neighborhood —
   // a visitor who stays at cosmic scale never downloads the deep catalog.
   let starsStarted = false;
+  // The far-field bake: when the camera is in the stellar neighborhood
+  // (parallax on the faint bands is sub-arcminute) and the sky is settled,
+  // render the faint tiles into the cubemap — one face per frame, no hitch.
+  // Re-bake when new tiles land or deep time drifts the stars > 25k years;
+  // beyond 0.03 pc from the sun the tiles go back to live sprites.
+  function manageFarField(camSun: V3, now: number): void {
+    // Beyond the streaming zone everything star has faded; nothing to bake.
+    if (len(camSun) > 2.2e19 || skipSet.has('bake') || deepFade <= 0) {
+      far.active = false;
+      far.face = -1;
+      return;
+    }
+    const moved =
+      Math.abs(camSun[0] - farBakedOrigin[0]) +
+      Math.abs(camSun[1] - farBakedOrigin[1]) +
+      Math.abs(camSun[2] - farBakedOrigin[2]);
+    if (
+      far.face < 0 &&
+      farGroups.length > 0 &&
+      now - farLastChunkAt > 600 &&
+      now - far.at > 400 &&
+      (far.bakedCount !== farGroups.length ||
+        Number.isNaN(far.bakedYears) ||
+        Math.abs(starYears - far.bakedYears) > 25000 ||
+        moved > 8e12) // ~1 px of parallax on a parsec-distance star
+    ) {
+      far.face = 0;
+      far.bakeYears = starYears;
+      far.pendingCount = farGroups.length;
+      farOrigin[0] = camSun[0];
+      farOrigin[1] = camSun[1];
+      farOrigin[2] = camSun[2];
+    }
+    if (far.face >= 0) {
+      renderer.bakeFarFace(far.face, far.bakeYears, farGroups, farOrigin);
+      far.face++;
+      if (far.face === 6) {
+        far.face = -1;
+        far.bakedYears = far.bakeYears;
+        far.bakedCount = far.pendingCount;
+        farBakedOrigin[0] = farOrigin[0];
+        farBakedOrigin[1] = farOrigin[1];
+        farBakedOrigin[2] = farOrigin[2];
+        far.at = now;
+        far.active = true;
+      }
+    }
+  }
+
   function maybeStreamStars(): void {
     if (skipSet.has('stars') || starsStarted || cam.dist > 2e19) return;
     starsStarted = true;
@@ -1671,9 +1743,11 @@ async function start(): Promise<void> {
     );
     u.groups.forEach((g, i) => {
       if (g.disabled) return;
+      if (g.farBand && far.active) return; // baked into the far-field dome
       if (g.hideBelow !== undefined && cam.dist < g.hideBelow) return;
       const rel = relPos(g.frame, g.pos, cam.frame, camLocal);
-      const fade = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
+      let fade = g.fadeExtent !== undefined ? Math.min(g.fadeExtent / Math.max(len(rel), 1e-18), 1) : 1;
+      if (g.stellar) fade *= deepFade;
       if (fade < 0.012) return; // beyond the band's reach: invisible, skip the draw
       if (g.cone) {
         const camSunDist = len(rel); // star tiles live in the sun frame
@@ -1729,6 +1803,12 @@ async function start(): Promise<void> {
       atmoData[7] = 6.371e6 + 1e5; // the Kármán-line-ish top of the shell
       data.atmo = atmoData;
     }
+
+    manageFarField(
+      scale(relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal), -1), // camera in the sun frame
+      performance.now(),
+    );
+    data.farDome = far.active ? deepFade : 0;
 
     const skyVisible = constellations && cam.dist < 2e19 && Math.abs(starYears) < 25000;
     if (skyVisible) {

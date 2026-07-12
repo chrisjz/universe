@@ -557,6 +557,44 @@ struct FOut {
 }
 `;
 
+// The far-field dome: the faint Gaia bands baked into a float cubemap
+// (renderer.bakeFarFace) and drawn as one additive sphere — millions of
+// sub-8-bit sprites become six vertices. The bake accumulates in fp16, so
+// stars too faint to survive the swapchain's 8-bit quantization now sum
+// honestly into the Milky Way's grain.
+export const DOME_WGSL =
+  COMMON +
+  /* wgsl */ `
+struct Dome { fade : vec4f }; // x: intensity multiplier (far/deep-time fades)
+@group(1) @binding(0) var<uniform> D : Dome;
+@group(1) @binding(1) var domeSamp : sampler;
+@group(1) @binding(2) var farCube : texture_cube<f32>;
+
+struct VOut {
+  @builtin(position) pos : vec4f,
+  @location(0) dir : vec3f,
+};
+
+@vertex fn vs(@location(0) p : vec3f, @location(1) n : vec3f) -> VOut {
+  // A sky-distance sphere around the camera; direction is all that matters.
+  let raw = p * 1e18;
+  let d0 = 1e18;
+  let cap = G.params.x;
+  let dc = cap * (1.0 + log(d0 / cap));
+  var clip = G.viewProj * vec4f(raw * (dc / d0), 1.0);
+  clip.z = logDepth(dc) * clip.w;
+  var o : VOut;
+  o.pos = clip;
+  o.dir = p;
+  return o;
+}
+
+@fragment fn fs(in : VOut) -> @location(0) vec4f {
+  let c = textureSample(farCube, domeSamp, normalize(in.dir)).rgb;
+  return vec4f(c * D.fade.x, 1.0); // additive over the black sky
+}
+`;
+
 export const LINES_WGSL =
   COMMON +
   /* wgsl */ `
