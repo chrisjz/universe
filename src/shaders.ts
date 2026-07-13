@@ -639,7 +639,15 @@ ${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 4375
   // extinction; a veiling-luminance term folds that into the blend.
   let veil = clamp(dot(L, vec3f(0.299, 0.587, 0.114)) * 5.0, 0.0, 1.0);
   let Tbar = clamp(dot(Tv, vec3f(0.299, 0.587, 0.114)), 0.0, 1.0);
-  let alpha = 1.0 - Tbar * (1.0 - veil);
+  var alpha = 1.0 - Tbar * (1.0 - veil);
+  // The veil erases whatever hides behind bright sky — correct for stars
+  // at noon, wrong for the SUN, the one body that outshines its own glare
+  // by ten orders of magnitude LDR cannot carry (a user searched whole
+  // afternoons for it). Inside the solar disc (+ a small margin) the veil
+  // yields to pure extinction: the disc burns through at transmittance
+  // strength, dimming toward the horizon like the real one.
+  let sunW = smoothstep(0.99994, 0.99998, dot(v, A.sun.xyz));
+  alpha = mix(alpha, 1.0 - Tbar, sunW);
   var o : FOut;
   // Real physics, real constants, but still a model: stylized-on-real.
   o.col = vec4f(seamTint(L, 0.5), alpha);
