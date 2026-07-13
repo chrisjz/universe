@@ -59,6 +59,14 @@ export interface PointGroup {
   // Positions stored at a = 1: the shader multiplies by the live ΛCDM scale
   // factor (SDSS galaxies ride the expansion at zero CPU cost).
   comoving?: boolean;
+  // Physical content radius for coverage-scaled LOD: the tile is
+  // pre-shuffled, so main draws only the leading fraction its on-screen
+  // pixel count warrants, with flux-preserving intensity compensation.
+  lodExtent?: number;
+  // Groups that overlay the SAME pixels (the SDSS redshift bands) share
+  // one budget: the pool's total count replaces the group's own in the
+  // fraction, or each band would claim the full screen separately.
+  lodPool?: { count: number };
   // Star fields fade out as the camera pulls beyond this extent, so a million
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
@@ -1761,6 +1769,10 @@ export function buildUniverse(): Universe {
       pos: [0, 0, 0],
       data: Float32Array.from(bodyPts),
       fadeExtent: 6e24,
+      // 70k sprites that only matter from galactic zoom outward were being
+      // drawn at the picnic and inside the proton — the "general FPS drop"
+      // a user caught after launch-week landed everything at once.
+      hideBelow: 1e16,
       prov: 0.5,
     });
   }

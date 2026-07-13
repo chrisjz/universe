@@ -14,9 +14,10 @@ import { comovingM } from './cosmo';
 export interface SdssBand {
   instances: Float32Array<ArrayBuffer>;
   count: number;
+  extentM: number; // comoving outer radius of the band — the LOD coverage scale
 }
 
-function unpack(buf: ArrayBuffer): SdssBand {
+function unpack(buf: ArrayBuffer, zMax: number): SdssBand {
   const view = new DataView(buf);
   const n = Math.floor(view.byteLength / 12);
   const out = new Float32Array(n * 8);
@@ -43,7 +44,7 @@ function unpack(buf: ArrayBuffer): SdssBand {
     // and per-sprite intensity above ~0.015 washes the wedges to white.
     out[j + 7] = 0.012 + 0.014 * h;
   }
-  return { instances: out, count: n };
+  return { instances: out, count: n, extentM: comovingM(zMax) };
 }
 
 // Streams bands nearest-first, invoking onBand as each lands. Falls back
@@ -63,11 +64,11 @@ export async function streamSdss(
     if (phone) throw new Error('subsample tier');
     const res = await fetch(`${dataRoot}sdss/manifest.json`);
     if (!res.ok) throw new Error('no manifest');
-    const manifest = (await res.json()) as { bands: { file: string; count: number }[] };
+    const manifest = (await res.json()) as { bands: { file: string; count: number; zMax?: number }[] };
     for (const b of manifest.bands) {
       const t = await fetch(`${dataRoot}sdss/${b.file}`);
       if (!t.ok) continue;
-      const band = unpack(await t.arrayBuffer());
+      const band = unpack(await t.arrayBuffer(), b.zMax ?? 1);
       onBand(band);
       total += band.count;
     }
@@ -78,7 +79,7 @@ export async function streamSdss(
   try {
     const res = await fetch(fallbackUrl);
     if (!res.ok) return 0;
-    const band = unpack(await res.arrayBuffer());
+    const band = unpack(await res.arrayBuffer(), 1);
     onBand(band);
     total = band.count;
   } catch {

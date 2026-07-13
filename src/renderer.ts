@@ -15,7 +15,10 @@ export interface FrameData {
   // addTexture (draw is skipped until the texture has landed).
   meshes: { kind: MeshKind; data: F32; tex?: string }[]; // 28 floats each
   lines: F32[]; // 8 floats each
-  groups: { index: number; data: F32 }[]; // 4 floats each
+  // frac: draw only this leading fraction of the group's instances — tiles
+  // are pre-shuffled so a prefix is an unbiased subsample (see the LOD
+  // policy in main.ts); intensity compensation keeps the aggregate flux.
+  groups: { index: number; data: F32; frac?: number }[];
   sky?: F32 | null; // 8 floats: constellation-dome origin rel camera, radius, color, alpha
   atmo?: F32 | null; // 8 floats: planet center rel camera + ground R, sun dir + top R
   farDome?: number; // baked far-field intensity (0 = draw nothing)
@@ -796,7 +799,8 @@ export class Renderer {
       }
       pass.setBindGroup(1, this.groupBG, [SLOT * i]);
       pass.setVertexBuffer(0, g.buf);
-      pass.draw(6, g.count);
+      const f = frame.groups[i].frac;
+      pass.draw(6, f !== undefined && f < 1 ? Math.max(1, Math.ceil(g.count * f)) : g.count);
     }
 
     // Atmosphere last: its transmittance must attenuate everything already
