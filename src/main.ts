@@ -844,7 +844,16 @@ async function start(): Promise<void> {
     if (skipSet.has('stars') || starsStarted || cam.dist > 2e19) return;
     starsStarted = true;
     void (async () => {
-      const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk) : 0;
+      // The mobile star budget: phones skip the faintest Gaia band
+      // (12.5 ≤ G < 13, ~2.4M stars that read as collective grain) —
+      // the Milky Way keeps its shape at ~60% of the vertex bill.
+      // ?stars=full opts a phone back in.
+      const phone =
+        navigator.maxTouchPoints > 0 &&
+        Math.min(screen.width, screen.height) < 900 &&
+        starParams.get('stars') !== 'full';
+      const skip = phone ? /^gaia-b3/ : undefined;
+      const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk, skip) : 0;
       if (deep === 0) await streamStars(`${import.meta.env.BASE_URL}stars/`, onStarChunk);
     })();
   }
@@ -886,12 +895,16 @@ async function start(): Promise<void> {
         groupIndex.push(renderer.addPointGroup(instances));
         u.groups.push({
           frame: u.sunFrame,
-          pos: [0, 0, 0],
+          pos: [c.posM[0], c.posM[1], c.posM[2]],
           data: instances,
-          fadeExtent: 6e21,
+          // 2e21: beyond ~1.7e23 m the Clouds have faded below the draw
+          // threshold and 1.6M sprites stop being submitted — at cosmic
+          // zoom SDSS and 2MRS own the pixels anyway.
+          fadeExtent: 2e21,
           hideBelow: 1e17, // a million sprites skip below galactic zoom
           nearFade: true,
           stellar: true,
+          lodExtent: c.radiusM,
           prov: 0.5, // measured sky structure; the DEPTH is the stylized axis
         });
       });
@@ -905,6 +918,7 @@ async function start(): Promise<void> {
   // the wedges' shape. Where the survey looked, the procedural placeholder
   // has already stepped aside (the footprint mask in scene.ts).
   let sdssStarted = false;
+  const sdssPool = { count: 0 }; // one LOD budget across the overlapping bands
   function maybeStreamSdss(): void {
     if (sdssStarted || skipSet.has('sdss') || cam.dist < 5e22) return;
     sdssStarted = true;
@@ -918,8 +932,11 @@ async function start(): Promise<void> {
         fadeExtent: 4e26,
         hideBelow: 2e22, // zoomed inside the galaxy, 2.6M sprites skip entirely
         comoving: true,
+        lodExtent: band.extentM,
+        lodPool: sdssPool,
         prov: 0,
       });
+      sdssPool.count += band.count;
     });
   }
 
@@ -1640,7 +1657,11 @@ async function start(): Promise<void> {
   let frameCount = 0;
 
   // ---- resize ----
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // DPR is capped at 2 (a phone at DPR 3 pays 2.25× the fragments for
+  // sharpness nobody perceives at arm's length). ?dpr= overrides for
+  // on-device A/B — try ?dpr=1.5 on a struggling phone.
+  const dprParam = parseFloat(params.get('dpr') ?? '');
+  const dpr = Number.isFinite(dprParam) ? clamp(dprParam, 0.5, 4) : Math.min(window.devicePixelRatio || 1, 2);
   const doResize = () =>
     renderer.resize(
       Math.max(1, Math.floor(canvas.clientWidth * dpr)),
@@ -2095,7 +2116,23 @@ async function start(): Promise<void> {
         gd[10] = g.tint[2];
         gd[11] = g.tint[3];
       }
-      data.groups.push({ index: groupIndex[i], data: gd });
+      // Coverage-scaled LOD (pre-shuffled tiles): draw only the leading
+      // fraction the group's on-screen pixels warrant — ~1.2 sprites per
+      // covered pixel — and scale intensity by the inverse, so the
+      // aggregate flux (the wedge walls, the Cloud's smudge) is unchanged
+      // while the vertex bill follows what is actually visible.
+      let frac: number | undefined;
+      if (g.lodExtent !== undefined) {
+        const distc = len(rel);
+        const cover =
+          distc <= g.lodExtent ? 1 : Math.min(1, Math.pow(g.lodExtent / distc / Math.tan(FOV / 2), 2) * 0.5);
+        const count = g.lodPool?.count ?? g.data.length / 8;
+        const pixels = cover * canvas.clientWidth * canvas.clientHeight;
+        frac = clamp((1.2 * pixels) / count, 1 / 32, 1);
+        if (frac >= 1) frac = undefined;
+        else gd[3] *= 1 / frac; // flux compensation
+      }
+      data.groups.push({ index: groupIndex[i], data: gd, frac });
       // The S stars also draw their gravitational counter-images (misc.z):
       // a star crossing behind the shadow shows both arcs of its ring.
       if (lensOn && i === u.sgrA.group) {

@@ -126,12 +126,14 @@ function chunkMeta(chunk: ManifestChunk): StarChunkMeta {
 export async function streamStars(
   baseUrl: string,
   onChunk: (instances: Float32Array<ArrayBuffer>, meta: StarChunkMeta) => void,
+  skipFiles?: RegExp, // mobile tier: e.g. /^gaia-b3/ drops the faintest band
 ): Promise<number> {
   let manifest: Manifest;
   try {
     const res = await fetch(`${baseUrl}manifest.json`);
     if (!res.ok) return 0;
     manifest = (await res.json()) as Manifest;
+    if (skipFiles) manifest.chunks = manifest.chunks.filter((c) => !skipFiles.test(c.file));
   } catch {
     return 0; // no tiles available (e.g. not generated yet) — not fatal
   }

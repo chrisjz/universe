@@ -13,6 +13,7 @@
 // dimension.
 
 import { raDecToScene } from './sky';
+import { V3 } from './math';
 
 const KPC = 3.0857e19;
 
@@ -25,6 +26,7 @@ export interface Cloud {
   distM: number;
   radiusM: number; // for the fly-to target
   depthM: number; // stylized 1σ line-of-sight thickness
+  posM: V3; // the Cloud's center, scene meters (group origin + LOD anchor)
 }
 
 export const CLOUDS: Cloud[] = [
@@ -37,6 +39,7 @@ export const CLOUDS: Cloud[] = [
     distM: 49.59 * KPC,
     radiusM: 1.6e20, // ~5.2 kpc — the visible disk
     depthM: 1.4 * KPC,
+    posM: [0, 0, 0],
   },
   {
     name: 'SMALL MAGELLANIC CLOUD',
@@ -47,8 +50,13 @@ export const CLOUDS: Cloud[] = [
     distM: 62.44 * KPC,
     radiusM: 8e19,
     depthM: 1.8 * KPC, // the SMC is genuinely deep along the sight line
+    posM: [0, 0, 0],
   },
 ];
+for (const c of CLOUDS) {
+  const d = raDecToScene(c.ra, c.dec);
+  c.posM = [d[0] * c.distM, d[1] * c.distM, d[2] * c.distM];
+}
 
 // BP−RP → a warm-to-blue ramp (blackbody-ish; the tiles carry the real
 // measured color index).
@@ -83,9 +91,12 @@ export async function loadCloud(dataRoot: string, cloud: Cloud): Promise<Float32
     const depth = (h1 + h2 - 1) * cloud.depthM * 1.6;
     const d = cloud.distM + depth;
     const j = i * 8;
-    out[j] = sdir[0] * d;
-    out[j + 1] = sdir[1] * d;
-    out[j + 2] = sdir[2] * d;
+    // Relative to the Cloud's center: the group origin (posM) carries the
+    // 50 kpc; instance floats stay ~1e20, kinder to f32 and to the
+    // per-sprite near-fade when the camera is inside the Cloud.
+    out[j] = sdir[0] * d - cloud.posM[0];
+    out[j + 1] = sdir[1] * d - cloud.posM[1];
+    out[j + 2] = sdir[2] * d - cloud.posM[2];
     // Physical sprite scale from absolute magnitude (all at ~the Cloud's
     // distance): M = G − 5·log10(d/10 pc); L-ish sizing like the catalog.
     const absMag = g - 5 * Math.log10(cloud.distM / (10 * 3.0857e16));

@@ -62,9 +62,27 @@ const clouds = [
   { name: 'smc', csv: SMC_CSV, pm: [0.686, -1.237], countLo: 1e5, countHi: 1.5e6, center: [13.19, -72.83] },
 ];
 
+// Deterministic shuffle: any prefix of a tile is an unbiased subsample,
+// enabling fractional draws when the Cloud is a sub-pixel smudge.
+const shuffle = (list, seed) => {
+  let t = seed;
+  const rnd = () => {
+    t |= 0;
+    t = (t + 0x6d2b79f5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+};
+
 const packs = [];
 for (const c of clouds) {
   const stars = load(c.csv);
+  shuffle(stars, 20260715);
   check(`${c.name.toUpperCase()} star count`, stars.length, c.countLo, c.countHi);
   // The selection's mean proper motion must be the published Cloud value —
   // a foreground-contaminated or mis-centered cut lands elsewhere.

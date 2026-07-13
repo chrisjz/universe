@@ -102,6 +102,25 @@ for (const g of gals) {
   const k = BANDS.findIndex(([a, b]) => g[2] >= a && g[2] < b);
   if (k >= 0) banded[k].push(g);
 }
+// Deterministic in-band shuffle (mulberry32): any PREFIX of a tile is an
+// unbiased random subsample, so the renderer can draw a fraction of a band
+// when it is sub-pixel dense and keep the structure exact — LOD without
+// bias or data loss.
+const shuffle = (list, seed) => {
+  let t = seed;
+  const rnd = () => {
+    t |= 0;
+    t = (t + 0x6d2b79f5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+};
+banded.forEach((list, k) => shuffle(list, 20260713 + k));
 
 // ---- footprint mask: 2°×2° cells, per-cell max comoving depth ----
 // Quantized to 2e24 m (65 Mpc) steps in a u8; 0 = SDSS never looked here.
@@ -170,6 +189,7 @@ writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) +
 // shape at ~6% of the payload (structure survives subsampling; a magnitude
 // cut would erase the far bands instead).
 const fallback = gals.filter((_, i) => i % 17 === 0);
+shuffle(fallback, 20260714);
 writeFileSync('public/sdss-fallback.bin', pack(fallback));
 console.log(`  public/sdss-fallback.bin: ${fallback.length} galaxies`);
 
