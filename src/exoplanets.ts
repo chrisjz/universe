@@ -148,7 +148,12 @@ export async function loadExoplanets(url: string): Promise<Float32Array<ArrayBuf
     out[j + 4] = 0.55 + 0.35 * (1 - t);
     out[j + 5] = 0.95;
     out[j + 6] = 0.55 + 0.4 * t;
-    out[j + 7] = Math.min(0.24 + 0.05 * count, 0.5);
+    // Quiet up close, legible from afar: at solar zoom these dots share
+    // the sky with real stars and the Kepler field's CCD honeycomb reads
+    // as an artifact (a user reported a "weirdly grid-like cluster" — it
+    // is the telescope's detector footprint, drawn by the data itself).
+    // At galactic zoom the layer still shows where humanity has looked.
+    out[j + 7] = Math.min(0.09 + 0.02 * count, 0.18);
   }
   return out;
 }
