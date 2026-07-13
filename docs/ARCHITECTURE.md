@@ -151,6 +151,28 @@ to +1 Gyr/s (`[` and `]` are a throttle, `P` pauses).
   live positions: the Moon's mesh color is a multiplier that dims through
   the penumbra and reddens in the umbra; the Tranquility ground rings share
   the tint, so the ground you stand on dims with the globe.
+- **The interstellar visitors and comet tails**
+  ([`src/comet.ts`](../src/comet.ts)) — 1I/ʻOumuamua, 2I/Borisov, 3I/ATLAS
+  on their real SBDB hyperbolae (two-body vs Horizons: 0.03 AU at 53 AU),
+  and Finson–Probstein dust tails: each syndyne is grains of one β flying
+  Kepler orbits under μ(1−β) via a universal-variable propagator, plus the
+  solar-wind-aberrated ion tail. Activity follows sublimation inside
+  ~3.5 AU — Halley is honestly bare until you scrub toward 2061.
+- **Sagittarius A*** ([`src/blackhole.ts`](../src/blackhole.ts)) — the 40 S
+  stars on their published Thiele–Innes orbits (with the measured 12.1′/orbit
+  Schwarzschild precession), the shadow as an opaque sphere of exactly the
+  capture impact parameter √27/2·rs, and per-vertex gravitational lensing:
+  the point-mass lens equation displaces every sprite and orbit-line vertex,
+  a second draw adds the counter-images that close the Einstein ring.
+- **Exoplanets** ([`src/exoplanets.ts`](../src/exoplanets.ts)) — the NASA
+  Exoplanet Archive as a 4,708-system survey layer, plus Proxima Centauri
+  and TRAPPIST-1 built as destinations (measured radii, axes, periods;
+  each world lit by its own star via a per-mesh light source).
+- **The measured web** ([`src/sdss.ts`](../src/sdss.ts)) — 2.6M SDSS
+  spectroscopic galaxies at comoving depths from the atlas's own ΛCDM,
+  comoving in the SHADER (a per-group scale factor — rewinding contracts
+  them at zero CPU cost). A 2° footprint mask baked from the data itself
+  retreats the procedural placeholder exactly where the survey measured.
 - **Deep time** ([`src/cosmo.ts`](../src/cosmo.ts)) — past ±10,000 years the
   HUD switches to cosmic phrasing, precession and the galactic year engage,
   and the cosmic web (drawn in comoving coordinates) expands with the real
@@ -192,7 +214,9 @@ top.
 
 ## The deep sky
 
-**6.8 million stars**, every one at its measured 3D position, in a 22-byte
+**8.4 million stars** (6.8M Milky Way, 1.6M Gaia DR3 members of the
+Magellanic Clouds — two other galaxies drawn from data), the Milky Way's
+every one at its measured 3D position, in a 22-byte
 record: f32 position ×3, u8 color ×3 (blackbody from the measured color
 index), u8 encoded absolute magnitude, and int16 ×3 quantized 3D space
 velocity (gigameters/year — from Gaia proper motions and radial
@@ -250,9 +274,10 @@ photography is amber, the aerial photograph under the picnic is natural.
 
 ## Rendering
 
-A thin WebGPU renderer ([`src/renderer.ts`](../src/renderer.ts)): five
-pipelines (lit meshes, additive point sprites, orbit/constellation lines,
-sky dome, atmosphere), 4× MSAA, per-fragment log depth, camera-relative
+A thin WebGPU renderer ([`src/renderer.ts`](../src/renderer.ts)): lit
+meshes, additive point sprites (static / proper-motion / in-shader-Kepler
+variants), orbit/constellation lines, sky dome, atmosphere, and the
+far-field bake — 4× MSAA, per-fragment log depth, camera-relative
 uniforms per draw. Textures stream in as they land — the Earth pair, the
 Moon color map, generation-stamped imagery rings — with procedural
 fallbacks so the scene never blocks on the network.

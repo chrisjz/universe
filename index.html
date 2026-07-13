@@ -329,12 +329,16 @@
         #title {
           top: calc(10px + env(safe-area-inset-top, 0px));
           left: 14px;
+          /* Each top corner owns its half: unbounded, the subtitle ran
+             under the focus caption ("real place — imagery © …"). */
+          max-width: 46vw;
         }
         #title h1 {
           font-size: 12px;
         }
         #title p {
           font-size: 8px;
+          line-height: 1.6;
         }
         #focus {
           top: calc(10px + env(safe-area-inset-top, 0px));

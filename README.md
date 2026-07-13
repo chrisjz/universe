@@ -5,7 +5,7 @@
 **The universe in your browser, to true scale** — one continuous scroll across
 **43 orders of magnitude**, from quark to cosmos: the observable universe
 (~10²⁷ m) down through a picnic blanket on the Chicago lakefront and into a
-proton (10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~46 KB gzipped.
+proton (10⁻¹⁶ m). Pure WebGPU, zero runtime dependencies, ~85 kB gzipped.
 
 **Live at [universeatlas.org](https://universeatlas.org/)** — needs a WebGPU
 browser: Chrome, Edge — or Safari on macOS 26 / iOS 26 (older Safari hides
@@ -44,9 +44,11 @@ for portraits.
 Structure is real wherever a catalog reaches, and every dimension that can be
 real already is:
 
-- **The sky** — **6.8 million stars** at their measured 3D positions: 854k
-  ATHYG brights plus a Gaia DR3 faint extension, streamed as hierarchical
-  LOD tiles from [a companion data repo](https://github.com/chrisjz/universe-data)
+- **The sky** — **8.4 million stars**: 854k ATHYG brights plus a Gaia DR3
+  faint extension at their measured 3D positions, and 1.6 million Gaia DR3
+  members of the Magellanic Clouds — two whole other galaxies drawn star
+  by star — streamed as hierarchical LOD tiles from
+  [a companion data repo](https://github.com/chrisjz/universe-data)
   at `data.universeatlas.org`. Colors from measured color indices, brightness
   from apparent magnitude, 22 bytes per star — including its real 3D space
   velocity: scrub deep time and the stars actually move (the Big Dipper
@@ -55,11 +57,15 @@ real already is:
   picnic, like any Chicago scout could tell you), the summer Milky Way climbs
   out of Sagittarius where it should, and the 88 IAU constellations (**C**)
   draw over it — verified against textbook astronomy to under a degree.
-- **The local universe** — out to ~260 Mpc, 43,000 galaxies of the 2MASS
-  Redshift Survey with Virgo, Coma, and the Great Wall at their measured
-  places (the empty band along the Milky Way's plane is the survey's genuine
-  zone of avoidance — dust, not absence). Only beyond the surveys' reach
-  does procedural placeholder (deterministic seed) take over.
+- **The local universe** — 96 Local Group dwarfs, then 43,000 galaxies of
+  the 2MASS Redshift Survey out to ~260 Mpc with Virgo, Coma, and the Great
+  Wall at their measured places, then **2.6 million SDSS spectroscopic
+  galaxies** at their true comoving depths — the survey's twin fans meeting
+  at the Milky Way, the Sloan Great Wall crossing the northern one. Every
+  Messier galaxy carries a particle body at its measured tilt (M31 leans at
+  its true 77°). Only where no survey has reached does procedural
+  placeholder (deterministic seed) take over — and it steps aside exactly
+  where the surveys looked.
 - **Earth** — NASA Blue Marble by day, Black Marble city lights at night,
   Esri World Imagery down to ~2 m/px at street level, real terrain from the
   AWS Terrain Tiles DEM — and you can roam it all (**⇧-drag**), the imagery
@@ -81,6 +87,13 @@ real already is:
   per second and the clock goes cosmic: axial precession (scrub +12,000
   years and **Vega** is the pole star), the sun's 225-million-year galactic
   lap, and the cosmic web expanding with the real ΛCDM scale factor.
+- **The machines, and other worlds** — the ISS and ~170 real satellites on
+  live TLEs, going dark in Earth's shadow; Voyager 1 & 2, New Horizons, and
+  JWST as live destinations; 40,000 Minor Planet Center asteroids; the
+  three interstellar visitors on their true hyperbolae, with comet tails
+  computed as dust dynamics; Proxima b and TRAPPIST-1's seven worlds around
+  their real stars; and **Sagittarius A\*** — the black hole itself, its 40
+  S stars on published orbits, light bending around the shadow.
 - **Honesty about the rest** — every focus shows its provenance in the HUD,
   and pressing **X** opens the seam: measured data keeps its natural colors,
   real-size-but-stylized turns amber, purely illustrative turns
@@ -175,10 +188,13 @@ src/
   sky.ts       true sky orientation: equatorial/galactic -> scene rotations
   stars.ts     star tile streaming: LOD bands, bounding cones, intensity model
   galaxies.ts  the real local universe: 43k 2MASS Redshift Survey galaxies
+  sdss.ts      the measured cosmic web: 2.6M SDSS galaxies at comoving depths
+  magellanic.ts the Clouds from Gaia DR3 members; blackhole.ts  Sgr A* + S stars
+  comet.ts     hyperbolic visitors + Finson–Probstein tails; exoplanets.ts
   cosmo.ts     cosmic time: the ΛCDM scale factor
   terrain.ts   street-level Earth & Moon: imagery + terrain, stitched at runtime
   shaders.ts   WGSL: lit meshes, additive point sprites, orbit lines
-  renderer.ts  thin WebGPU renderer (4 pipelines, 4x MSAA, log depth)
+  renderer.ts  thin WebGPU renderer (mesh/points/lines/sky/atmosphere/dome, 4x MSAA, log depth)
   hud.ts       live scale readout (m → km → AU → ly → Gly) and target buttons
   main.ts      camera, flights, seamless-zoom retargeting, frame loop
 ```
