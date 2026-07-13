@@ -140,13 +140,23 @@ function solveKepler(M: number, e: number): number {
 // (ecliptic (x♈, y_λ90, z_north) maps to scene (x, −z, y): orbits run
 // clockwise seen from scene +y, matching the rest of the engine).
 export function keplerScenePos(el: PlanetElements, T: number, out: [number, number, number]): void {
-  const a = (el.a + el.aDot * T) * AU_M;
-  const e = el.e + el.eDot * T;
-  const i = (el.i + el.iDot * T) * DEG;
+  // The Standish rates are secular-trend fits, valid for centuries; run
+  // LINEARLY for megayears they walk eccentricities past 1 (Mars at
+  // +1.15 Myr, Earth at +2.31 Myr) and sqrt(1−e²) turns the whole frame
+  // chain NaN — a user found the Moon unreachable at +2.5 Myr. In
+  // reality the elements OSCILLATE on ~100 kyr secular cycles, so
+  // freezing the orbit's SHAPE beyond ±3,000 centuries is no less honest
+  // than the linear fiction — and the mean longitude keeps the full
+  // clock, so planets keep orbiting at any epoch (the starYears
+  // precedent: hold what extrapolation can't carry, keep what it can).
+  const Ts = Math.max(-3000, Math.min(3000, T));
+  const a = (el.a + el.aDot * Ts) * AU_M;
+  const e = el.e + el.eDot * Ts;
+  const i = (el.i + el.iDot * Ts) * DEG;
   const L = el.L + el.LDot * T;
-  const peri = el.peri + el.periDot * T;
-  const node = (el.node + el.nodeDot * T) * DEG;
-  const w = (peri - (el.node + el.nodeDot * T)) * DEG; // argument of perihelion
+  const peri = el.peri + el.periDot * Ts;
+  const node = (el.node + el.nodeDot * Ts) * DEG;
+  const w = (peri - (el.node + el.nodeDot * Ts)) * DEG; // argument of perihelion
   let M = ((L - peri) % 360) * DEG;
   if (M > Math.PI) M -= 2 * Math.PI;
   if (M < -Math.PI) M += 2 * Math.PI;

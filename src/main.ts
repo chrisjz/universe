@@ -1196,6 +1196,9 @@ async function start(): Promise<void> {
 
   function flyTo(i: number): void {
     const t = u.targets[i];
+    // Defense in depth: a target whose position math ever turns non-finite
+    // must not poison the camera (log(NaN) never washes out of cam.dist).
+    if (!Number.isFinite(t.pos[0] + t.pos[1] + t.pos[2] + t.dist)) return;
     // Landing on ground that turns: above an hour per second the site
     // sweeps the sky faster than a camera pinned to it can be watched —
     // at a day per second the whole universe wheels once a second, and
