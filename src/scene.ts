@@ -67,6 +67,12 @@ export interface PointGroup {
   // one budget: the pool's total count replaces the group's own in the
   // fraction, or each band would claim the full screen separately.
   lodPool?: { count: number };
+  // Faint star bands: the drawn fraction follows the far-fade itself —
+  // fade < 1 is precisely the regime where the stars are collective
+  // sub-pixel grain, so an unbiased prefix at 1/fade-compensated
+  // intensity is indistinguishable, and the live-band corridor between
+  // the bake's edge and the fade-out stops costing millions of vertices.
+  lodFade?: boolean;
   // Star fields fade out as the camera pulls beyond this extent, so a million
   // additive sprites collapsing into a few pixels don't bloom to white (the
   // procedural galaxy provides the from-a-distance glow instead).
