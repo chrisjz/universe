@@ -783,6 +783,7 @@ async function start(): Promise<void> {
       maxDrift: meta.maxDrift,
       stellar: true,
       farBand,
+      lodFade: farBand, // faint grain: fraction follows the fade (see scene.ts)
       mode: 'moving',
     });
     starCount += instances.length / 11;
@@ -2125,7 +2126,11 @@ async function start(): Promise<void> {
       // aggregate flux (the wedge walls, the Cloud's smudge) is unchanged
       // while the vertex bill follows what is actually visible.
       let frac: number | undefined;
-      if (g.lodExtent !== undefined) {
+      if (g.lodFade && fade < 0.95) {
+        frac = clamp(1.2 * fade, 1 / 32, 1);
+        if (frac >= 1) frac = undefined;
+        else gd[3] = fade / frac; // flux compensation
+      } else if (g.lodExtent !== undefined) {
         const distc = len(rel);
         const cover =
           distc <= g.lodExtent ? 1 : Math.min(1, Math.pow(g.lodExtent / distc / Math.tan(FOV / 2), 2) * 0.5);
