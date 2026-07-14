@@ -935,6 +935,7 @@ async function start(): Promise<void> {
         comoving: true,
         lodExtent: band.extentM,
         lodPool: sdssPool,
+        lodFluxCap: 153381, // the bundled subsample's count (both tiers match)
         prov: 0,
       });
       sdssPool.count += band.count;
@@ -2191,7 +2192,10 @@ async function start(): Promise<void> {
         const pixels = cover * canvas.clientWidth * canvas.clientHeight;
         frac = clamp((1.2 * pixels) / count, 1 / 32, 1);
         if (frac >= 1) frac = undefined;
-        else gd[3] *= 1 / frac; // flux compensation
+        // Flux compensation, up to the group's cap (see scene.ts): a
+        // capped group restores at most lodFluxCap sprites' worth of
+        // aggregate flux, never less than raw (×1) intensity.
+        else gd[3] *= g.lodFluxCap ? clamp(g.lodFluxCap / (count * frac), 1, 1 / frac) : 1 / frac;
       }
       data.groups.push({ index: groupIndex[i], data: gd, frac });
       // The S stars also draw their gravitational counter-images (misc.z):
