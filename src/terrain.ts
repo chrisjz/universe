@@ -16,11 +16,11 @@ const DEM_URL = (z: number, y: number, x: number) =>
 const R_EARTH = 6.371e6;
 const TEX = 1024;
 
-function loadImage(url: string): Promise<ImageBitmap | null> {
+function loadImage(url: string, retried = false): Promise<ImageBitmap | null> {
   return fetch(url)
     .then((r) => (r.ok ? r.blob() : null))
     .then((b) => (b ? createImageBitmap(b) : null))
-    .catch(() => null);
+    .catch(() => (retried ? null : loadImage(url, true))); // one retry: transient drops, not 404s
 }
 
 // Builds the stitched texture for a ring of `sizeMeters` centered at lat/lon.
@@ -48,10 +48,15 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
     ty1 = Math.floor((top + patchPx) / 256);
   const jobs: Promise<void>[] = [];
   let loaded = 0;
-  for (let ty = ty0; ty <= ty1; ty++) {
+  // Web mercator's world: x wraps at the antimeridian, y simply ends at
+  // +-85.05 deg — rows outside [0, 2^z) do not exist (a polar bookmark
+  // once fired 52 requests for tiles like /1/0/-2.png).
+  const nTiles = Math.pow(2, z);
+  for (let ty = Math.max(0, ty0); ty <= Math.min(nTiles - 1, ty1); ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
+      const col = ((tx % nTiles) + nTiles) % nTiles;
       jobs.push(
-        loadImage(TILE_URL(z, ty, tx)).then((img) => {
+        loadImage(TILE_URL(z, ty, col)).then((img) => {
           if (!img) return;
           ctx.drawImage(img, tx * 256 - left, ty * 256 - top);
           img.close();
@@ -81,6 +86,7 @@ export async function fetchRingHeights(
   grid: number,
   waterLevel: number,
 ): Promise<Float32Array | null> {
+  if (Math.abs(lat) > 84) return null; // beyond the mercator DEM's world
   const phi = (lat * Math.PI) / 180;
   const lam = (lon * Math.PI) / 180;
   // Site tangent basis in geocentric coordinates.
@@ -138,10 +144,12 @@ export async function fetchRingHeights(
   ctx.imageSmoothingEnabled = false; // exact pixels — heights, not colors
   const jobs: Promise<void>[] = [];
   let loaded = 0;
-  for (let ty = Math.floor(top / 256); ty * 256 < top + h; ty++) {
+  const nDem = Math.pow(2, z); // same mercator world: clamp rows, wrap columns
+  for (let ty = Math.max(0, Math.floor(top / 256)); ty * 256 < top + h && ty < nDem; ty++) {
     for (let tx = Math.floor(left / 256); tx * 256 < left + w; tx++) {
+      const col = ((tx % nDem) + nDem) % nDem;
       jobs.push(
-        loadImage(DEM_URL(z, ty, tx)).then((img) => {
+        loadImage(DEM_URL(z, ty, col)).then((img) => {
           if (!img) return;
           ctx.drawImage(img, tx * 256 - left, ty * 256 - top);
           img.close();
@@ -187,6 +195,9 @@ export async function streamImageryRings(
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
   keys?: string[],
 ): Promise<void> {
+  // Past ~84 deg the mercator patch math degenerates (85.05 is the map's
+  // edge) and Esri has no polar imagery anyway: keep the honest globe.
+  if (Math.abs(lat) > 84) return;
   for (let k = 0; k < sizes.length; k++) {
     const bmp = await buildPatchTexture(lat, lon, sizes[k]);
     if (bmp) await onReady(keys?.[k] ?? `ring${k}`, bmp);

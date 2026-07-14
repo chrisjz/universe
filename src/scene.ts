@@ -36,7 +36,10 @@ export interface MeshObj {
   emissive: number;
   matId: number; // 0 plain, 1 earth, 2 star, 3 banded, 4 rocky, 5 park ground, 6 prop, 7 picnic blanket
   rim: number; // atmosphere rim strength
-  gridScale: number; // local units -> meters (ground grid)
+  gridScale: number;
+  // Outermost imagery ring: feather the patch edge to alpha 0 so the
+  // stitched square blends into the globe instead of reading as a tile.
+  feather?: boolean; // local units -> meters (ground grid)
   rot?: [V3, V3, V3]; // local axis basis (columns: X, Y, Z -> world), e.g. surface tangent frame
   // The inward journey dives *through* solid objects; each scale layer hides
   // once the camera's focus distance drops below this (the film's cross-fade).
@@ -996,6 +999,7 @@ export function buildUniverse(): Universe {
       matId: 11,
       rim: 1.0, // exposure gain: Viking color already matches its globe map
       gridScale: S,
+      feather: k === 0,
       rot: jzBasis,
       prov: 0.5, // real Viking photography, procedural close-up detail
       tex: `marsring${k}`,
@@ -1182,6 +1186,7 @@ export function buildUniverse(): Universe {
       matId: 11,
       rim: 1.6, // exposure gain: raw WAC vs the albedo-normalized globe map
       gridScale: S,
+      feather: k === 0,
       rot: tqBasis,
       prov: 0.5, // real WAC photography, procedural close-up regolith detail
       tex: `moonring${k}`,
@@ -1302,6 +1307,7 @@ export function buildUniverse(): Universe {
       matId: 8,
       rim: nuv0[3],
       gridScale: S, // misc.y: the shader derives UVs from local pos / S
+      feather: k === 0,
       rot: imgBasis,
       hideBelow: 2e-3,
       prov: 0, // measured: it is literally aerial photography

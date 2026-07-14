@@ -353,10 +353,20 @@ struct FOut {
     alpha = tex.a;
     dif = abs(ndl) * 0.9 + 0.05;
   }
+  if ((matId == 8 || matId == 11) && O.misc.z > 0.5) {
+    // Outermost imagery ring: feather the patch edge into the globe so
+    // the stitched square stops reading as a pasted tile from orbit.
+    // Alpha-to-coverage dithers the fade through the 4x MSAA mask.
+    let ef = max(abs(lp.x), abs(lp.z)) / O.misc.y; // 0 center, 0.5 edge
+    alpha = alpha * (1.0 - smoothstep(0.42, 0.495, ef));
+  }
   var col = base * (amb * ambCol + 1.05 * dif) + emissive;
   col = col + base * O.color.a; // emissive boost (beacons etc.)
 
-  if (O.misc.x > 0.0) { // atmosphere rim
+  // Atmosphere rim — but not for the imagery ring materials, which reuse
+  // misc.x as an exposure gain: the Moon's WAC patch (gain 1.6) was
+  // wearing a blue airglow whenever it neared the limb.
+  if (O.misc.x > 0.0 && matId != 8 && matId != 11) {
     let v = normalize(-in.wp);
     let rim = pow(1.0 - max(dot(n, v), 0.0), 2.6) * (0.15 + dif);
     col = col + vec3f(0.3, 0.5, 1.0) * rim * O.misc.x;
