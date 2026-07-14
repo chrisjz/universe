@@ -67,6 +67,14 @@ export interface PointGroup {
   // one budget: the pool's total count replaces the group's own in the
   // fraction, or each band would claim the full screen separately.
   lodPool?: { count: number };
+  // Ceiling on what flux compensation may restore, as a sprite count:
+  // a group larger than this dims toward the cap at far zoom instead of
+  // compensating back to full-sample brightness. Lets the 2.6M-galaxy
+  // desktop stream present the same far-view surface brightness as the
+  // 153k bundled subsample (whose count equals its cap, so phones are
+  // bit-identical) — launch feedback: the full-flux fans overpowered
+  // the procedural web.
+  lodFluxCap?: number;
   // Faint star bands: the drawn fraction follows the far-fade itself —
   // fade < 1 is precisely the regime where the stars are collective
   // sub-pixel grain, so an unbiased prefix at 1/fade-compensated
