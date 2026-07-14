@@ -205,82 +205,22 @@ src/
 
 ## Roadmap
 
-The founding roadmap — scale engine to Gaia DR3 — is complete
-(<a href="#shipped">shipped ↓</a>). What the atlas would benefit from next,
-by theme:
+The founding roadmap — scale engine to Gaia DR3 — shipped, and so did the
+theme lists that followed it; everything above describes the result. What
+remains genuinely future:
 
-**More real worlds**
-
-- [x] Mars, the third surface site: Jezero crater beside Perseverance — Viking imagery via NASA Mars Trek, MOLA terrain (the site reads −2563 m against the published −2570 m crater floor)
-- [x] Real planet faces: NASA global mosaics for Mercury, Mars, and Jupiter on spinning, correctly tilted globes (Venus and the ice giants stay honestly stylized — their visible faces are featureless)
-- [x] Saturn's rings at true scale: Cassini's radial scan on the real radii — the Cassini division, and the ring plane riding the real pole (nearly edge-on in 2026, as in the real sky)
-- [x] The Galilean moons: Io, Europa, Ganymede, Callisto on orbits fitted to JPL Horizons (held-out residuals under 6,500 km over sixty years), eclipsed for real by Jupiter's shadow — Io laps the planet every 42 hours; real mosaics still to come
-
-**A deeper sky**
-
-- [x] Stars that move: real 3D space velocities (Gaia proper motions + radial velocities) applied in the vertex shader — scrub ±100,000 years and the Big Dipper comes apart; constellation figures honestly retire beyond ±25,000 years
-- [x] Exoplanets: the NASA Exoplanet Archive placed at its real host stars — 4,708 systems as a survey layer whose very shape is honest (it clusters along the Kepler field's stare, because that is where humanity has looked), plus Proxima Centauri and TRAPPIST-1 built as destinations: real star radii and colors, planets with measured radii orbiting on their measured periods, each lit by its own sun (`?goto=trappist-1-e`)
-- [x] Messier destinations: all 110 at real positions, sizes, and Wikidata-median distances — type-tinted glows, searchable and flyable (`?goto=m31`)
-- [x] The Magellanic Clouds from measured stars: Gaia DR3 resolves both — proper-motion-selected members drawn star by star, so the LMC's bar and the SMC's wing are simply where the stars are (`?goto=lmc`); distances from eclipsing binaries (1%), line-of-sight depth honestly stylized
-- [x] The Local Group census: all 96 known dwarf galaxies (McConnachie 2012) at measured positions, distances, and sizes — the volume between us and Andromeda, drawn inhabited (`?goto=fornax`)
-- [x] The neighborhood, in body: every Messier galaxy gets a particle impression on its measured RC3 dimensions and orientation — M31 leans at its true 77°, the Sombrero sits nearly edge-on, Virgo's core is a field of real-oriented ellipticals. Same honesty class as the atlas's own Milky Way: real size, real tilt, illustrative arm pattern
-- [x] Beyond 260 Mpc: 2.6 million SDSS spectroscopic galaxies at their true comoving depths (redshift-banded tiles from the data repo, ΛCDM distances checked before every tile write) — the survey's twin fans meeting at the Milky Way, the Sloan Great Wall crossing the northern one, the procedural placeholder stepping aside exactly where (and as deep as) the survey looked. The cosmic web measured, not imagined; phones stream a structure-preserving 1-in-17 subsample
-- [x] Sagittarius A*: the real black hole at the galactic center — the 40 S stars on their published Kepler ellipses (with the Schwarzschild pericenter advance GRAVITY measured on S2), the shadow at its true 53 μas-from-Earth size, and per-vertex gravitational lensing: stars and orbit lines bend around the hole, counter-images complete the Einstein ring (`?goto=sgr-a`)
-
-**A living solar system**
-
-- [x] Real Keplerian orbits: the planets (and Pluto) on their true eccentric, inclined ellipses — Standish elements solved per frame, verified against JPL Horizons to <0.15°
-- [x] Small bodies from the Minor Planet Center: 40,000 real asteroids (belt, Trojans, Hildas, Kuiper) with Kepler's equation solved per frame in the vertex shader — the Trojan camps cluster at Jupiter's Lagrange points on their own; Ceres and Halley are destinations, Halley on its true retrograde ellipse
-- [x] Low Earth orbit is a place: the ISS, Hubble, Tiangong and the ~170 brightest satellites on real CelesTrak TLEs, propagated per frame with a hand-rolled SGP4 (verified against JPL Horizons to sub-km), going dark in Earth's shadow
-- [x] The deep-space probes: Voyager 1 & 2, New Horizons, JWST as live destinations — Horizons trajectories compressed to 43 kB of Chebyshev segments (residuals < 20,000 km; flybys split fine, cruises coast), so `?goto=voyager-1` answers "where is it right now" truthfully
-- [x] The Moon's shadow on the Earth: the exact two-circle sun coverage per fragment — the umbra crawls Iceland and Spain on 12 Aug 2026 where it really will, the ground darkens through the partial phases, and at totality the sky goes out and the stars come back
-- [x] Comet tails as dust dynamics: Finson–Probstein syndynes — every grain flies a real Kepler orbit under radiation-pressure-reduced gravity — plus the solar-wind-aberrated ion tail, switching on with sublimation inside ~3.5 AU. Scrub to 2061 and Halley grows its tail toward perihelion; 3I/ATLAS wore one through late 2025
-- [x] The interstellar visitors: 1I/ʻOumuamua, 2I/Borisov, and 3I/ATLAS on their real hyperbolae (JPL SBDB elements, verified against Horizons to <0.03 AU) — `?goto=oumuamua` answers where the first known visitor is now
-
-**The experience**
-
-- [ ] The narrated tour: _Powers of Ten_'s beats as captioned stops along the grand tour
-- [ ] Named places: IAU gazetteer labels at the right zooms — Tycho and Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
-- [x] Atmospheric scattering: a real single-scatter Rayleigh + Mie atmosphere for Earth — the blue limb from orbit, blue noons and red sunsets from the picnic, stars fading into daylight, all from one ray-marched integral
-- [x] Mars's sky at Jezero: the same scattering integral with the dust coefficients reversed (red scatters most) — the butterscotch daytime sky and the blue sunset halo, which really are backwards from Earth's
-- [x] Photo mode: **H** toggles the overlay (HUD, labels, orbit rings), **S** saves a 2×-supersampled PNG
-- [ ] The offline atlas: a service worker that keeps visited tiles (PWA)
-- [ ] Free flight: a way to step off the zoom chain's rails — release the focus and wander. The chain is also what makes the atlas navigable hands-free, so this wants to be an explicit mode, not a default
-
-**Under the hood**
-
-- [x] Visual regression CI: nine deterministic views rendered with WebGPU on software Vulkan (Mesa lavapipe) in Actions, pixel-compared against baselines
-- [x] Ephemeris tests against JPL Horizons: every planet within 0.2° at three epochs, on ephemeris changes + weekly
-- [x] Performance, measured first: a headless attribution harness (`scripts/perf-attrib.mjs` — which system costs what, per view), then the fix it pointed at: the far-field star bake, which took every slow view from 10–25 to 43–60 fps pixel-identically, plus adaptive atmosphere sampling on phones. Per-instance Kepler was already in (the 40k small bodies solve in the vertex shader)
-- [ ] Mobile performance tier, the rest of it: device-aware star budget, DPR and texture sizes (the adaptive atmosphere tier shipped with the performance pass above)
-
-<details id="shipped">
-<summary><b>Shipped</b> — the founding roadmap, complete</summary>
-
-- [x] Scale engine: 10²⁷ m → 1 m in one seamless scene
-- [x] Scroll-zoom auto-retargeting (zoom _toward what's next_, hands-free)
-- [x] Real stars: the 300 brightest (HYG catalog), with five named star destinations
-- [x] Click-to-focus: planets, moons, and every named star are clickable destinations
-- [x] Deep star catalog: 854k real stars (ATHYG: Tycho-2 + Gaia DR3), streamed as binary tiles
-- [x] Gaia DR3 milestone: 6.8M stars via hierarchical LOD tiles (magnitude bands × spatial tiles), streamed from a separate data repo
-- [x] Real deep-sky structure: 43k 2MASS Redshift Survey galaxies — Virgo, Coma, the Great Wall — out to ~260 Mpc
-- [x] Time: real orbital motion (adjustable clock, `?speed=`)
-- [x] Real Earth: NASA Blue/Black Marble globe + the _Powers of Ten_ picnic site in Chicago
-- [x] The inward journey: 1 m → 10⁻¹⁶ m, through the blanket to the quarks
-- [x] Earth rotation: real diurnal spin — the picnic keeps true Chicago local time
-- [x] Axial tilt (23.44°) and seasons: real solstice sun, real day lengths
-- [x] True ecliptic–galactic sky orientation: Polaris over the pole, the Milky Way where it really is
-- [x] Street-level Earth: Esri World Imagery rings, down to ~2 m/px over the picnic
-- [x] Terrain elevation: real DEM heights on the imagery rings (AWS Terrain Tiles)
-- [x] Cosmic time scrubbing: 1 Gyr/s clock, axial precession, the galactic year, ΛCDM expansion
-- [x] The honest seam: press **X** to see what is measured and what is imagined
-- [x] Free Earth navigation: pan anywhere on the planet — street-level imagery and terrain follow (`?lat=&lon=`)
-- [x] Reverse time: the clock runs backwards too — rewind and watch the web draw together toward the Big Bang
-- [x] Real eclipses: the Moon's inclined, perturbed orbit puts every 2026 eclipse within ~10 minutes of its true time — crescent sun from Reykjavík, blood moon in Earth's umbra
-- [x] Constellations: the 88 IAU figures and names over the true sky — press **C** at the blanket and Scorpius stands over the July Milky Way
-- [x] Real Moon surface: the LROC WAC globe with true synchronous rotation (libration included), LOLA terrain, and Tranquility Base — the Apollo 11 site — as a second surface site
-
-</details>
+- **The narrated tour** — _Powers of Ten_'s beats as captioned stops along
+  the grand tour
+- **Named places** — IAU gazetteer labels at the right zooms: Tycho and
+  Copernicus on the Moon, Valles Marineris on Mars, cities on Earth
+- **Free flight** — a way to step off the zoom chain's rails: release the
+  focus and wander. The chain is also what makes the atlas navigable
+  hands-free, so this wants to be an explicit mode, not a default
+- **The offline atlas** — a service worker that keeps visited tiles (PWA)
+- **Real faces for the Galilean moons** — the orbits are fitted to Horizons;
+  the surfaces still wear stylized colors
+- **The rest of the mobile tier** — device-aware star budgets and texture
+  sizes (the DPR cap and adaptive atmosphere sampling already shipped)
 
 ## Development
 
@@ -293,8 +233,12 @@ npm run build     # tsc --noEmit && vite build
 ```
 
 Pre-commit hooks (husky + lint-staged) run ESLint and Prettier on staged
-files; CI runs lint, format check, typecheck, and build on every PR, and
-deploys `main` to [universeatlas.org](https://universeatlas.org/). Star
+files; CI runs lint, format check, typecheck, and build on every PR —
+plus visual regression: ten deterministic views rendered with real WebGPU
+on software Vulkan (Mesa lavapipe) and pixel-compared against baselines.
+The ephemeris is tested against live JPL Horizons (every planet within
+0.2° at three epochs) on ephemeris changes and weekly. Merges to `main`
+deploy to [universeatlas.org](https://universeatlas.org/). Star
 tiles deploy separately from
 [chrisjz/universe-data](https://github.com/chrisjz/universe-data). The data
 pipelines (all regenerable from public sources) are documented in
