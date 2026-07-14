@@ -93,9 +93,9 @@
         color: #e8eef8;
       }
       #title p {
-        font-size: 10px;
+        font-size: 11px;
         letter-spacing: 0.18em;
-        color: #6d7a8f;
+        color: #8494ab;
         margin-top: 5px;
       }
       #scale {
@@ -108,21 +108,21 @@
         font-weight: 500;
       }
       #scale .exp {
-        font-size: 11px;
+        font-size: 12px;
         color: #8494ab;
         margin-top: 3px;
         letter-spacing: 0.08em;
       }
       #scale .ctx {
-        font-size: 10px;
+        font-size: 11px;
         color: #5f96d8;
         margin-top: 6px;
         letter-spacing: 0.25em;
         text-transform: uppercase;
       }
       #scale .time {
-        font-size: 10px;
-        color: #6d7a8f;
+        font-size: 11px;
+        color: #8494ab;
         margin-top: 8px;
         letter-spacing: 0.1em;
       }
@@ -158,8 +158,8 @@
         letter-spacing: 0.15em;
       }
       #focus .src {
-        font-size: 9px;
-        color: #7d8ba1;
+        font-size: 10.5px;
+        color: #93a1b8;
         margin-top: 4px;
         letter-spacing: 0.12em;
       }
@@ -208,8 +208,8 @@
         color: #5fd4f0;
       }
       #focus .hint {
-        font-size: 10px;
-        color: #6d7a8f;
+        font-size: 10.5px;
+        color: #8494ab;
         margin-top: 5px;
         letter-spacing: 0.1em;
       }
@@ -239,7 +239,7 @@
       }
       #targets button {
         font-family: inherit;
-        font-size: 10px;
+        font-size: 11px;
         letter-spacing: 0.12em;
         padding: 7px 12px;
         background: rgba(20, 28, 42, 0.72);
@@ -261,6 +261,52 @@
         margin-left: auto;
         border-color: rgba(200, 160, 90, 0.45);
         color: #e8c890;
+      }
+      /* The route, vertical: on narrow screens the scroller collapses to
+         a ☰ PLACES button and this panel — 17 stops, one tap away. */
+      #places {
+        position: fixed;
+        left: 14px;
+        right: 14px;
+        bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+        max-height: 55vh;
+        overflow-y: auto;
+        display: none;
+        flex-direction: column;
+        gap: 5px;
+        padding: 10px;
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+        background: rgba(14, 20, 32, 0.94);
+        border: 1px solid rgba(110, 140, 190, 0.45);
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        z-index: 15;
+      }
+      #places.open {
+        display: flex;
+      }
+      #places button {
+        font-family: inherit;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-align: left;
+        padding: 10px 12px;
+        background: rgba(20, 28, 42, 0.72);
+        color: #aebdd2;
+        border: 1px solid rgba(110, 140, 190, 0.25);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #places button.active {
+        border-color: #5f96d8;
+        color: #cfe4ff;
+      }
+      /* PLACES lives on desktop too: the row scrolls by trackpad but a
+         mouse has no horizontal wheel, and the later stops overflow. */
+      #places {
+        left: auto;
+        width: 340px;
+        right: 88px;
       }
       #toast {
         position: fixed;
@@ -344,6 +390,28 @@
       }
       /* Small screens: tighter type, no hint line, scrolling button bar. */
       @media (max-width: 760px) {
+        #targets .scroller {
+          display: none;
+        }
+        #targets .places-btn {
+          flex: 1;
+        }
+        #places {
+          left: 14px;
+          width: auto;
+          right: 14px;
+        }
+        #targets button,
+        #scale .timectl button {
+          padding: 10px 12px;
+          font-size: 12px;
+        }
+        #scale .timectl button {
+          width: 38px;
+        }
+        #focus .hint {
+          display: none; /* twelve shortcuts have no home on a phone */
+        }
         /* At least 16px or iOS zooms the whole page in on focus — and the
            zoom outlives the keyboard, stranding the bottom bar off-screen. */
         #search input {
@@ -479,15 +547,14 @@
         <button data-t="slower" title="slower ( [ )">−</button>
         <button data-t="pause" title="pause ( P )">⏸</button>
         <button data-t="faster" title="faster ( ] )">+</button>
-        <button data-t="share" title="share this view ( B )">⧉</button>
       </div>
     </div>
     <div class="hud" id="focus">
       <div class="name">—</div>
       <div class="src">—</div>
       <div class="hint">
-        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · B share · X seam · C constellations
-        · T tour · H overlay · S photo
+        click focus · 2×click fly · drag orbit · scroll zoom<br />
+        [ ] time · P pause · B share · T tour · X seam · C constellations · H overlay · S photo
       </div>
     </div>
     <div class="hud" id="seam">
@@ -496,6 +563,7 @@
       <span class="i">cyan: illustrative</span>
     </div>
     <div class="hud" id="targets"></div>
+    <div id="places"></div>
     <div id="search">
       <input type="text" placeholder="search the universe — try “arcturus”" autocomplete="off" spellcheck="false" />
       <ul></ul>

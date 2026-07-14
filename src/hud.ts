@@ -76,7 +76,7 @@ export class Hud {
   private srcEl = document.querySelector('#focus .src') as HTMLElement;
   private seamEl = document.getElementById('seam') as HTMLElement;
   private seamBtn!: HTMLButtonElement;
-  private buttons = new Map<number, HTMLButtonElement>();
+  private buttons = new Map<number, HTMLButtonElement[]>();
   private tourBtn!: HTMLButtonElement;
 
   private searchEl = document.getElementById('search') as HTMLElement;
@@ -111,6 +111,13 @@ export class Hud {
     searchBtn.title = 'search ( / )';
     searchBtn.addEventListener('click', () => this.openSearch());
     bar.appendChild(searchBtn);
+    // Share lives with the other view actions — it was born beside the
+    // time controls only because that row already had buttons.
+    const shareBtn = document.createElement('button');
+    shareBtn.textContent = '⧉';
+    shareBtn.title = 'share this view ( B )';
+    shareBtn.addEventListener('click', () => onTime('share'));
+    bar.appendChild(shareBtn);
     this.seamBtn = document.createElement('button');
     this.seamBtn.textContent = '◐';
     this.seamBtn.title = 'the honest seam: what is measured vs imagined ( X )';
@@ -124,15 +131,32 @@ export class Hud {
     const scroller = document.createElement('div');
     scroller.className = 'scroller';
     bar.appendChild(scroller);
+    // Narrow screens collapse the route into a PLACES panel: seventeen
+    // stops behind a horizontal drag were effectively invisible on a
+    // phone (user feedback). Same buttons, vertical, one tap away.
+    const placesBtn = document.createElement('button');
+    placesBtn.textContent = '☰ PLACES';
+    placesBtn.className = 'places-btn';
+    const placesPanel = document.getElementById('places')!;
+    placesBtn.addEventListener('click', () => {
+      placesPanel.classList.toggle('open');
+    });
+    bar.appendChild(placesBtn);
     // Plain names, in tour order — the bar has outgrown number-key labels
     // (the tour keeps adding stops; search (/) reaches everything by name).
     targets.forEach((t, i) => {
       if (t.hidden && !t.button) return;
-      const b = document.createElement('button');
-      b.textContent = t.name;
-      b.addEventListener('click', () => onTarget(i));
-      scroller.appendChild(b);
-      this.buttons.set(i, b);
+      const mk = (parent: HTMLElement): HTMLButtonElement => {
+        const b = document.createElement('button');
+        b.textContent = t.name;
+        b.addEventListener('click', () => {
+          placesPanel.classList.remove('open');
+          onTarget(i);
+        });
+        parent.appendChild(b);
+        return b;
+      };
+      this.buttons.set(i, [mk(scroller), mk(placesPanel)]);
     });
     this.tourBtn = document.createElement('button');
     this.tourBtn.textContent = 'T TOUR';
@@ -253,7 +277,7 @@ export class Hud {
     this.timeEl.textContent = (paused ? `${date} · paused` : `${date} · ${speedLabel}`) + stars;
     const pauseBtn = document.querySelector<HTMLButtonElement>('#scale .timectl button[data-t="pause"]');
     if (pauseBtn) pauseBtn.textContent = paused ? '▶' : '⏸';
-    for (const [i, b] of this.buttons) b.classList.toggle('active', i === activeTarget);
+    for (const [i, bs] of this.buttons) for (const b of bs) b.classList.toggle('active', i === activeTarget);
     this.tourBtn.textContent = touring ? 'T STOP' : 'T TOUR';
   }
 }

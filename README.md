@@ -111,7 +111,7 @@ real already is:
 | **⇧-drag**    | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                        |
 | **↑ ↓ ← →**   | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                              |
 | **Enter**     | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                     |
-| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — universe to the fiber, Jezero and Tranquility included        |
+| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — or open **☰ PLACES** for the whole route as a list           |
 | **B**         | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                  |
 | **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
 | **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
