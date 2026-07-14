@@ -220,6 +220,12 @@ export interface Universe {
       R: number; // the site's datum radius (LOLA reference + site elevation)
       dimpleMoon: (depth: number) => void;
       gnomonicEUN: (p: V3) => [number, number] | null; // p relative the Moon's center
+      roamR: number;
+      setRoam: (latDeg: number, lonDeg: number) => void;
+      setRoamFromWorld: (w: V3) => void;
+      roamMove: (delta: V3) => void;
+      roamLatLon: () => [number, number];
+      setRoamImagery: (gen: number) => string[];
     };
     // Jezero crater (fixed site — baked MOLA terrain, streamed Viking imagery).
     mars: {
@@ -228,6 +234,12 @@ export interface Universe {
       R: number;
       dimpleMars: (depth: number) => void;
       gnomonicEUN: (p: V3) => [number, number] | null; // p relative Mars's center
+      roamR: number;
+      setRoam: (latDeg: number, lonDeg: number) => void;
+      setRoamFromWorld: (w: V3) => void;
+      roamMove: (delta: V3) => void;
+      roamLatLon: () => [number, number];
+      setRoamImagery: (gen: number) => string[];
     };
   };
 }
@@ -993,6 +1005,102 @@ export function buildUniverse(): Universe {
       for (let k = 0; k < 3; k++) a.vec[k] = jzEast[k] * a.eun[0] + jzUp[k] * a.eun[1] + jzNorth[k] * a.eun[2];
     }
   });
+  // Roam imagery rings: four flat datum-sphere rings per roaming body,
+  // re-streamed from NASA Trek wherever the roam point settles (Trek is
+  // global equirectangular — unlike Esri's mercator, it serves the whole
+  // planet). Texture keys carry a generation stamp so stale streams from
+  // an abandoned anchor are simply never referenced again.
+  const roamRings = (
+    body: 'mnr' | 'msr',
+    sizes: number[],
+    R: number,
+    frame: Frame,
+    pos: V3,
+    basis: [V3, V3, V3],
+    exposure: number,
+  ): { meshes: MeshObj[]; setImagery: (gen: number) => string[] } => {
+    const ms: MeshObj[] = [];
+    sizes.forEach((S, k) => {
+      const g = ringGeometry(S, null, R, k < sizes.length - 1);
+      patchGeoms.push({ name: `${body}ring${k}`, verts: g.verts, indices: g.indices });
+      const m: MeshObj = {
+        frame,
+        pos,
+        mesh: `${body}ring${k}`,
+        size: [1, 1, 1],
+        bound: S * 0.71,
+        color: [1, 1, 1],
+        emissive: 0,
+        matId: 11,
+        rim: exposure,
+        gridScale: S,
+        feather: k === 0,
+        rot: basis,
+        prov: 0.5,
+        tex: `${body}ring${k}@0`,
+      };
+      ms.push(m);
+      meshes.push(m);
+    });
+    return {
+      meshes: ms,
+      setImagery: (gen: number): string[] => ms.map((m, k) => (m.tex = `${body}ring${k}@${gen}`)),
+    };
+  };
+
+  // Free Mars navigation: the roam point rides marsSpinBasis like Jezero.
+  const msr = { lat: JZ_LAT_DEG * DEG, lon: JZ_LON_DEG * DEG };
+  const msrFixedE: V3 = [0, 0, 0],
+    msrFixedU: V3 = [0, 0, 0],
+    msrFixedN: V3 = [0, 0, 0];
+  fixedBasis(msr.lat, msr.lon, msrFixedE, msrFixedU, msrFixedN);
+  const msrEast: V3 = [...msrFixedE],
+    msrUp: V3 = [...msrFixedU],
+    msrNorth: V3 = [...msrFixedN];
+  const msrBasis: [V3, V3, V3] = [msrEast, msrUp, msrNorth];
+  const msrPos: V3 = [0, 0, 0];
+  const msrRingPos: V3 = [0, 0, 0];
+  const refreshMarsRoam = (): void => {
+    const B = marsSpinBasis;
+    const rot = (v: V3, out: V3): void => {
+      for (let k = 0; k < 3; k++) out[k] = B[0][k] * v[0] + B[1][k] * v[1] + B[2][k] * v[2];
+    };
+    rot(msrFixedE, msrEast);
+    rot(msrFixedU, msrUp);
+    rot(msrFixedN, msrNorth);
+    for (let k = 0; k < 3; k++) {
+      msrPos[k] = msrUp[k] * (R_MARS_REF + 1.5);
+      msrRingPos[k] = msrUp[k] * R_MARS_REF;
+    }
+  };
+  const setMarsRoam = (latDeg: number, lonDeg: number): void => {
+    msr.lat = Math.max(-89.9, Math.min(89.9, latDeg)) * DEG;
+    msr.lon = ((((lonDeg + 180) % 360) + 360) % 360) * DEG - Math.PI;
+    fixedBasis(msr.lat, msr.lon, msrFixedE, msrFixedU, msrFixedN);
+    refreshMarsRoam();
+  };
+  postSpin.push(refreshMarsRoam);
+  const msrRings = roamRings('msr', MARS_RINGS, R_MARS_REF, marsFrame, msrRingPos, msrBasis, 1.0);
+  const marsRoamFromWorld = (w: V3): void => {
+    const B = marsSpinBasis;
+    const f: V3 = [d3(w, B[0]), d3(w, B[1]), d3(w, B[2])];
+    const l = Math.max(Math.hypot(f[0], f[1], f[2]), 1e-9);
+    setMarsRoam(Math.asin(Math.max(-1, Math.min(1, f[1] / l))) / DEG, Math.atan2(-f[2], f[0]) / DEG);
+  };
+  const marsRoamMove = (delta: V3): void => {
+    const B = marsSpinBasis;
+    const f: V3 = [d3(delta, B[0]), d3(delta, B[1]), d3(delta, B[2])];
+    const pdir = fixedDir(msr.lat, msr.lon);
+    const along = d3(f, pdir);
+    const t: V3 = [f[0] - pdir[0] * along, f[1] - pdir[1] * along, f[2] - pdir[2] * along];
+    const m = Math.hypot(t[0], t[1], t[2]);
+    if (m < 1e-9) return;
+    const ang = m / R_MARS_REF;
+    const ca = Math.cos(ang),
+      sa = Math.sin(ang) / m;
+    const p2: V3 = [pdir[0] * ca + t[0] * sa, pdir[1] * ca + t[1] * sa, pdir[2] * ca + t[2] * sa];
+    setMarsRoam(Math.asin(Math.max(-1, Math.min(1, p2[1]))) / DEG, Math.atan2(-p2[2], p2[0]) / DEG);
+  };
   MARS_RINGS.forEach((S, k) => {
     const g = ringGeometry(S, null, R_JZ, k < MARS_RINGS.length - 1);
     patchGeoms.push({ name: `marsring${k}`, verts: g.verts, indices: g.indices });
@@ -1156,6 +1264,62 @@ export function buildUniverse(): Universe {
   // normal (+Y — the real axis is just 1.5° off it). main.ts drives ψ from
   // the Moon's MEAN longitude, so the near side faces Earth on average and
   // the ecliptic-longitude residuals appear as true longitude libration.
+  // Free Moon navigation: a movable roam point (same idea as Earth's).
+  // Fixed-frame vectors are rewritten by setMoonRoam; the live copies ride
+  // the same synchronous rotation as the site. Terrain away from the
+  // baked Tranquility fields is honestly the smooth LOLA datum sphere.
+  const mnr = { lat: TQ_LAT_DEG * DEG, lon: TQ_LON_DEG * DEG, psi: 0 };
+  const mnrFixedE: V3 = [0, 0, 0],
+    mnrFixedU: V3 = [0, 0, 0],
+    mnrFixedN: V3 = [0, 0, 0];
+  fixedBasis(mnr.lat, mnr.lon, mnrFixedE, mnrFixedU, mnrFixedN);
+  const mnrEast: V3 = [...mnrFixedE],
+    mnrUp: V3 = [...mnrFixedU],
+    mnrNorth: V3 = [...mnrFixedN];
+  const mnrBasis: [V3, V3, V3] = [mnrEast, mnrUp, mnrNorth];
+  const mnrPos: V3 = [0, 0, 0]; // target focus, datum + 1.5 m
+  const mnrRingPos: V3 = [0, 0, 0]; // ring meshes, at the datum
+  const refreshMoonRoam = (): void => {
+    const c = Math.cos(mnr.psi),
+      s = Math.sin(mnr.psi);
+    const rot = (v0: V3, out: V3): void => {
+      out[0] = v0[0] * c + v0[2] * s;
+      out[1] = v0[1];
+      out[2] = -v0[0] * s + v0[2] * c;
+    };
+    rot(mnrFixedE, mnrEast);
+    rot(mnrFixedU, mnrUp);
+    rot(mnrFixedN, mnrNorth);
+    for (let k = 0; k < 3; k++) {
+      mnrPos[k] = mnrUp[k] * (R_MOON + 1.5);
+      mnrRingPos[k] = mnrUp[k] * R_MOON;
+    }
+  };
+  const setMoonRoam = (latDeg: number, lonDeg: number): void => {
+    mnr.lat = Math.max(-89.9, Math.min(89.9, latDeg)) * DEG;
+    mnr.lon = ((((lonDeg + 180) % 360) + 360) % 360) * DEG - Math.PI;
+    fixedBasis(mnr.lat, mnr.lon, mnrFixedE, mnrFixedU, mnrFixedN);
+    refreshMoonRoam();
+  };
+  const mnrRings = roamRings('mnr', MOON_RINGS, R_MOON, moonFrame, mnrRingPos, mnrBasis, 1.6);
+  const moonRoamFromWorld = (w: V3): void => {
+    const f: V3 = [d3(w, moonRot[0]), d3(w, moonRot[1]), d3(w, moonRot[2])];
+    const l = Math.max(Math.hypot(f[0], f[1], f[2]), 1e-9);
+    setMoonRoam(Math.asin(Math.max(-1, Math.min(1, f[1] / l))) / DEG, Math.atan2(-f[2], f[0]) / DEG);
+  };
+  const moonRoamMove = (delta: V3): void => {
+    const f: V3 = [d3(delta, moonRot[0]), d3(delta, moonRot[1]), d3(delta, moonRot[2])];
+    const pdir = fixedDir(mnr.lat, mnr.lon);
+    const along = d3(f, pdir);
+    const t: V3 = [f[0] - pdir[0] * along, f[1] - pdir[1] * along, f[2] - pdir[2] * along];
+    const m = Math.hypot(t[0], t[1], t[2]);
+    if (m < 1e-9) return;
+    const ang = m / R_MOON;
+    const ca = Math.cos(ang),
+      sa = Math.sin(ang) / m;
+    const p2: V3 = [pdir[0] * ca + t[0] * sa, pdir[1] * ca + t[1] * sa, pdir[2] * ca + t[2] * sa];
+    setMoonRoam(Math.asin(Math.max(-1, Math.min(1, p2[1]))) / DEG, Math.atan2(-p2[2], p2[0]) / DEG);
+  };
   const orientMoon = (psi: number): void => {
     const c = Math.cos(psi),
       s = Math.sin(psi);
@@ -1175,6 +1339,8 @@ export function buildUniverse(): Universe {
       a.vec[1] = tqEast[1] * a.eun[0] + tqUp[1] * a.eun[1] + tqNorth[1] * a.eun[2];
       a.vec[2] = tqEast[2] * a.eun[0] + tqUp[2] * a.eun[1] + tqNorth[2] * a.eun[2];
     }
+    mnr.psi = psi;
+    refreshMoonRoam();
   };
   // Street-level Moon: WAC imagery rings curved to the site's datum sphere,
   // sharing the moon mesh's color (the eclipse tint dims the ground too).
@@ -2509,6 +2675,32 @@ export function buildUniverse(): Universe {
       basis: roamBasis,
       hidden: true,
     },
+    {
+      name: 'MOON \u00b7 ROAMING',
+      slug: 'moonroam',
+      source: 'real place \u2014 LRO WAC imagery, LOLA datum sphere',
+      frame: moonFrame,
+      pos: mnrPos,
+      dist: 2e5,
+      pitch: 0.35,
+      parent: 'moon',
+      exit: 1.5e7,
+      basis: mnrBasis,
+      hidden: true,
+    },
+    {
+      name: 'MARS \u00b7 ROAMING',
+      slug: 'marsroam',
+      source: 'real place \u2014 Viking imagery, areoid datum sphere',
+      frame: marsFrame,
+      pos: msrPos,
+      dist: 2e5,
+      pitch: 0.35,
+      parent: 'mars',
+      exit: 2.9e7,
+      basis: msrBasis,
+      hidden: true,
+    },
   ];
 
   // No two destinations may share a slug — a duplicate silently hijacks
@@ -2580,6 +2772,12 @@ export function buildUniverse(): Universe {
           if (py <= 0) return null;
           return [(R_TQ * d3(p, tqEast)) / py, (R_TQ * d3(p, tqNorth)) / py];
         },
+        roamR: R_MOON,
+        setRoam: setMoonRoam,
+        setRoamFromWorld: moonRoamFromWorld,
+        roamMove: moonRoamMove,
+        roamLatLon: (): [number, number] => [mnr.lat / DEG, mnr.lon / DEG],
+        setRoamImagery: mnrRings.setImagery,
       },
       mars: {
         site: [JZ_LAT_DEG, JZ_LON_DEG],
@@ -2591,6 +2789,12 @@ export function buildUniverse(): Universe {
           if (py <= 0) return null;
           return [(R_JZ * d3(p, jzEast)) / py, (R_JZ * d3(p, jzNorth)) / py];
         },
+        roamR: R_MARS_REF,
+        setRoam: setMarsRoam,
+        setRoamFromWorld: marsRoamFromWorld,
+        roamMove: marsRoamMove,
+        roamLatLon: (): [number, number] => [msr.lat / DEG, msr.lon / DEG],
+        setRoamImagery: msrRings.setImagery,
       },
     },
   };

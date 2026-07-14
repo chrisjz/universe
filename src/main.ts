@@ -1149,16 +1149,19 @@ async function start(): Promise<void> {
       // terrain follow), not a teleport to Chicago from over Australia
       // (user-reported). Un-aimed descents — the held-forward journey —
       // keep the canonical picnic landing; near-home aims do too.
-      if (t.slug === 'earth' && userAimed) {
-        const p = surfacePointUnderView();
+      const rbDesc = roamBody(t.slug);
+      if (rbDesc && t.slug === rbDesc.slugs[0] && userAimed) {
+        const p = surfacePointUnderView(rbDesc);
         if (p) {
-          u.nav.setRoamFromWorld(p);
-          if (roamHomeDistM() > 200e3) {
-            flyTo(roamIdx);
+          rbDesc.setRoamFromWorld(p);
+          if (roamHomeDistM(rbDesc) > 200e3) {
+            flyTo(rbDesc.roamIdx);
             const f = flight as Flight | null;
             if (f) f.auto = true;
-            focusName = roamName();
-            anchorImagery(...u.nav.roamLatLon());
+            focusName = roamName(rbDesc);
+            const [rla, rlo] = rbDesc.roamLatLon();
+            rbDesc.anchored = [rla, rlo];
+            rbDesc.anchor(rla, rlo);
             return;
           }
         }
@@ -1333,10 +1336,12 @@ async function start(): Promise<void> {
   function shareView(): void {
     const t = u.targets[activeTarget];
     const q = new URLSearchParams();
-    if (t.slug === 'roam') {
-      const [lat, lon] = u.nav.roamLatLon();
+    const rbShare = roamBody(t.slug);
+    if (rbShare && t.slug === rbShare.slugs[2]) {
+      const [lat, lon] = rbShare.roamLatLon();
       q.set('lat', lat.toFixed(5));
       q.set('lon', lon.toFixed(5));
+      if (rbShare.label !== 'EARTH') q.set('body', rbShare.label.toLowerCase());
     } else {
       q.set('goto', t.slug);
     }
@@ -1403,9 +1408,97 @@ async function start(): Promise<void> {
   const earthFrameRef = u.targets[bySlug.get('earth')!].frame;
   let lastPanAt = -1e9;
 
+  // ---- roaming, per body: Earth's free navigation, generalized ----
+  // Each roamable world names its slugs, radius, frame, nav verbs, home
+  // site, and how imagery follows the roam point. Earth keeps its Esri +
+  // DEM machinery; the Moon and Mars stream Trek patches onto their
+  // honest datum spheres (no DEM source exists off-site).
+  interface RoamBody {
+    label: string;
+    slugs: [string, string, string]; // [body, site, roam]
+    R: number;
+    frameRef: Frame;
+    roamIdx: number;
+    siteIdx: number;
+    home: [number, number];
+    setRoam: (lat: number, lon: number) => void;
+    setRoamFromWorld: (w: V3) => void;
+    roamMove: (d: V3) => void;
+    roamLatLon: () => [number, number];
+    anchor: (lat: number, lon: number) => void;
+    anchored: [number, number];
+    anchorMaxDist: number;
+  }
+  let trekGen = 0;
+  const trekAnchor =
+    (body: 'moon' | 'mars', stream: typeof streamMoonRings) =>
+    (lat: number, lon: number): void => {
+      const keys = u.nav[body].setRoamImagery(++trekGen);
+      void stream(
+        lat,
+        lon,
+        u.nav[body].ringSizes,
+        async (key, bmp) => {
+          await renderer.addTexture(key, bmp);
+        },
+        keys,
+      );
+    };
+  const ROAM_BODIES: RoamBody[] = [
+    {
+      label: 'EARTH',
+      slugs: ['earth', 'surface', 'roam'],
+      R: R_E,
+      frameRef: earthFrameRef,
+      roamIdx,
+      siteIdx: surfaceIdx,
+      home: [u.nav.home[0], u.nav.home[1]],
+      setRoam: u.nav.setRoam,
+      setRoamFromWorld: u.nav.setRoamFromWorld,
+      roamMove: u.nav.roamMove,
+      roamLatLon: u.nav.roamLatLon,
+      anchor: (lat, lon) => anchorImagery(lat, lon),
+      anchored: [u.nav.home[0], u.nav.home[1]],
+      anchorMaxDist: 4e6,
+    },
+    {
+      label: 'MOON',
+      slugs: ['moon', 'tranquility', 'moonroam'],
+      R: u.nav.moon.roamR,
+      frameRef: u.moonFrame,
+      roamIdx: bySlug.get('moonroam')!,
+      siteIdx: bySlug.get('tranquility')!,
+      home: [u.nav.moon.site[0], u.nav.moon.site[1]],
+      setRoam: u.nav.moon.setRoam,
+      setRoamFromWorld: u.nav.moon.setRoamFromWorld,
+      roamMove: u.nav.moon.roamMove,
+      roamLatLon: u.nav.moon.roamLatLon,
+      anchor: trekAnchor('moon', streamMoonRings),
+      anchored: [1e9, 1e9], // nothing anchored yet
+      anchorMaxDist: 2e6,
+    },
+    {
+      label: 'MARS',
+      slugs: ['mars', 'jezero', 'marsroam'],
+      R: u.nav.mars.roamR,
+      frameRef: u.marsFrame,
+      roamIdx: bySlug.get('marsroam')!,
+      siteIdx: bySlug.get('jezero')!,
+      home: [u.nav.mars.site[0], u.nav.mars.site[1]],
+      setRoam: u.nav.mars.setRoam,
+      setRoamFromWorld: u.nav.mars.setRoamFromWorld,
+      roamMove: u.nav.mars.roamMove,
+      roamLatLon: u.nav.mars.roamLatLon,
+      anchor: trekAnchor('mars', streamMarsRings),
+      anchored: [1e9, 1e9],
+      anchorMaxDist: 2e6,
+    },
+  ];
+  const roamBody = (slug: string): RoamBody | null => ROAM_BODIES.find((rb) => rb.slugs.includes(slug)) ?? null;
+  const isRoamSlug = (slug: string): boolean => ROAM_BODIES.some((rb) => rb.slugs[2] === slug);
   const roamable = (): boolean => {
-    const slug = u.targets[activeTarget].slug;
-    return (slug === 'earth' || slug === 'surface' || slug === 'roam') && cam.dist < 1.2e8;
+    const rb = roamBody(u.targets[activeTarget].slug);
+    return rb !== null && cam.dist < 19 * rb.R;
   };
   // Has the user steered the view since the last programmatic arrival?
   // The zoom chain's Earth descent honors an AIMED view (roam to what you
@@ -1426,18 +1519,18 @@ async function start(): Promise<void> {
     if (R === undefined || cam.dist <= R) return 1;
     return clamp((cam.dist - R) / cam.dist, 0.05, 1);
   };
-  const roamName = (): string => {
-    const [la, lo] = u.nav.roamLatLon();
+  const roamName = (rb: RoamBody): string => {
+    const [la, lo] = rb.roamLatLon();
     const f = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(3)}°${v >= 0 ? pos : neg}`;
-    return `EARTH · ${f(la, 'N', 'S')} ${f(lo, 'E', 'W')}`;
+    return `${rb.label} · ${f(la, 'N', 'S')} ${f(lo, 'E', 'W')}`;
   };
-  // The point on the sphere under the view center; null if the view misses.
-  function surfacePointUnderView(): V3 | null {
+  // The point on the body's sphere under the view center; null on a miss.
+  function surfacePointUnderView(rb: RoamBody): V3 | null {
     const { fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp, cam.tilt);
     const camPos = add(cam.focus, scale(camDir(), cam.dist));
-    const c = relPos(cam.frame, camPos, earthFrameRef, [0, 0, 0]);
+    const c = relPos(cam.frame, camPos, rb.frameRef, [0, 0, 0]);
     const b = dot(c, fwd);
-    const disc = b * b - (dot(c, c) - R_E * R_E);
+    const disc = b * b - (dot(c, c) - rb.R * rb.R);
     if (disc < 0) return null;
     const t = -b - Math.sqrt(disc);
     if (t <= 0) return null;
@@ -1446,32 +1539,36 @@ async function start(): Promise<void> {
   // Enter roam mode (if not already there), seeded under the current view.
   function beginRoam(): boolean {
     const slug = u.targets[activeTarget].slug;
-    if (slug === 'roam') return true;
-    if (slug === 'surface') {
-      u.nav.setRoam(u.nav.home[0], u.nav.home[1]);
+    const rb = roamBody(slug);
+    if (!rb) return false;
+    if (slug === rb.slugs[2]) return true;
+    if (slug === rb.slugs[1]) {
+      rb.setRoam(rb.home[0], rb.home[1]);
     } else {
-      const p = surfacePointUnderView();
+      const p = surfacePointUnderView(rb);
       if (!p) return false;
-      u.nav.setRoamFromWorld(p);
+      rb.setRoamFromWorld(p);
     }
     flight = null;
     touring = false;
-    retargetTo(roamIdx);
-    focusName = roamName();
+    retargetTo(rb.roamIdx);
+    focusName = roamName(rb);
     return true;
   }
   // Grab-the-ground pan: slide the roam point by a screen-space delta.
   function panBy(dx: number, dy: number): void {
+    const rb = roamBody(u.targets[activeTarget].slug);
+    if (!rb) return;
     const mpp = (2 * cam.dist * Math.tan(FOV / 2)) / canvas.clientHeight;
     const { right, fwd } = viewRotation(cam.yaw, cam.pitch, activeBasis(), viewUp);
-    u.nav.roamMove(add(scale(right, -dx * mpp), scale(fwd, dy * mpp)));
+    rb.roamMove(add(scale(right, -dx * mpp), scale(fwd, dy * mpp)));
     lastPanAt = performance.now();
-    focusName = roamName();
+    focusName = roamName(rb);
   }
-  const roamHomeDistM = (): number => {
-    const [la, lo] = u.nav.roamLatLon();
-    const dLat = (((la - u.nav.home[0]) * Math.PI) / 180) * R_E;
-    const dLon = (((lo - u.nav.home[1]) * Math.PI) / 180) * R_E * Math.cos((la * Math.PI) / 180);
+  const roamHomeDistM = (rb: RoamBody): number => {
+    const [la, lo] = rb.roamLatLon();
+    const dLat = (((la - rb.home[0]) * Math.PI) / 180) * rb.R;
+    const dLon = (((lo - rb.home[1]) * Math.PI) / 180) * rb.R * Math.cos((la * Math.PI) / 180);
     return Math.hypot(dLat, dLon);
   };
 
@@ -1536,8 +1633,9 @@ async function start(): Promise<void> {
     dragging = false;
     if (panning) {
       panning = false;
-      // Roamed back to the picnic? Hand the dive chain back.
-      if (roamHomeDistM() < 300 && u.targets[activeTarget].slug === 'roam') retargetTo(surfaceIdx);
+      // Roamed back to the home site? Hand the dive chain back.
+      const rbUp = roamBody(u.targets[activeTarget].slug);
+      if (rbUp && u.targets[activeTarget].slug === rbUp.slugs[2] && roamHomeDistM(rbUp) < 300) retargetTo(rbUp.siteIdx);
     }
     canvas.classList.remove('dragging');
     if (pressed && dragDist < 5 && performance.now() - pressed.at < 500) {
@@ -1571,7 +1669,7 @@ async function start(): Promise<void> {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     if (pinch && pointers.size === 2) {
       const sep = Math.max(pinchSep(), 1);
-      const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+      const minD = isRoamSlug(u.targets[activeTarget].slug) ? 2 : MIN_DIST;
       cam.dist = clamp((pinch.startDist * pinch.startSep) / sep, minD, MAX_DIST);
       // Two-finger drag pans across the planet (the touch face of free roam).
       const [a, b] = [...pointers.values()];
@@ -1619,7 +1717,7 @@ async function start(): Promise<void> {
       touring = false;
       // Roamed ground has no dive below it (the picnic is the only door
       // down), so zooming floors at human scale there.
-      const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+      const minD = isRoamSlug(u.targets[activeTarget].slug) ? 2 : MIN_DIST;
       cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0014), minD, MAX_DIST);
     },
     { passive: false },
@@ -1732,11 +1830,15 @@ async function start(): Promise<void> {
   const latParam = parseFloat(params.get('lat') ?? '');
   const lonParam = parseFloat(params.get('lon') ?? '');
   if (Number.isFinite(latParam) && Number.isFinite(lonParam)) {
-    u.nav.setRoam(latParam, lonParam);
-    jumpTo(roamIdx);
+    const bodyParam = params.get('body') ?? 'earth';
+    const rbBoot = ROAM_BODIES.find((rb) => rb.label.toLowerCase() === bodyParam) ?? ROAM_BODIES[0];
+    rbBoot.setRoam(latParam, lonParam);
+    jumpTo(rbBoot.roamIdx);
     cam.dist = 2e4;
-    anchorImagery(...u.nav.roamLatLon());
-    focusName = roamName();
+    const [bla, blo] = rbBoot.roamLatLon();
+    rbBoot.anchored = [bla, blo];
+    rbBoot.anchor(bla, blo);
+    focusName = roamName(rbBoot);
   }
   const distParam = parseFloat(params.get('dist') ?? '');
   if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
@@ -1930,7 +2032,7 @@ async function start(): Promise<void> {
           flight = null;
           touring = false;
           const dir = heldArrows.has('ArrowUp') ? -1 : 1;
-          const minD = u.targets[activeTarget].slug === 'roam' ? 2 : MIN_DIST;
+          const minD = isRoamSlug(u.targets[activeTarget].slug) ? 2 : MIN_DIST;
           cam.dist = clamp(cam.dist * Math.exp(dir * 1.8 * dt), minD, MAX_DIST);
         }
       }
@@ -1949,14 +2051,19 @@ async function start(): Promise<void> {
     // focus) — debounced, and only when close enough for it to matter.
     if (performance.now() - lastPanAt > 700) {
       const slug = u.targets[activeTarget].slug;
+      const rbAnch = roamBody(slug);
       let want: [number, number] | null = null;
-      if (slug === 'roam' && cam.dist < 4e6) want = u.nav.roamLatLon();
+      if (rbAnch && slug === rbAnch.slugs[2] && cam.dist < rbAnch.anchorMaxDist) want = rbAnch.roamLatLon();
       else if (slug === 'surface') want = u.nav.home;
-      if (want) {
-        const [ilat, ilon] = u.nav.imagerySite();
-        const dLat = (want[0] - ilat) * 111e3;
-        const dLon = (want[1] - ilon) * 111e3 * Math.cos((want[0] * Math.PI) / 180);
-        if (Math.hypot(dLat, dLon) > 500) anchorImagery(want[0], want[1]);
+      if (want && rbAnch) {
+        const [ilat, ilon] = rbAnch.label === 'EARTH' ? u.nav.imagerySite() : rbAnch.anchored;
+        const mPerDegLat = (rbAnch.R * Math.PI) / 180;
+        const dLat = (want[0] - ilat) * mPerDegLat;
+        const dLon = (want[1] - ilon) * mPerDegLat * Math.cos((want[0] * Math.PI) / 180);
+        if (Math.hypot(dLat, dLon) > 500) {
+          rbAnch.anchored = [want[0], want[1]];
+          rbAnch.anchor(want[0], want[1]);
+        }
       }
     }
     // Track the focused body: orbiting targets move, and the camera must
@@ -1976,11 +2083,15 @@ async function start(): Promise<void> {
       const site =
         slug === 'surface' || slug === 'roam'
           ? { R: 6.371e6, frame: earthFrameRef, gn: u.nav.gnomonicEUN, fields: terrainFields }
-          : slug === 'tranquility'
-            ? { R: u.nav.moon.R, frame: u.moonFrame, gn: u.nav.moon.gnomonicEUN, fields: moonTerrainFields }
-            : slug === 'jezero'
-              ? { R: u.nav.mars.R, frame: u.marsFrame, gn: u.nav.mars.gnomonicEUN, fields: marsTerrainFields }
-              : null;
+          : slug === 'moonroam' // roamed ground: the honest datum sphere
+            ? { R: u.nav.moon.roamR, frame: u.moonFrame, gn: () => null, fields: moonTerrainFields }
+            : slug === 'marsroam'
+              ? { R: u.nav.mars.roamR, frame: u.marsFrame, gn: () => null, fields: marsTerrainFields }
+              : slug === 'tranquility'
+                ? { R: u.nav.moon.R, frame: u.moonFrame, gn: u.nav.moon.gnomonicEUN, fields: moonTerrainFields }
+                : slug === 'jezero'
+                  ? { R: u.nav.mars.R, frame: u.marsFrame, gn: u.nav.mars.gnomonicEUN, fields: marsTerrainFields }
+                  : null;
       if (!flight && !retarget && site) {
         const R = site.R;
         const bodyFrame = site.frame;
