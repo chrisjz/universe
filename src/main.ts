@@ -1144,6 +1144,25 @@ async function start(): Promise<void> {
     if (flight || touring || retarget) return;
     const t = u.targets[activeTarget];
     if (t.child !== undefined && t.enter !== undefined && cam.dist < t.enter) {
+      // Descending from the whole Earth with an AIMED view lands where the
+      // user is looking: free roam under the view center (imagery and
+      // terrain follow), not a teleport to Chicago from over Australia
+      // (user-reported). Un-aimed descents — the held-forward journey —
+      // keep the canonical picnic landing; near-home aims do too.
+      if (t.slug === 'earth' && userAimed) {
+        const p = surfacePointUnderView();
+        if (p) {
+          u.nav.setRoamFromWorld(p);
+          if (roamHomeDistM() > 200e3) {
+            flyTo(roamIdx);
+            const f = flight as Flight | null;
+            if (f) f.auto = true;
+            focusName = roamName();
+            anchorImagery(...u.nav.roamLatLon());
+            return;
+          }
+        }
+      }
       const child = bySlug.get(t.child)!;
       // Descending onto a surface site, the pose-preserving retarget can
       // arrive gazing at the sky: the site rides the spinning globe, so at
@@ -1230,6 +1249,7 @@ async function start(): Promise<void> {
     const worldDir = camDir(); // capture before the basis may switch
     retarget = null;
     exitArmed = false;
+    userAimed = false; // a programmatic arrival re-frames the view
     activeTarget = i;
     setYawPitchFromDir(worldDir, t.basis);
     focusName = t.name;
@@ -1263,6 +1283,7 @@ async function start(): Promise<void> {
     const t = u.targets[i];
     retarget = null;
     exitArmed = false;
+    userAimed = false;
     cam.frame = t.frame;
     cam.focus = [...t.pos] as V3;
     cam.dist = t.dist;
@@ -1385,6 +1406,25 @@ async function start(): Promise<void> {
   const roamable = (): boolean => {
     const slug = u.targets[activeTarget].slug;
     return (slug === 'earth' || slug === 'surface' || slug === 'roam') && cam.dist < 1.2e8;
+  };
+  // Has the user steered the view since the last programmatic arrival?
+  // The zoom chain's Earth descent honors an AIMED view (roam to what you
+  // are looking at); an un-aimed held-forward journey keeps its canonical
+  // landing at the picnic — the only door down to the quarks.
+  let userAimed = false;
+  // Orbiting a whole body from close up: full-rate drag sweeps kilometers
+  // of ground per pixel (25 km/px at Earth's surface — user-reported as
+  // unusably heavy). Scale rotation by altitude over the body, the way
+  // globe UIs do; site targets (focus already on local ground) keep 1.
+  const BODY_R = new Map<string, number>([
+    ['earth', R_E],
+    ['moon', u.nav.moon.R],
+    ['mars', u.nav.mars.R],
+  ]);
+  const aimRate = (): number => {
+    const R = BODY_R.get(u.targets[activeTarget].slug);
+    if (R === undefined || cam.dist <= R) return 1;
+    return clamp((cam.dist - R) / cam.dist, 0.05, 1);
   };
   const roamName = (): string => {
     const [la, lo] = u.nav.roamLatLon();
@@ -1551,10 +1591,12 @@ async function start(): Promise<void> {
     if (!dragging) return;
     dragDist += Math.abs(e.movementX) + Math.abs(e.movementY);
     if (dragDist < 5) return; // still within click slop — don't jitter the orbit
-    cam.yaw -= e.movementX * 0.004;
+    userAimed = true;
+    const rate = 0.004 * aimRate();
+    cam.yaw -= e.movementX * rate;
     // Dragging down while gazing at the sky first brings the gaze back to
     // the horizon (consume the head-tilt), then resumes the normal orbit.
-    let dp = e.movementY * 0.004;
+    let dp = e.movementY * rate;
     if (dp > 0 && cam.tilt > 0) {
       const used = Math.min(cam.tilt, dp);
       cam.tilt -= used;
@@ -1872,8 +1914,9 @@ async function start(): Promise<void> {
         // down; grounded, the collision floor converts it into head-tilt —
         // the gaze climbs to the zenith), ↓ mirrors dragging down (consume
         // the head-tilt back to the horizon first, then orbit).
+        userAimed = true;
         let dp = (heldArrows.has('ArrowDown') ? 1.0 : 0) - (heldArrows.has('ArrowUp') ? 1.0 : 0);
-        dp *= 0.9 * dt;
+        dp *= 0.9 * dt * aimRate();
         if (dp > 0 && cam.tilt > 0) {
           const used = Math.min(cam.tilt, dp);
           cam.tilt -= used;
@@ -1891,8 +1934,12 @@ async function start(): Promise<void> {
           cam.dist = clamp(cam.dist * Math.exp(dir * 1.8 * dt), minD, MAX_DIST);
         }
       }
-      if (heldArrows.has('ArrowLeft')) cam.yaw += 1.1 * dt;
-      if (heldArrows.has('ArrowRight')) cam.yaw -= 1.1 * dt;
+      if (heldArrows.has('ArrowLeft') || heldArrows.has('ArrowRight')) {
+        userAimed = true;
+        const dyaw = 1.1 * dt * aimRate();
+        if (heldArrows.has('ArrowLeft')) cam.yaw += dyaw;
+        if (heldArrows.has('ArrowRight')) cam.yaw -= dyaw;
+      }
     }
     updateFlight(dt);
     updateRetarget(dt);
