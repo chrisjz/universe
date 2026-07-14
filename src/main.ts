@@ -797,9 +797,18 @@ async function start(): Promise<void> {
   // render the faint tiles into the cubemap — one face per frame, no hitch.
   // Re-bake when new tiles land or deep time drifts the stars > 25k years;
   // beyond 0.03 pc from the sun the tiles go back to live sprites.
+  // The dome's hand-off fade: full inside 2.2e19 m (where the bake's
+  // sun-centered parallax is honest), easing to zero by 1.2e20 as the
+  // procedural galaxy takes over. A hard cut here swapped a third of
+  // the frame in one wheel notch (user-reported as a "trifecta split"
+  // while zooming solar system -> galaxy): baked sky, then naked
+  // thinning sprites, then the procedural glow, each with a hard edge.
+  let bakeFade = 1;
   function manageFarField(camSun: V3, now: number): void {
-    // Beyond the streaming zone everything star has faded; nothing to bake.
-    if (len(camSun) > 2.2e19 || skipSet.has('bake') || deepFade <= 0) {
+    const d = len(camSun);
+    bakeFade = clamp((1.2e20 - d) / (1.2e20 - 2.2e19), 0, 1);
+    // Beyond the fade's end everything star has faded; nothing to bake.
+    if (bakeFade <= 0 || skipSet.has('bake') || deepFade <= 0) {
       far.active = false;
       far.face = -1;
       return;
@@ -2564,7 +2573,7 @@ async function start(): Promise<void> {
 
     camSunForSprites = scale(relPos(u.sunFrame, [0, 0, 0], cam.frame, camLocal), -1);
     manageFarField(camSunForSprites, performance.now());
-    data.farDome = far.active ? deepFade : 0;
+    data.farDome = far.active ? deepFade * bakeFade : 0;
 
     const skyVisible = constellations && cam.dist < 2e19 && Math.abs(starYears) < 25000;
     if (skyVisible) {
