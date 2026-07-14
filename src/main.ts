@@ -1287,6 +1287,51 @@ async function start(): Promise<void> {
     }
   }
 
+  // ---- share this view ----
+  // The atlas's addresses are URLs; this writes the current one. Captures
+  // the focus (or the roamed lat/lon), the full pose including the
+  // sky-gaze tilt, the clock, and the toggles — everything a visitor
+  // needs to stand exactly here.
+  function shareView(): void {
+    const t = u.targets[activeTarget];
+    const q = new URLSearchParams();
+    if (t.slug === 'roam') {
+      const [lat, lon] = u.nav.roamLatLon();
+      q.set('lat', lat.toFixed(5));
+      q.set('lon', lon.toFixed(5));
+    } else {
+      q.set('goto', t.slug);
+    }
+    q.set('dist', cam.dist.toPrecision(4));
+    q.set('yaw', (((((cam.yaw * 180) / Math.PI) % 360) + 360) % 360).toFixed(1));
+    q.set('pitch', ((cam.pitch * 180) / Math.PI).toFixed(1));
+    if (cam.tilt > 0.01) q.set('tilt', ((cam.tilt * 180) / Math.PI).toFixed(1));
+    // A view at real time stays LIVE for the visitor (no pin); anything
+    // scrubbed, sped, or paused pins the moment it was seen.
+    const live = !paused && SPEEDS[speedIndex] === 1 && Math.abs(simMs - Date.now()) < 60000;
+    if (!live) {
+      q.set('at', new Date(simMs).toISOString().slice(0, 19) + 'Z');
+      if (paused) q.set('paused', '1');
+      else if (SPEEDS[speedIndex] !== 1) q.set('speed', String(SPEEDS[speedIndex]));
+    }
+    if (constellations) q.set('constellations', '1');
+    const url = `${location.origin}${location.pathname}?${q.toString()}`;
+    const toast = (msg: string): void => {
+      const el = document.getElementById('toast')!;
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2200);
+    };
+    if (navigator.share && navigator.maxTouchPoints > 0) {
+      navigator.share({ title: 'Universe Atlas', url }).catch(() => {});
+    } else {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => toast('view link copied'))
+        .catch(() => toast(url)); // clipboard blocked: show it to copy by hand
+    }
+  }
+
   const hud = new Hud(
     u.targets,
     (i) => {
@@ -1298,6 +1343,7 @@ async function start(): Promise<void> {
       if (action === 'slower') speedIndex = Math.max(0, speedIndex - 1);
       if (action === 'faster') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
       if (action === 'pause') paused = !paused;
+      if (action === 'share') shareView();
     },
     () => {
       seam = !seam;
@@ -1555,6 +1601,7 @@ async function start(): Promise<void> {
     if (e.key === '[') speedIndex = Math.max(0, speedIndex - 1);
     if (e.key === ']') speedIndex = Math.min(SPEEDS.length - 1, speedIndex + 1);
     if (e.key === 'p' || e.key === 'P') paused = !paused;
+    if (e.key === 'b' || e.key === 'B') shareView();
     if (e.key === 'x' || e.key === 'X') {
       seam = !seam;
       hud.setSeam(seam);
@@ -1631,13 +1678,19 @@ async function start(): Promise<void> {
   const yawParam = parseFloat(params.get('yaw') ?? '');
   if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
   const pitchParam = parseFloat(params.get('pitch') ?? '');
+  // ?tilt= — the sky-gaze head-tilt in degrees, so a ground view aimed at
+  // the sky shares exactly (before this, links faked it with a negative
+  // pitch that the terrain floor converted).
+  const tiltParam = parseFloat(params.get('tilt') ?? '');
   if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
+  if (Number.isFinite(tiltParam)) cam.tilt = clamp((tiltParam * Math.PI) / 180, 0, 1.5);
   // Async targets (satellites, probes) resolve a pending ?goto with a
   // jumpTo whose defaults would stomp the URL's explicit pose — reapply.
   function reapplyPose(): void {
     if (Number.isFinite(distParam)) cam.dist = clamp(distParam, MIN_DIST, MAX_DIST);
     if (Number.isFinite(yawParam)) cam.yaw = (yawParam * Math.PI) / 180;
     if (Number.isFinite(pitchParam)) cam.pitch = clamp((pitchParam * Math.PI) / 180, -1.53, 1.53);
+    if (Number.isFinite(tiltParam)) cam.tilt = clamp((tiltParam * Math.PI) / 180, 0, 1.5);
   }
   // ?paused=1 — start with the clock stopped. With ?at= this pins the whole
   // scene to one instant, which is what a reproducible screenshot needs.
