@@ -139,7 +139,7 @@ Deep links compose into a 10²⁷-meter, 13.8-billion-year address space:
 | `?at=`               | a real moment — [the blood moon of Mar 3 2026](https://universeatlas.org/?goto=moon&at=2026-03-03T11:38:00Z)                                                                                                         |
 | `?years=`            | deep time — [just after the Big Bang](https://universeatlas.org/?goto=universe&years=-13e9)                                                                                                                          |
 | `?yaw=&pitch=&dist=` | aim and frame the camera (`&tilt=` adds the sky-gaze head-tilt)                                                                                                                                                      |
-| `?tour=1`            | start the grand tour on load                                                                                                                                                                                         |
+| `?tour=1`            | start the grand tour on load — or name your own route: `?tour=universe,sun,earth,surface,proton`                                                                                                                     |
 
 Or don't compose anything: press **B** anywhere and the atlas writes the
 current view's address for you — verified to reproduce the exact pixels.

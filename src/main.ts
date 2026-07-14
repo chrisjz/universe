@@ -1319,12 +1319,15 @@ async function start(): Promise<void> {
     'nucleus',
     'proton',
   ];
+  // The tour's route: the full 43 orders by default; ?tour= can name a
+  // custom slug list (e.g. media recordings that skip the planet legs).
+  let tourRoute: string[] = TOUR_SLUGS;
   function toggleTour(): void {
     touring = !touring;
     if (touring) {
       tourIndex = 0;
       tourDwell = 0;
-      flyTo(bySlug.get(TOUR_SLUGS[0])!);
+      flyTo(bySlug.get(tourRoute[0])!);
     }
   }
 
@@ -1796,7 +1799,13 @@ async function start(): Promise<void> {
     hud.setConstellations(true);
   }
   // ?tour=1 — start the grand tour after a beat (lets textures/stars land).
+  // ?tour=universe,sun,earth,... rides a custom route through named stops.
   if (params.get('tour') !== null) {
+    const custom = (params.get('tour') ?? '')
+      .split(',')
+      .map((sl) => sl.trim())
+      .filter((sl) => bySlug.has(sl));
+    if (custom.length >= 2) tourRoute = custom;
     setTimeout(() => {
       if (!touring) toggleTour();
     }, 1200);
@@ -1904,11 +1913,11 @@ async function start(): Promise<void> {
         if (tourDwell > 1.6) {
           tourDwell = 0;
           tourIndex++;
-          if (tourIndex >= TOUR_SLUGS.length) {
+          if (tourIndex >= tourRoute.length) {
             touring = false;
             return;
           }
-          flyTo(bySlug.get(TOUR_SLUGS[tourIndex])!);
+          flyTo(bySlug.get(tourRoute[tourIndex])!);
         }
       }
       return;
