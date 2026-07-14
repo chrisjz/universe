@@ -14,7 +14,7 @@ WebGPU behind Develop → Feature Flags).
 [![CI](https://github.com/chrisjz/universe/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisjz/universe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-https://github.com/user-attachments/assets/82a07dcf-9294-43db-9d79-292c5dddbbe6
+https://github.com/user-attachments/assets/d4038edc-3e54-49bc-9fea-d28b9931ab10
 
 ![The grand tour: one continuous zoom from the cosmic web through the Chicago picnic into a proton](docs/tour.gif)
 
