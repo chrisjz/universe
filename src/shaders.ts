@@ -553,10 +553,20 @@ fn compDist(d : f32) -> f32 {
 @vertex fn vs(@location(0) p : vec3f, @location(1) n : vec3f) -> VOut {
   // The unit sphere scaled to the shell top; back faces are drawn so the
   // shell reads from outside (the limb) and from inside (the sky) alike.
+  //
+  // Rasterize from RAW camera-relative positions: log compression scales
+  // each vertex radially (same screen point — projection is direction-
+  // only for camera-relative coords), but once part of the shell crosses
+  // the compression knee, triangles interpolate between inconsistently
+  // scaled vertices and their slivers rasterize off the true silhouette —
+  // thin dark arcs of misplaced air across the disc and the star field
+  // (a user's polar bookmark drew them as dotted circles). The fragment
+  // writes analytic frag_depth anyway; the vertex only owes raster
+  // coverage, and raw chords of a 96x64 sphere stay sub-pixel true.
   let raw = A.center.xyz + p * A.sun.w;
   let d0 = max(bigLength(raw), 1e-3);
   let dc = compDist(d0);
-  var clip = G.viewProj * vec4f(raw * (dc / d0), 1.0);
+  var clip = G.viewProj * vec4f(raw, 1.0);
   clip.z = logDepth(dc) * clip.w;
   var o : VOut;
   o.pos = clip;
@@ -640,6 +650,14 @@ ${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 4375
   let veil = clamp(dot(L, vec3f(0.299, 0.587, 0.114)) * 5.0, 0.0, 1.0);
   let Tbar = clamp(dot(Tv, vec3f(0.299, 0.587, 0.114)), 0.0, 1.0);
   var alpha = 1.0 - Tbar * (1.0 - veil);
+  // The veil is contrast masking for what hides BEHIND bright air —
+  // right for stars at noon, wrong for the sunlit ground: from orbit it
+  // fogged the whole disc white (a depth bug used to hide this over
+  // half the globe). Rays that END on the planet composite physically:
+  // in-scatter adds, the surface attenuates by true transmittance only.
+  if (gnd.x < gnd.y && gnd.x > 0.0 && gnd.x < shell.y) {
+    alpha = 1.0 - Tbar;
+  }
   // The veil erases whatever hides behind bright sky — correct for stars
   // at noon, wrong for the SUN, the one body that outshines its own glare
   // by ten orders of magnitude LDR cannot carry (a user searched whole
@@ -651,9 +669,15 @@ ${jitter ? '  let jit = fract(sin(dot(in.pos.xy, vec2f(12.9898, 78.233))) * 4375
   var o : FOut;
   // Real physics, real constants, but still a model: stylized-on-real.
   o.col = vec4f(seamTint(L, 0.5), alpha);
-  // Depth at the last scattering point (nudged past coincident surfaces):
-  // geometry nearer than the ray's air column occludes the sky behind it.
-  o.depth = logDepth(compDist(t1 * 1.0001));
+  // Depth at the last scattering point, nudged NEARER: the planet mesh
+  // rasterizes log-compressed chords, and log is concave, so the mesh's
+  // interpolated depth reads closer than this analytic depth at the very
+  // surface the ray ends on — once the camera clears the compression
+  // knee the globe steals the veil along triangle rows (dark dashed
+  // circles on a user's polar bookmark; bright ones over dark seas).
+  // 0.5% clears the chord error with margin; anything genuinely in
+  // front of the air column is far nearer than that.
+  o.depth = logDepth(compDist(t1 * 0.995));
   return o;
 }
 `;
