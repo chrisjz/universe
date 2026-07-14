@@ -1939,25 +1939,34 @@ async function start(): Promise<void> {
         const bodyFrame = site.frame;
         const gnomonic = site.gn;
         const fields = site.fields;
+        // The clearance floor scales with zoom distance: with a fixed
+        // 1.2 m floor, zooming OUT at a low pitch never lifted the camera
+        // — it slid around the planet's curve pinned to the terrain, and
+        // 1,500 km from Jezero you were lying on Martian ground staring
+        // through 300 km of daylit dust: the reported "white flash". The
+        // farther the focus, the higher the camera must ride; under 20 km
+        // of zoom nothing changes, so ground-level navigation keeps its
+        // 1.2 m grace.
+        const clearM = 1.2 + Math.max(0, 0.08 * (cam.dist - 2e4));
         for (let i = 0; i < 40; i++) {
           const camPos = add(cam.focus, scale(camDir(), cam.dist));
           const rel = relPos(cam.frame, camPos, bodyFrame, [0, 0, 0]);
           const r = len(rel);
-          if (r > R + 12e3) break; // far above any terrain
+          if (r > R + 12e3 + clearM) break; // far above any terrain
           const en = gnomonic(rel);
           const ground = R + 1.5 + (en ? terrainHeightAt(fields, en[0], en[1]) : 0);
-          if (i === 0 && r > ground + 60 && cam.tilt > 0) {
+          if (i === 0 && r > ground + 60 + clearM && cam.tilt > 0) {
             // Comfortably clear of the ground (zooming away): the head-tilt
             // eases back so the familiar orbit gaze returns on its own.
             cam.tilt = Math.max(0, cam.tilt * (1 - Math.min(1, dt * 2)));
           }
-          if (r >= ground + 1.2 || cam.pitch >= 1.53) break;
+          if (r >= ground + clearM || cam.pitch >= 1.53) break;
           // Climb by the angular deficit, not a fixed step: a fixed 0.02 rad
           // at a 40 km site orbit (Tranquility and Jezero arrive at 4e4 m)
           // lifted the camera ~800 m clear of the ground — past the 60 m
           // "zoomed away" threshold above, so the head-tilt decayed every
           // frame and the sky gaze sagged back to the horizon.
-          const step = Math.min(0.02, Math.max(1e-6, (ground + 1.2 - r) / Math.max(1, cam.dist)));
+          const step = Math.min(0.02, Math.max(1e-6, (ground + clearM - r) / Math.max(1, cam.dist)));
           cam.pitch = Math.min(cam.pitch + step, 1.53);
           cam.tilt = Math.min(cam.tilt + step, 1.5); // blocked orbit -> sky gaze
         }
