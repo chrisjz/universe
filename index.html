@@ -262,6 +262,29 @@
         border-color: rgba(200, 160, 90, 0.45);
         color: #e8c890;
       }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+        max-width: min(90vw, 640px);
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: #cfe4ff;
+        background: rgba(14, 20, 32, 0.92);
+        border: 1px solid rgba(110, 140, 190, 0.45);
+        border-radius: 5px;
+        padding: 8px 14px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s;
+        word-break: break-all;
+        z-index: 20;
+      }
+      #toast.show {
+        opacity: 1;
+      }
       #fatal {
         position: fixed;
         inset: 0;
@@ -456,14 +479,15 @@
         <button data-t="slower" title="slower ( [ )">−</button>
         <button data-t="pause" title="pause ( P )">⏸</button>
         <button data-t="faster" title="faster ( ] )">+</button>
+        <button data-t="share" title="share this view ( B )">⧉</button>
       </div>
     </div>
     <div class="hud" id="focus">
       <div class="name">—</div>
       <div class="src">—</div>
       <div class="hint">
-        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · X seam · C constellations · T tour ·
-        H overlay · S photo
+        click focus · 2×click fly · drag orbit · scroll zoom · [ ] time · P pause · B share · X seam · C constellations
+        · T tour · H overlay · S photo
       </div>
     </div>
     <div class="hud" id="seam">
@@ -476,6 +500,7 @@
       <input type="text" placeholder="search the universe — try “arcturus”" autocomplete="off" spellcheck="false" />
       <ul></ul>
     </div>
+    <div id="toast"></div>
     <div id="fatal"></div>
     <script>
       // First-visit nudge: only on a bare load (a shared ?goto link speaks

@@ -112,6 +112,7 @@ real already is:
 | **↑ ↓ ← →**   | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                              |
 | **Enter**     | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                     |
 | **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — universe to the fiber, Jezero and Tranquility included        |
+| **B**         | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                  |
 | **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
 | **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
 | **C**         | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                    |
@@ -135,8 +136,11 @@ Deep links compose into a 10²⁷-meter, 13.8-billion-year address space:
 | `?lat=&lon=`         | [Paris street level](https://universeatlas.org/?lat=48.8584&lon=2.2945&dist=4000) — anywhere on Earth                                                                                                                |
 | `?at=`               | a real moment — [the blood moon of Mar 3 2026](https://universeatlas.org/?goto=moon&at=2026-03-03T11:38:00Z)                                                                                                         |
 | `?years=`            | deep time — [just after the Big Bang](https://universeatlas.org/?goto=universe&years=-13e9)                                                                                                                          |
-| `?yaw=&pitch=&dist=` | aim and frame the camera                                                                                                                                                                                             |
+| `?yaw=&pitch=&dist=` | aim and frame the camera (`&tilt=` adds the sky-gaze head-tilt)                                                                                                                                                      |
 | `?tour=1`            | start the grand tour on load                                                                                                                                                                                         |
+
+Or don't compose anything: press **B** anywhere and the atlas writes the
+current view's address for you — verified to reproduce the exact pixels.
 
 Compose them and you can stand in an eclipse:
 [Reykjavík, Aug 12 2026, 17:45 UTC](https://universeatlas.org/?lat=64.147&lon=-21.94&at=2026-08-12T17:45:00Z&dist=25&yaw=71.8&pitch=2)

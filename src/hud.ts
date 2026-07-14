@@ -93,7 +93,7 @@ export class Hud {
     targets: Target[],
     onTarget: (i: number) => void,
     onTour: () => void,
-    onTime: (action: 'slower' | 'pause' | 'faster') => void,
+    onTime: (action: 'slower' | 'pause' | 'faster' | 'share') => void,
     onSeam: () => void,
     onConstellations: () => void,
   ) {
@@ -101,7 +101,7 @@ export class Hud {
     this.onTarget = onTarget;
     // On-screen time controls: [ ] and P have no keys on touch devices.
     document.querySelectorAll<HTMLButtonElement>('#scale .timectl button').forEach((b) => {
-      b.addEventListener('click', () => onTime(b.dataset.t as 'slower' | 'pause' | 'faster'));
+      b.addEventListener('click', () => onTime(b.dataset.t as 'slower' | 'pause' | 'faster' | 'share'));
     });
     // Layout: [search] [scrollable target buttons] [tour] — search and tour
     // stay pinned; the target list scrolls between them.
