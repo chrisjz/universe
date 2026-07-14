@@ -841,21 +841,37 @@ async function start(): Promise<void> {
     }
   }
 
+  // The faintest Gaia band (b3: 12.5 ≤ G < 13, ~2.4M stars, 52 MB — a
+  // third of the whole star payload) reads as collective grain, and the
+  // phone tier already ships without it. Desktops now DEFER it instead:
+  // the first stream delivers everything else, and b3 tops up when the
+  // camera actually dives toward star scales (or on ?stars=full). Phones
+  // keep skipping it outright — theirs is a vertex budget, not bandwidth.
+  let faintWanted = false;
+  let faintStarted = false;
+  let streamedDeep = false;
+  function maybeStreamFaintBand(): void {
+    if (faintStarted || !faintWanted || !streamedDeep) return;
+    if (cam.dist > 3e18 && starParams.get('stars') !== 'full') return;
+    faintStarted = true;
+    void streamStars(DATA_URL, onStarChunk, /^(?!gaia-b3)/);
+  }
   function maybeStreamStars(): void {
     if (skipSet.has('stars') || starsStarted || cam.dist > 2e19) return;
     starsStarted = true;
     void (async () => {
-      // The mobile star budget: phones skip the faintest Gaia band
-      // (12.5 ≤ G < 13, ~2.4M stars that read as collective grain) —
-      // the Milky Way keeps its shape at ~60% of the vertex bill.
-      // ?stars=full opts a phone back in.
       const phone =
         navigator.maxTouchPoints > 0 &&
         Math.min(screen.width, screen.height) < 900 &&
         starParams.get('stars') !== 'full';
-      const skip = phone ? /^gaia-b3/ : undefined;
-      const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk, skip) : 0;
+      // Everyone's first stream skips b3; desktops queue the top-up.
+      const deep = starParams.get('stars') !== 'athyg' ? await streamStars(DATA_URL, onStarChunk, /^gaia-b3/) : 0;
       if (deep === 0) await streamStars(`${import.meta.env.BASE_URL}stars/`, onStarChunk);
+      else if (!phone) {
+        streamedDeep = true;
+        faintWanted = true;
+        maybeStreamFaintBand();
+      }
     })();
   }
 
@@ -1952,6 +1968,7 @@ async function start(): Promise<void> {
     maybeStreamMoonImagery();
     maybeStreamMarsImagery();
     maybeStreamStars();
+    maybeStreamFaintBand();
     maybeStreamSdss();
     maybeStreamClouds();
 
