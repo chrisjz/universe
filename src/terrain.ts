@@ -284,10 +284,11 @@ async function streamTrekRings(
   lon: number,
   sizes: number[],
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
+  keys?: string[], // roam re-anchors stamp generation keys; default ring0..N
 ): Promise<void> {
   for (let k = 0; k < sizes.length; k++) {
     const bmp = await buildTrekPatch(body, lat, lon, sizes[k]);
-    if (bmp) await onReady(`${body.key}${k}`, bmp);
+    if (bmp) await onReady(keys?.[k] ?? `${body.key}${k}`, bmp);
   }
 }
 
@@ -296,11 +297,13 @@ export const streamMoonRings = (
   lon: number,
   sizes: number[],
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
-): Promise<void> => streamTrekRings(TREK_MOON, lat, lon, sizes, onReady);
+  keys?: string[],
+): Promise<void> => streamTrekRings(TREK_MOON, lat, lon, sizes, onReady, keys);
 
 export const streamMarsRings = (
   lat: number,
   lon: number,
   sizes: number[],
   onReady: (key: string, bmp: ImageBitmap) => Promise<void>,
-): Promise<void> => streamTrekRings(TREK_MARS, lat, lon, sizes, onReady);
+  keys?: string[],
+): Promise<void> => streamTrekRings(TREK_MARS, lat, lon, sizes, onReady, keys);

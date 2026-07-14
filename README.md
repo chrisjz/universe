@@ -102,26 +102,27 @@ real already is:
 
 ## Controls
 
-| Input           | Action                                                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **scroll**      | seamless zoom — all the way down, all the way back up                                                                          |
-| **click**       | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there                 |
-| **2×click**     | fly to what's under the cursor                                                                                                 |
-| **drag**        | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky           |
-| **⇧-drag**      | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                        |
-| **↑ ↓ ← →**     | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                              |
-| **Shift + ↑ ↓** | the drag's other axis, no mouse needed: orbit vertically — standing on a surface, ↑ tilts the gaze up to the zenith            |
-| **Enter**       | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                     |
-| **bookmarks**   | the bottom bar flies anywhere on the tour route, in tour order — or open **☰ PLACES** for the whole route as a list           |
-| **B**           | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                  |
-| **/**           | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
-| **X**           | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
-| **C**           | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                    |
-| **[ ]**         | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                       |
-| **P**           | pause the simulation clock                                                                                                     |
-| **T**           | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                                    |
-| **H / S**       | **H** toggles the overlay (HUD, labels, orbit lines) · **S** saves a 2×-supersampled PNG — independent: saves are always clean |
-| **Esc**         | cancel the current flight                                                                                                      |
+| Input           | Action                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **scroll**      | seamless zoom — all the way down, all the way back up                                                                           |
+| **click**       | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there                  |
+| **2×click**     | fly to what's under the cursor                                                                                                  |
+| **drag**        | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky            |
+| **⇧-drag**      | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                         |
+| **↑ ↓ ← →**     | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                               |
+| **Shift + ↑ ↓** | the drag's other axis, no mouse needed: orbit vertically — standing on a surface, ↑ tilts the gaze up to the zenith             |
+| **Enter**       | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                      |
+| **bookmarks**   | the bottom bar flies anywhere on the tour route, in tour order — or open **☰ PLACES** for the whole route as a list            |
+| **roaming**     | right-drag (or Shift-drag) grabs the ground and slides it — on Earth, the Moon, and Mars alike; imagery follows anywhere you go |
+| **B**           | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                   |
+| **/**           | search everything — all 195 named stars, planets, and every stage of the dive                                                   |
+| **X**           | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative           |
+| **C**           | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                     |
+| **[ ]**         | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                        |
+| **P**           | pause the simulation clock                                                                                                      |
+| **T**           | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                                     |
+| **H / S**       | **H** toggles the overlay (HUD, labels, orbit lines) · **S** saves a 2×-supersampled PNG — independent: saves are always clean  |
+| **Esc**         | cancel the current flight                                                                                                       |
 
 On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
 across the planet**, tap focuses, **double-tap flies**, and the search /
@@ -134,7 +135,7 @@ Deep links compose into a 10²⁷-meter, 13.8-billion-year address space:
 | Parameter            | Example                                                                                                                                                                                                              |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `?goto=`             | [`?goto=jupiter`](https://universeatlas.org/?goto=jupiter) · [`?goto=sirius`](https://universeatlas.org/?goto=sirius) · [`?goto=tranquility`](https://universeatlas.org/?goto=tranquility) — any destination by slug |
-| `?lat=&lon=`         | [Paris street level](https://universeatlas.org/?lat=48.8584&lon=2.2945&dist=4000) — anywhere on Earth                                                                                                                |
+| `?lat=&lon=`         | [Paris street level](https://universeatlas.org/?lat=48.8584&lon=2.2945&dist=4000) — anywhere on Earth; add `&body=moon` or `&body=mars` to roam those worlds                                                         |
 | `?at=`               | a real moment — [the blood moon of Mar 3 2026](https://universeatlas.org/?goto=moon&at=2026-03-03T11:38:00Z)                                                                                                         |
 | `?years=`            | deep time — [just after the Big Bang](https://universeatlas.org/?goto=universe&years=-13e9)                                                                                                                          |
 | `?yaw=&pitch=&dist=` | aim and frame the camera (`&tilt=` adds the sky-gaze head-tilt)                                                                                                                                                      |
