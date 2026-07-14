@@ -2072,8 +2072,16 @@ async function start(): Promise<void> {
       o[24] = m.rim;
       o[25] = m.gridScale;
       // Textured flag: matId 10 globes check their own map; Earth checks the
-      // Blue/Black Marble pair.
-      o[26] = (m.matId === 10 && m.tex ? renderer.hasTexture(m.tex) : renderer.earthReady) ? 1 : 0;
+      // Blue/Black Marble pair. The imagery ring materials (8, 11) never
+      // read it, so the slot carries their edge-feather flag instead.
+      o[26] =
+        m.matId === 8 || m.matId === 11
+          ? m.feather
+            ? 1
+            : 0
+          : (m.matId === 10 && m.tex ? renderer.hasTexture(m.tex) : renderer.earthReady)
+            ? 1
+            : 0;
       o[27] = m.prov ?? 0;
       data.meshes.push({ kind: m.mesh, data: o, tex: m.tex });
     }
