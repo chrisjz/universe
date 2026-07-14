@@ -1475,7 +1475,7 @@ async function start(): Promise<void> {
       roamLatLon: u.nav.moon.roamLatLon,
       anchor: trekAnchor('moon', streamMoonRings),
       anchored: [1e9, 1e9], // nothing anchored yet
-      anchorMaxDist: 2e6,
+      anchorMaxDist: 1.0e6, // 0.6 R — matches the rings' hideAbove
     },
     {
       label: 'MARS',
@@ -1491,7 +1491,7 @@ async function start(): Promise<void> {
       roamLatLon: u.nav.mars.roamLatLon,
       anchor: trekAnchor('mars', streamMarsRings),
       anchored: [1e9, 1e9],
-      anchorMaxDist: 2e6,
+      anchorMaxDist: 2.0e6, // 0.6 R
     },
   ];
   const roamBody = (slug: string): RoamBody | null => ROAM_BODIES.find((rb) => rb.slugs.includes(slug)) ?? null;

@@ -1041,7 +1041,9 @@ export function buildUniverse(): Universe {
         prov: 0.5,
         // Beyond re-anchor range, one sharp patch on a soft globe reads
         // as a glitch, not detail — and a stale anchor could linger there.
-        hideAbove: 2e6,
+        // Proportional to the body: a fixed 2,000 km was fine on Mars
+        // (0.6 R) but let the patch ride the Moon's whole disc (1.15 R).
+        hideAbove: R * 0.6,
         tex: `${body}ring${k}@0`,
       };
       ms.push(m);
