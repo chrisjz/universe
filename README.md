@@ -102,25 +102,26 @@ real already is:
 
 ## Controls
 
-| Input         | Action                                                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **scroll**    | seamless zoom — all the way down, all the way back up                                                                          |
-| **click**     | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there                 |
-| **2×click**   | fly to what's under the cursor                                                                                                 |
-| **drag**      | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky           |
-| **⇧-drag**    | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                        |
-| **↑ ↓ ← →**   | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                              |
-| **Enter**     | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                     |
-| **bookmarks** | the bottom bar flies anywhere on the tour route, in tour order — or open **☰ PLACES** for the whole route as a list           |
-| **B**         | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                  |
-| **/**         | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
-| **X**         | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
-| **C**         | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                    |
-| **[ ]**       | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                       |
-| **P**         | pause the simulation clock                                                                                                     |
-| **T**         | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                                    |
-| **H / S**     | **H** toggles the overlay (HUD, labels, orbit lines) · **S** saves a 2×-supersampled PNG — independent: saves are always clean |
-| **Esc**       | cancel the current flight                                                                                                      |
+| Input           | Action                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **scroll**      | seamless zoom — all the way down, all the way back up                                                                          |
+| **click**       | focus what's under the cursor (planet, moon, any named star) — camera stays put, scrolling now converges there                 |
+| **2×click**     | fly to what's under the cursor                                                                                                 |
+| **drag**        | orbit the current focus — on the ground the drag keeps going past the horizon, tilting your gaze up to the night sky           |
+| **⇧-drag**      | (or right-drag) grab the ground and roam anywhere on Earth — imagery and terrain follow                                        |
+| **↑ ↓ ← →**     | keyboard navigation: hold ↑/↓ to zoom (trackpad-friendly), ←/→ to orbit the focus                                              |
+| **Shift + ↑ ↓** | the drag's other axis, no mouse needed: orbit vertically — standing on a surface, ↑ tilts the gaze up to the zenith            |
+| **Enter**       | fly to the focused object — the keyboard's double-click (single-click focuses, Enter goes)                                     |
+| **bookmarks**   | the bottom bar flies anywhere on the tour route, in tour order — or open **☰ PLACES** for the whole route as a list           |
+| **B**           | share this view — copies a link that reproduces exactly what you see: place, pose, sky-gaze, clock, and speed                  |
+| **/**           | search everything — all 195 named stars, planets, and every stage of the dive                                                  |
+| **X**           | the honest seam — recolor by provenance: natural = measured, amber = real size but stylized look, cyan = illustrative          |
+| **C**           | constellations — the 88 IAU figures and their names over the true sky (`?constellations=1`)                                    |
+| **[ ]**         | time is a signed throttle: **]** toward +1 Gyr/s, **[** through real time into reverse, down to −1 Gyr/s                       |
+| **P**           | pause the simulation clock                                                                                                     |
+| **T**           | grand tour: an automated flight through all 43 orders, cosmic web to quarks                                                    |
+| **H / S**       | **H** toggles the overlay (HUD, labels, orbit lines) · **S** saves a 2×-supersampled PNG — independent: saves are always clean |
+| **Esc**         | cancel the current flight                                                                                                      |
 
 On touch screens: drag orbits, **pinch zooms**, **two-finger drag roams
 across the planet**, tap focuses, **double-tap flies**, and the search /
