@@ -44,6 +44,7 @@ export interface MeshObj {
   // The inward journey dives *through* solid objects; each scale layer hides
   // once the camera's focus distance drops below this (the film's cross-fade).
   hideBelow?: number;
+  hideAbove?: number; // and roam imagery rings hide when zoomed far out
   // Light this mesh from a live position instead of the sun — an exoplanet
   // orbits a star that isn't ours (references the host star's pos array).
   litFrom?: V3;
@@ -89,6 +90,7 @@ export interface PointGroup {
   // procedural galaxy provides the from-a-distance glow instead).
   fadeExtent?: number;
   hideBelow?: number; // skip entirely below this focus distance (see MeshObj)
+  hideAbove?: number; // skip entirely above this focus distance (roam imagery rings)
   nearFade?: boolean; // fade sprites near the camera (see the Grp.misc shader note)
   prov?: number; // honest-seam provenance (see MeshObj)
   // Bounding cone of the group's star directions from the sun (world axes).
@@ -225,7 +227,7 @@ export interface Universe {
       setRoamFromWorld: (w: V3) => void;
       roamMove: (delta: V3) => void;
       roamLatLon: () => [number, number];
-      setRoamImagery: (gen: number) => string[];
+      setRoamImagery: (lat: number, lon: number, gen: number) => string[];
     };
     // Jezero crater (fixed site — baked MOLA terrain, streamed Viking imagery).
     mars: {
@@ -239,7 +241,7 @@ export interface Universe {
       setRoamFromWorld: (w: V3) => void;
       roamMove: (delta: V3) => void;
       roamLatLon: () => [number, number];
-      setRoamImagery: (gen: number) => string[];
+      setRoamImagery: (lat: number, lon: number, gen: number) => string[];
     };
   };
 }
@@ -1037,6 +1039,9 @@ export function buildUniverse(): Universe {
         feather: k === 0,
         rot: basis,
         prov: 0.5,
+        // Beyond re-anchor range, one sharp patch on a soft globe reads
+        // as a glitch, not detail — and a stale anchor could linger there.
+        hideAbove: 2e6,
         tex: `${body}ring${k}@0`,
       };
       ms.push(m);
@@ -1059,6 +1064,14 @@ export function buildUniverse(): Universe {
     msrNorth: V3 = [...msrFixedN];
   const msrBasis: [V3, V3, V3] = [msrEast, msrUp, msrNorth];
   const msrPos: V3 = [0, 0, 0];
+  const msrAFixedE: V3 = [0, 0, 0],
+    msrAFixedU: V3 = [0, 0, 0],
+    msrAFixedN: V3 = [0, 0, 0];
+  fixedBasis(msr.lat, msr.lon, msrAFixedE, msrAFixedU, msrAFixedN);
+  const msrAEast: V3 = [...msrAFixedE],
+    msrAUp: V3 = [...msrAFixedU],
+    msrANorth: V3 = [...msrAFixedN];
+  const msrABasis: [V3, V3, V3] = [msrAEast, msrAUp, msrANorth];
   const msrRingPos: V3 = [0, 0, 0];
   const refreshMarsRoam = (): void => {
     const B = marsSpinBasis;
@@ -1068,9 +1081,12 @@ export function buildUniverse(): Universe {
     rot(msrFixedE, msrEast);
     rot(msrFixedU, msrUp);
     rot(msrFixedN, msrNorth);
+    rot(msrAFixedE, msrAEast);
+    rot(msrAFixedU, msrAUp);
+    rot(msrAFixedN, msrANorth);
     for (let k = 0; k < 3; k++) {
       msrPos[k] = msrUp[k] * (R_MARS_REF + 1.5);
-      msrRingPos[k] = msrUp[k] * R_MARS_REF;
+      msrRingPos[k] = msrAUp[k] * R_MARS_REF;
     }
   };
   const setMarsRoam = (latDeg: number, lonDeg: number): void => {
@@ -1079,8 +1095,18 @@ export function buildUniverse(): Universe {
     fixedBasis(msr.lat, msr.lon, msrFixedE, msrFixedU, msrFixedN);
     refreshMarsRoam();
   };
+  const anchorMarsRoamImagery = (latDeg: number, lonDeg: number): void => {
+    fixedBasis(
+      Math.max(-89.9, Math.min(89.9, latDeg)) * DEG,
+      (((((lonDeg + 180) % 360) + 360) % 360) - 180) * DEG,
+      msrAFixedE,
+      msrAFixedU,
+      msrAFixedN,
+    );
+    refreshMarsRoam();
+  };
   postSpin.push(refreshMarsRoam);
-  const msrRings = roamRings('msr', MARS_RINGS, R_MARS_REF, marsFrame, msrRingPos, msrBasis, 1.0);
+  const msrRings = roamRings('msr', MARS_RINGS, R_MARS_REF, marsFrame, msrRingPos, msrABasis, 1.0);
   const marsRoamFromWorld = (w: V3): void => {
     const B = marsSpinBasis;
     const f: V3 = [d3(w, B[0]), d3(w, B[1]), d3(w, B[2])];
@@ -1278,7 +1304,19 @@ export function buildUniverse(): Universe {
     mnrNorth: V3 = [...mnrFixedN];
   const mnrBasis: [V3, V3, V3] = [mnrEast, mnrUp, mnrNorth];
   const mnrPos: V3 = [0, 0, 0]; // target focus, datum + 1.5 m
-  const mnrRingPos: V3 = [0, 0, 0]; // ring meshes, at the datum
+  // The imagery rings anchor SEPARATELY from the roam point: the point
+  // slides live under a drag, but the rings (whose textures were stitched
+  // for one spot) must stay planted until an explicit re-anchor — or the
+  // stale tile glides around the planet stuck to the cursor.
+  const mnrAFixedE: V3 = [0, 0, 0],
+    mnrAFixedU: V3 = [0, 0, 0],
+    mnrAFixedN: V3 = [0, 0, 0];
+  fixedBasis(mnr.lat, mnr.lon, mnrAFixedE, mnrAFixedU, mnrAFixedN);
+  const mnrAEast: V3 = [...mnrAFixedE],
+    mnrAUp: V3 = [...mnrAFixedU],
+    mnrANorth: V3 = [...mnrAFixedN];
+  const mnrABasis: [V3, V3, V3] = [mnrAEast, mnrAUp, mnrANorth];
+  const mnrRingPos: V3 = [0, 0, 0]; // ring meshes, at the anchored datum point
   const refreshMoonRoam = (): void => {
     const c = Math.cos(mnr.psi),
       s = Math.sin(mnr.psi);
@@ -1290,9 +1328,12 @@ export function buildUniverse(): Universe {
     rot(mnrFixedE, mnrEast);
     rot(mnrFixedU, mnrUp);
     rot(mnrFixedN, mnrNorth);
+    rot(mnrAFixedE, mnrAEast);
+    rot(mnrAFixedU, mnrAUp);
+    rot(mnrAFixedN, mnrANorth);
     for (let k = 0; k < 3; k++) {
       mnrPos[k] = mnrUp[k] * (R_MOON + 1.5);
-      mnrRingPos[k] = mnrUp[k] * R_MOON;
+      mnrRingPos[k] = mnrAUp[k] * R_MOON;
     }
   };
   const setMoonRoam = (latDeg: number, lonDeg: number): void => {
@@ -1301,7 +1342,17 @@ export function buildUniverse(): Universe {
     fixedBasis(mnr.lat, mnr.lon, mnrFixedE, mnrFixedU, mnrFixedN);
     refreshMoonRoam();
   };
-  const mnrRings = roamRings('mnr', MOON_RINGS, R_MOON, moonFrame, mnrRingPos, mnrBasis, 1.6);
+  const anchorMoonRoamImagery = (latDeg: number, lonDeg: number): void => {
+    fixedBasis(
+      Math.max(-89.9, Math.min(89.9, latDeg)) * DEG,
+      (((((lonDeg + 180) % 360) + 360) % 360) - 180) * DEG,
+      mnrAFixedE,
+      mnrAFixedU,
+      mnrAFixedN,
+    );
+    refreshMoonRoam();
+  };
+  const mnrRings = roamRings('mnr', MOON_RINGS, R_MOON, moonFrame, mnrRingPos, mnrABasis, 1.6);
   const moonRoamFromWorld = (w: V3): void => {
     const f: V3 = [d3(w, moonRot[0]), d3(w, moonRot[1]), d3(w, moonRot[2])];
     const l = Math.max(Math.hypot(f[0], f[1], f[2]), 1e-9);
@@ -2777,7 +2828,10 @@ export function buildUniverse(): Universe {
         setRoamFromWorld: moonRoamFromWorld,
         roamMove: moonRoamMove,
         roamLatLon: (): [number, number] => [mnr.lat / DEG, mnr.lon / DEG],
-        setRoamImagery: mnrRings.setImagery,
+        setRoamImagery: (lat: number, lon: number, gen: number): string[] => {
+          anchorMoonRoamImagery(lat, lon);
+          return mnrRings.setImagery(gen);
+        },
       },
       mars: {
         site: [JZ_LAT_DEG, JZ_LON_DEG],
@@ -2794,7 +2848,10 @@ export function buildUniverse(): Universe {
         setRoamFromWorld: marsRoamFromWorld,
         roamMove: marsRoamMove,
         roamLatLon: (): [number, number] => [msr.lat / DEG, msr.lon / DEG],
-        setRoamImagery: msrRings.setImagery,
+        setRoamImagery: (lat: number, lon: number, gen: number): string[] => {
+          anchorMarsRoamImagery(lat, lon);
+          return msrRings.setImagery(gen);
+        },
       },
     },
   };

@@ -1433,7 +1433,7 @@ async function start(): Promise<void> {
   const trekAnchor =
     (body: 'moon' | 'mars', stream: typeof streamMoonRings) =>
     (lat: number, lon: number): void => {
-      const keys = u.nav[body].setRoamImagery(++trekGen);
+      const keys = u.nav[body].setRoamImagery(lat, lon, ++trekGen);
       void stream(
         lat,
         lon,
@@ -2229,6 +2229,7 @@ async function start(): Promise<void> {
 
     for (const m of [...u.meshes, ...dynamicMeshes]) {
       if (m.hideBelow !== undefined && cam.dist < m.hideBelow) continue; // passed through on the dive
+      if (m.hideAbove !== undefined && cam.dist > m.hideAbove) continue; // roam rings: only near the ground
       // Imagery rings (and Saturn's) wait for their texture; textured globes
       // (matId 10) draw with their procedural fallback until the map lands.
       if (m.tex !== undefined && m.tex !== 'earth' && m.matId !== 10 && !renderer.hasTexture(m.tex)) continue;
