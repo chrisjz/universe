@@ -1569,10 +1569,18 @@ async function start(): Promise<void> {
   // Arrow keys drive smooth navigation from the frame loop (held-state, not
   // key auto-repeat): up/down zoom like scroll, left/right orbit like drag.
   const heldArrows = new Set<string>();
-  window.addEventListener('keyup', (e) => heldArrows.delete(e.key));
-  window.addEventListener('blur', () => heldArrows.clear());
+  let heldShift = false; // Shift+arrows = the drag's axes (look/orbit)
+  window.addEventListener('keyup', (e) => {
+    heldArrows.delete(e.key);
+    if (e.key === 'Shift') heldShift = false;
+  });
+  window.addEventListener('blur', () => {
+    heldArrows.clear();
+    heldShift = false;
+  });
   window.addEventListener('keydown', (e) => {
     if (hud.isSearchOpen()) return; // the search input owns the keyboard
+    if (e.key === 'Shift') heldShift = true;
     if (e.key.startsWith('Arrow')) {
       heldArrows.add(e.key);
       e.preventDefault();
@@ -1842,7 +1850,21 @@ async function start(): Promise<void> {
     // is the trackpad-friendly zoom (same exponential feel as scroll);
     // left/right orbit the focus like a horizontal drag.
     if (heldArrows.size) {
-      if (heldArrows.has('ArrowUp') || heldArrows.has('ArrowDown')) {
+      if (heldShift && (heldArrows.has('ArrowUp') || heldArrows.has('ArrowDown'))) {
+        // Shift+↑/↓ is the drag's vertical axis, so the mouse is no longer
+        // required to look at the sky: ↑ mirrors dragging up (orbit sweeps
+        // down; grounded, the collision floor converts it into head-tilt —
+        // the gaze climbs to the zenith), ↓ mirrors dragging down (consume
+        // the head-tilt back to the horizon first, then orbit).
+        let dp = (heldArrows.has('ArrowDown') ? 1.0 : 0) - (heldArrows.has('ArrowUp') ? 1.0 : 0);
+        dp *= 0.9 * dt;
+        if (dp > 0 && cam.tilt > 0) {
+          const used = Math.min(cam.tilt, dp);
+          cam.tilt -= used;
+          dp -= used;
+        }
+        cam.pitch = clamp(cam.pitch + dp, -1.53, 1.53);
+      } else if (heldArrows.has('ArrowUp') || heldArrows.has('ArrowDown')) {
         // A held ↑ during a chain-initiated site arrival rides the flight
         // (it is already taking you down); ↓ hands control straight back.
         if (!(flight?.auto && !heldArrows.has('ArrowDown'))) {
