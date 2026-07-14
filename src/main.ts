@@ -825,7 +825,12 @@ async function start(): Promise<void> {
       (far.bakedCount !== farGroups.length ||
         Number.isNaN(far.bakedYears) ||
         Math.abs(starYears - far.bakedYears) > 25000 ||
-        moved > 8e12) // ~1 px of parallax on a parsec-distance star
+        // ~1 px of parallax on a parsec-distance star — but once the
+        // dome is fading out (bakeFade < 1), freeze position re-bakes:
+        // each one swaps six faces of large-parallax content mid-zoom
+        // (user-reported pops at 2.6 and 7.2 kly), and a dimming dome
+        // wears staleness better than it wears popping.
+        (moved > 8e12 && bakeFade >= 1))
     ) {
       far.face = 0;
       far.bakeYears = starYears;
