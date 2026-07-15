@@ -1535,11 +1535,13 @@ export function buildUniverse(): Universe {
       rim: nuv0[3],
       gridScale: S, // misc.y: the shader derives UVs from local pos / S
       feather: true, // every ring edge blends into the ring below
-      // Past re-anchor range the patch is sub-globe-resolution, and its
-      // depth moirés against the globe mesh's chord sag as a grid of
-      // translucent discs (user-reported at ~4,500 km). Same retirement
-      // rule as the Moon/Mars roam rings: gone beyond 0.6 R.
-      hideAbove: 3.8e6,
+      // A ring earns its draw only while its resolution advantage is
+      // resolvable: from far above, a fine ring is a few pixels of
+      // "detail" whose kept tiles read as tone squares over ocean
+      // (user-reported), and past re-anchor range even the largest
+      // patch moirés against the globe mesh. Each ring retires at
+      // twice its own span, the stack at 0.6 R.
+      hideAbove: Math.min(3.8e6, S * 2),
       rot: imgBasis,
       hideBelow: 2e-3,
       prov: 0, // measured: it is literally aerial photography

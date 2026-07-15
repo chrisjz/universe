@@ -89,24 +89,109 @@ function oceanMean(
   return w < 40 ? null : [r / w, g / w, b / w, w];
 }
 
-// Blend each pixel toward the gain by its own ocean-ness (in place):
-// open water re-tones fully, shorelines ease over, land is untouched.
-function applyOceanGain(canvas: OffscreenCanvas, gain: [number, number, number]): void {
+// The ultimate tone reference: the globe's own Blue Marble, downsampled.
+// Ring 0 matches its ocean against this (it has no parent ring), so the
+// outermost patch edge dissolves into the very texture that surrounds it.
+let globeRef: Promise<{ ctx: OffscreenCanvasRenderingContext2D; w: number; h: number } | null> | null = null;
+function getGlobeRef(): Promise<{ ctx: OffscreenCanvasRenderingContext2D; w: number; h: number } | null> {
+  globeRef ??= loadImage(`${import.meta.env.BASE_URL}earth/day.jpg`).then((img) => {
+    if (!img) return null;
+    const c = new OffscreenCanvas(1024, 512);
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(img, 0, 0, 1024, 512);
+    img.close();
+    return { ctx, w: 1024, h: 512 };
+  });
+  return globeRef;
+}
+// Ocean mean of the globe reference over a mercator rectangle.
+function globeOceanMean(
+  ref: { ctx: OffscreenCanvasRenderingContext2D; w: number; h: number },
+  mx: number,
+  my: number,
+  dm: number,
+): [number, number, number, number] | null {
+  const lon0 = mx * 360 - 180;
+  const lon1 = (mx + dm) * 360 - 180;
+  const lat0 = (Math.atan(Math.sinh(Math.PI * (1 - 2 * (my + dm)))) * 180) / Math.PI;
+  const lat1 = (Math.atan(Math.sinh(Math.PI * (1 - 2 * my))) * 180) / Math.PI;
+  const x0 = ((lon0 + 180) / 360) * ref.w;
+  const x1 = ((lon1 + 180) / 360) * ref.w;
+  const y0 = ((90 - lat1) / 180) * ref.h;
+  const y1 = ((90 - lat0) / 180) * ref.h;
+  const d = ref.ctx.getImageData(
+    Math.max(0, Math.floor(x0)),
+    Math.max(0, Math.floor(y0)),
+    Math.max(1, Math.ceil(x1 - x0)),
+    Math.max(1, Math.ceil(y1 - y0)),
+  ).data;
+  let r = 0,
+    g = 0,
+    b = 0,
+    w = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const o = oceanness(d[i], d[i + 1], d[i + 2]);
+    r += d[i] * o;
+    g += d[i + 1] * o;
+    b += d[i + 2] * o;
+    w += o;
+  }
+  return w < 2 ? null : [r / w, g / w, b / w, w];
+}
+const tileTmp = new OffscreenCanvas(256, 256);
+const tileTmpCtx = tileTmp.getContext('2d', { willReadFrequently: true })!;
+
+interface Patch {
+  canvas: OffscreenCanvas;
+  mx: number; // mercator left
+  my: number; // mercator top
+  dm: number; // mercator extent
+}
+// Ocean mean of a parent patch over a mercator rectangle (null when the
+// crop is out of the parent or all holes).
+function patchOceanMean(pp: Patch, mx: number, my: number, dm: number): [number, number, number, number] | null {
+  const w = pp.canvas.width;
+  const x = ((mx - pp.mx) / pp.dm) * w;
+  const y = ((my - pp.my) / pp.dm) * w;
+  const px = (dm / pp.dm) * w;
+  if (x < -1 || y < -1 || x + px > w + 1) return null;
+  return oceanMean(pp.canvas, Math.max(0, x), Math.max(0, y), Math.max(1, px), Math.max(1, px));
+}
+
+// Per-pixel ocean tone TRANSFER (in place): water pixels adopt the
+// reference's base color (ref) and keep their own local variation as a
+// 60% detail residual around the tile mean (tm) — bathymetry ridges
+// survive, the base tone becomes the reference's. Weighted per pixel by
+// ocean-ness, so land is untouched and shorelines ease over. Absolute
+// replacement, not gain: no clamps, no thresholds, and every ring
+// converges to the same reference surface (ultimately Blue Marble), so
+// water cannot show level seams by construction.
+function applyOceanTransfer(
+  canvas: OffscreenCanvas,
+  ref: [number, number, number, number],
+  tm: [number, number, number, number],
+): void {
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const o = oceanness(d[i], d[i + 1], d[i + 2]);
     if (o === 0) continue;
-    d[i] = Math.min(255, d[i] * (1 + (gain[0] - 1) * o));
-    d[i + 1] = Math.min(255, d[i + 1] * (1 + (gain[1] - 1) * o));
-    d[i + 2] = Math.min(255, d[i + 2] * (1 + (gain[2] - 1) * o));
+    for (let c = 0; c < 3; c++) {
+      const t = ref[c] + (d[i + c] - tm[c]) * 0.6;
+      d[i + c] = Math.max(0, Math.min(255, d[i + c] + (t - d[i + c]) * o));
+    }
   }
   ctx.putImageData(img, 0, 0);
 }
 
 // Builds the stitched texture for a ring of `sizeMeters` centered at lat/lon.
-async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): Promise<OffscreenCanvas | null> {
+async function buildPatchTexture(
+  lat: number,
+  lon: number,
+  sizeMeters: number,
+  parent: Patch | null = null, // tone reference; the globe stands in for ring 0
+): Promise<Patch | null> {
   const phi = (lat * Math.PI) / 180;
   // Normalized web-mercator coords of the center.
   const mx0 = (lon + 180) / 360;
@@ -121,6 +206,7 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
   const top = (my0 - dm / 2) * worldPx;
   const patchPx = dm * worldPx;
 
+  const globe = await getGlobeRef();
   const canvas = new OffscreenCanvas(TEX, TEX);
   const ctx = canvas.getContext('2d')!;
   ctx.scale(TEX / patchPx, TEX / patchPx);
@@ -144,8 +230,25 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
             img.close();
             return; // leave the hole transparent: the ring below shows through
           }
-          ctx.drawImage(img, tx * 256 - left, ty * 256 - top);
+          // Per-tile ocean tone transfer against whatever renders beneath
+          // — the parent ring, or the Blue Marble globe for the outermost.
+          // Esri's water processing is wildly inconsistent between zoom
+          // levels and even tile to tile; land is consistent and passes
+          // through untouched (weighted per pixel by ocean-ness).
+          tileTmpCtx.clearRect(0, 0, 256, 256);
+          tileTmpCtx.drawImage(img, 0, 0);
           img.close();
+          const tm = oceanMean(tileTmp, 0, 0, 256, 256);
+          if (tm) {
+            const tmx = tx / (worldPx / 256);
+            const tmy = ty / (worldPx / 256);
+            const tdm = 256 / worldPx;
+            const rm =
+              (parent ? patchOceanMean(parent, tmx, tmy, tdm) : null) ??
+              (globe ? globeOceanMean(globe, tmx, tmy, tdm) : null);
+            if (rm) applyOceanTransfer(tileTmp, rm, tm);
+          }
+          ctx.drawImage(tileTmp, tx * 256 - left, ty * 256 - top);
           loaded++;
         }),
       );
@@ -153,7 +256,7 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
   }
   await Promise.all(jobs);
   if (loaded === 0) return null; // offline / blocked: keep procedural ground
-  return canvas;
+  return { canvas, mx: mx0 - dm / 2, my: my0 - dm / 2, dm };
 }
 
 // Samples real elevation for a ring's vertex grid. The ring geometry is a
@@ -290,27 +393,12 @@ export async function streamImageryRings(
   // finer ring is scaled to match its parent's mean color over the same
   // footprint, so the coarsest level's tone propagates down the ladder;
   // over land the means already agree and the gain converges to 1.
-  let parent: { canvas: OffscreenCanvas; size: number } | null = null;
+  let parent: Patch | null = null;
   for (let k = 0; k < sizes.length; k++) {
-    const canvas = await buildPatchTexture(lat, lon, sizes[k]);
-    if (!canvas) continue;
-    if (parent) {
-      const frac = sizes[k] / parent.size; // child footprint inside parent
-      const w = parent.canvas.width;
-      const crop = w * frac;
-      const pm = oceanMean(parent.canvas, (w - crop) / 2, (w - crop) / 2, crop, crop);
-      const cm = oceanMean(canvas, 0, 0, canvas.width, canvas.height);
-      if (pm && cm) {
-        const clampG = (x: number): number => Math.max(0.6, Math.min(1.6, x));
-        applyOceanGain(canvas, [
-          clampG(pm[0] / Math.max(cm[0], 1)),
-          clampG(pm[1] / Math.max(cm[1], 1)),
-          clampG(pm[2] / Math.max(cm[2], 1)),
-        ]);
-      }
-    }
-    parent = { canvas, size: sizes[k] };
-    await onReady(keys?.[k] ?? `ring${k}`, await createImageBitmap(canvas));
+    const patch = await buildPatchTexture(lat, lon, sizes[k], parent); // ring 0's reference is the globe itself
+    if (!patch) continue;
+    parent = patch;
+    await onReady(keys?.[k] ?? `ring${k}`, await createImageBitmap(patch.canvas));
   }
 }
 
