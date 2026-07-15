@@ -50,8 +50,63 @@ function isPlaceholder(img: ImageBitmap): boolean {
   return near >= 154; // 60% of 256
 }
 
+// Mean color of a canvas region (downsampled, alpha-weighted): the input
+// to the ring-to-ring tone cascade below.
+const statsCanvas = new OffscreenCanvas(32, 32);
+const statsCtx = statsCanvas.getContext('2d', { willReadFrequently: true })!;
+// How much a pixel looks like open water: dark and blue-leaning. The tone
+// cascade below measures and corrects ONLY this population — land tones
+// already agree between Esri zoom levels, and a whole-patch mean mis-tones
+// mixed coastal patches (bright city squares, dark offshore rectangles).
+function oceanness(r: number, g: number, b: number): number {
+  const blue = Math.max(0, Math.min(1, (b - r) / 40));
+  const dark = Math.max(0, Math.min(1, (150 - (r + g + b) / 3) / 70));
+  return blue * dark;
+}
+function oceanMean(
+  src: OffscreenCanvas,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
+): [number, number, number, number] | null {
+  statsCtx.clearRect(0, 0, 32, 32);
+  statsCtx.drawImage(src, sx, sy, sw, sh, 0, 0, 32, 32);
+  const d = statsCtx.getImageData(0, 0, 32, 32).data;
+  let r = 0,
+    g = 0,
+    b = 0,
+    w = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue; // culled placeholder holes don't vote
+    const o = oceanness(d[i], d[i + 1], d[i + 2]);
+    r += d[i] * o;
+    g += d[i + 1] * o;
+    b += d[i + 2] * o;
+    w += o;
+  }
+  // Need a meaningful ocean population on both sides to say anything.
+  return w < 40 ? null : [r / w, g / w, b / w, w];
+}
+
+// Blend each pixel toward the gain by its own ocean-ness (in place):
+// open water re-tones fully, shorelines ease over, land is untouched.
+function applyOceanGain(canvas: OffscreenCanvas, gain: [number, number, number]): void {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const o = oceanness(d[i], d[i + 1], d[i + 2]);
+    if (o === 0) continue;
+    d[i] = Math.min(255, d[i] * (1 + (gain[0] - 1) * o));
+    d[i + 1] = Math.min(255, d[i + 1] * (1 + (gain[1] - 1) * o));
+    d[i + 2] = Math.min(255, d[i + 2] * (1 + (gain[2] - 1) * o));
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 // Builds the stitched texture for a ring of `sizeMeters` centered at lat/lon.
-async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): Promise<ImageBitmap | null> {
+async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): Promise<OffscreenCanvas | null> {
   const phi = (lat * Math.PI) / 180;
   // Normalized web-mercator coords of the center.
   const mx0 = (lon + 180) / 360;
@@ -98,7 +153,7 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
   }
   await Promise.all(jobs);
   if (loaded === 0) return null; // offline / blocked: keep procedural ground
-  return createImageBitmap(canvas);
+  return canvas;
 }
 
 // Samples real elevation for a ring's vertex grid. The ring geometry is a
@@ -229,9 +284,33 @@ export async function streamImageryRings(
   // Past ~84 deg the mercator patch math degenerates (85.05 is the map's
   // edge) and Esri has no polar imagery anyway: keep the honest globe.
   if (Math.abs(lat) > 84) return;
+  // The tone cascade: each Esri zoom level renders open ocean a different
+  // flat blue, and even a feathered ring edge cannot hide a large tone
+  // step between big regions (user-reported soft-edged rectangles). Each
+  // finer ring is scaled to match its parent's mean color over the same
+  // footprint, so the coarsest level's tone propagates down the ladder;
+  // over land the means already agree and the gain converges to 1.
+  let parent: { canvas: OffscreenCanvas; size: number } | null = null;
   for (let k = 0; k < sizes.length; k++) {
-    const bmp = await buildPatchTexture(lat, lon, sizes[k]);
-    if (bmp) await onReady(keys?.[k] ?? `ring${k}`, bmp);
+    const canvas = await buildPatchTexture(lat, lon, sizes[k]);
+    if (!canvas) continue;
+    if (parent) {
+      const frac = sizes[k] / parent.size; // child footprint inside parent
+      const w = parent.canvas.width;
+      const crop = w * frac;
+      const pm = oceanMean(parent.canvas, (w - crop) / 2, (w - crop) / 2, crop, crop);
+      const cm = oceanMean(canvas, 0, 0, canvas.width, canvas.height);
+      if (pm && cm) {
+        const clampG = (x: number): number => Math.max(0.6, Math.min(1.6, x));
+        applyOceanGain(canvas, [
+          clampG(pm[0] / Math.max(cm[0], 1)),
+          clampG(pm[1] / Math.max(cm[1], 1)),
+          clampG(pm[2] / Math.max(cm[2], 1)),
+        ]);
+      }
+    }
+    parent = { canvas, size: sizes[k] };
+    await onReady(keys?.[k] ?? `ring${k}`, await createImageBitmap(canvas));
   }
 }
 
