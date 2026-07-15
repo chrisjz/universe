@@ -1535,13 +1535,14 @@ export function buildUniverse(): Universe {
       rim: nuv0[3],
       gridScale: S, // misc.y: the shader derives UVs from local pos / S
       feather: true, // every ring edge blends into the ring below
-      // A ring earns its draw only while its resolution advantage is
-      // resolvable: from far above, a fine ring is a few pixels of
-      // "detail" whose kept tiles read as tone squares over ocean
-      // (user-reported), and past re-anchor range even the largest
-      // patch moirés against the globe mesh. Each ring retires at
-      // twice its own span, the stack at 0.6 R.
-      hideAbove: Math.min(3.8e6, S * 2),
+      // The stack retires past re-anchor range (0.6 R), where even the
+      // largest patch moirés against the globe mesh. Retirement must be
+      // all-or-nothing: each ring's geometry has a hole cut for its
+      // child, so a child hidden earlier than its parent exposes bare
+      // globe at the center (user-reported as a never-loading middle
+      // tile). Tone consistency across the ladder is the tone
+      // transfer's job, not the LOD's.
+      hideAbove: 3.8e6,
       rot: imgBasis,
       hideBelow: 2e-3,
       prov: 0, // measured: it is literally aerial photography
