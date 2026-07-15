@@ -161,7 +161,12 @@ export class Renderer {
     const depthStencil: GPUDepthStencilState = {
       format: 'depth32float',
       depthWriteEnabled: true,
-      depthCompare: 'less',
+      // less-EQUAL: the imagery rings overlap their parent ring exactly
+      // coplanar over water, and every ring now feathers its edge into
+      // the one below. Draw order runs large ring to small, so equal
+      // depth must let the finer, later ring win — with plain 'less'
+      // the feather zone would z-fight into stipple.
+      depthCompare: 'less-equal',
     };
     const depthNoWrite: GPUDepthStencilState = {
       format: 'depth32float',

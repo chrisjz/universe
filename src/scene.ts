@@ -1036,7 +1036,7 @@ export function buildUniverse(): Universe {
         matId: 11,
         rim: exposure,
         gridScale: S,
-        feather: k === 0,
+        feather: true, // every ring edge blends into the ring below
         rot: basis,
         prov: 0.5,
         // Beyond re-anchor range, one sharp patch on a soft globe reads
@@ -1143,7 +1143,7 @@ export function buildUniverse(): Universe {
       matId: 11,
       rim: 1.0, // exposure gain: Viking color already matches its globe map
       gridScale: S,
-      feather: k === 0,
+      feather: true, // every ring edge blends into the ring below
       rot: jzBasis,
       prov: 0.5, // real Viking photography, procedural close-up detail
       tex: `marsring${k}`,
@@ -1413,7 +1413,7 @@ export function buildUniverse(): Universe {
       matId: 11,
       rim: 1.6, // exposure gain: raw WAC vs the albedo-normalized globe map
       gridScale: S,
-      feather: k === 0,
+      feather: true, // every ring edge blends into the ring below
       rot: tqBasis,
       prov: 0.5, // real WAC photography, procedural close-up regolith detail
       tex: `moonring${k}`,
@@ -1534,7 +1534,7 @@ export function buildUniverse(): Universe {
       matId: 8,
       rim: nuv0[3],
       gridScale: S, // misc.y: the shader derives UVs from local pos / S
-      feather: k === 0,
+      feather: true, // every ring edge blends into the ring below
       // Past re-anchor range the patch is sub-globe-resolution, and its
       // depth moirés against the globe mesh's chord sag as a grid of
       // translucent discs (user-reported at ~4,500 km). Same retirement
