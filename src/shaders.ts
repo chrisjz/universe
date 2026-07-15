@@ -199,6 +199,7 @@ struct FOut {
 
 @fragment fn fs(in : VOut) -> FOut {
   let matId = i32(O.sun.w + 0.5);
+  var alpha = 1.0;
   let t = G.params.z;
   var base = O.color.rgb;
   let lp = in.lp;
@@ -250,7 +251,10 @@ struct FOut {
     // gain matching the ring mosaic to its globe map (WAC 1.6, Viking 1.0).
     let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
     let gain = select(1.0, O.misc.x, O.misc.x > 0.0);
-    base = textureSample(dayTex, samp, uv).rgb * gain * O.color.rgb;
+    let ttex = textureSample(dayTex, samp, uv);
+    base = ttex.rgb * gain * O.color.rgb;
+    alpha = alpha * ttex.a; // failed Trek tiles dissolve, not blacken
+    
     // Up close the source is ~83 m/px: procedural regolith detail carries
     // the last two orders of magnitude, fading out by a few km away.
     let lpm = lp.xz * O.misc.y;
@@ -277,7 +281,11 @@ struct FOut {
     // it samples the innermost ring's texture so the picnic ground IS the
     // surrounding photograph, plus close-up procedural detail and the 1 m grid.
     let uv = vec2f(lp.x / O.misc.y + 0.5, 0.5 - lp.z / O.misc.y);
-    base = textureSample(dayTex, samp, uv).rgb;
+    let dtex = textureSample(dayTex, samp, uv);
+    base = dtex.rgb;
+    // Un-stitched regions (ocean placeholders, failed tiles) dissolve to
+    // the ring below / the globe via alpha-to-coverage instead of black.
+    alpha = alpha * dtex.a;
     // Night: the global Black Marble sampled via a local affine linearization
     // of the equirectangular map around the site (color.rg = uv there,
     // color.b = du per east-meter, misc.x = dv per north-meter).
@@ -329,7 +337,6 @@ struct FOut {
   // Sky fill keeps the human-scale picnic scene readable; the imagery rings
   // (matId 8) and the Moon materials are planets and take planetary ambient.
   if (matId >= 5 && matId != 8 && matId != 9 && matId != 10 && matId != 11 && matId != 12) { amb = 0.5; ambCol = vec3f(0.75, 0.85, 1.1); }
-  var alpha = 1.0;
   var dif = max(ndl, 0.0);
   // Solar eclipse: the Moon's shadow. The globe (matId 1) computes real
   // per-fragment sun coverage — the umbra spot crosses the map where it
