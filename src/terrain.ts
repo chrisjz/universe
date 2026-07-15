@@ -23,6 +23,33 @@ function loadImage(url: string, retried = false): Promise<ImageBitmap | null> {
     .catch(() => (retried ? null : loadImage(url, true))); // one retry: transient drops, not 404s
 }
 
+// Esri has no deep-zoom imagery over open ocean, but instead of a 404 it
+// serves an HTTP 200 placeholder: a uniform ~rgb(204) grey stamped "Map
+// data not yet available" (user-reported as grey squares mid-Pacific).
+// Only the pixels can tell — an 8x8 downsample of real imagery is never
+// a flat neutral grey, so a tight uniformity test is safe.
+const sniff = new OffscreenCanvas(16, 16);
+const sniffCtx = sniff.getContext('2d', { willReadFrequently: true })!;
+function isPlaceholder(img: ImageBitmap): boolean {
+  sniffCtx.clearRect(0, 0, 16, 16);
+  sniffCtx.drawImage(img, 0, 0, 16, 16);
+  const d = sniffCtx.getImageData(0, 0, 16, 16).data;
+  let near = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i],
+      g = d[i + 1],
+      b = d[i + 2];
+    // Any decidedly colorful or dark pixel means real imagery. Measured
+    // in-browser: the placeholder decodes at chroma <= 17 (JPEG
+    // subsampling), field 202-213, text to 252; real open ocean is
+    // chroma ~35 at brightness ~10.
+    if (Math.abs(g - r) > 24 || Math.abs(b - r) > 24 || r < 185) return false;
+    if (Math.abs(r - 204) <= 8) near++;
+  }
+  // Mostly the flat 204 field (snow and cloud tiles are bright, not 204).
+  return near >= 154; // 60% of 256
+}
+
 // Builds the stitched texture for a ring of `sizeMeters` centered at lat/lon.
 async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): Promise<ImageBitmap | null> {
   const phi = (lat * Math.PI) / 180;
@@ -58,6 +85,10 @@ async function buildPatchTexture(lat: number, lon: number, sizeMeters: number): 
       jobs.push(
         loadImage(TILE_URL(z, ty, col)).then((img) => {
           if (!img) return;
+          if (isPlaceholder(img)) {
+            img.close();
+            return; // leave the hole transparent: the ring below shows through
+          }
           ctx.drawImage(img, tx * 256 - left, ty * 256 - top);
           img.close();
           loaded++;
